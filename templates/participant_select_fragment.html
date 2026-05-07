@@ -1,0 +1,18 @@
+<div class="text-nowrap mx-4" id="participant-select-container">
+    {% if participants %}
+        Participant:
+        <select
+            name="participant"
+            id="participant-select"
+            hx-get="/fragments/participant/overview"
+            hx-target="#viewer"
+            hx-swap="outerHTML"
+            hx-include="#source-select"
+            class="mx-4 my-2 rounded-md border border-black p-1 bg-white">
+            <option value="" selected>--Please choose an option--</option>
+            {% for participant, count in participants %}
+                <option value="{{ participant }}">{{ participant }} [{{ count }}]</option>
+            {% endfor %}
+        </select>
+    {% endif %}
+</div>

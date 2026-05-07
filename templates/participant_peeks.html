@@ -1,0 +1,30 @@
+{% extends "participant_base.html" %}
+
+{% block content %}
+    <div class="text-nowrap">
+        Peek file:
+        <select
+            name="img"
+            id="peek-select"
+            hx-get="{{ url_for('participant_peeks') }}"
+            hx-target="#viewer"
+            hx-swap="outerHTML"
+            hx-include="#source-select, #participant-select"
+            class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
+            <option
+                value=""
+                {% if not current_log_file %}selected{% endif %}
+            >--Please choose an option--</option>
+            {% for img in qcs %}
+                <option 
+                    {% if img == qc %}selected{% endif %}
+                    value="{{ img|urlencode }}">
+                    {{ img }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="flex-1 p-4" id="peek-content">
+        <img src="data:image/png;base64, {{ encoded_string }}">
+    </div>
+{% endblock %}

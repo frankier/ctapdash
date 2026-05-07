@@ -1,0 +1,58 @@
+<div id="viewer">
+    <div class="bg-slate-400 flex flex-wrap w-full">
+        <div class="text-nowrap px-4 py-2
+            {% if view == 'overview' %}bg-slate-300{% endif %}
+        ">
+            <a
+                href="#"
+                hx-get="{{ url_for("participant_overview") }}"
+                hx-include="#source-select, #participant-select"
+                hx-target="#viewer"
+                hx-swap="outerHTML">
+                Overview
+            </a>
+        </div>
+        <div class="text-nowrap px-4 py-2
+            {% if view == 'steps' %}bg-slate-300{% endif %}
+        ">
+            <a
+                href="#"
+                hx-get="{{ url_for("participant_steps") }}"
+                hx-include="#source-select, #participant-select"
+                hx-target="#viewer"
+                hx-swap="outerHTML">
+                Steps (onionskin)
+            </a>
+        </div>
+        <div class="
+            text-nowrap px-4 py-2
+            {% if view == 'peeks' %}bg-slate-300{% endif %}
+        ">
+            <a
+                href="#"
+                hx-get="{{ url_for("participant_peeks") }}"
+                hx-include="#source-select, #participant-select"
+                hx-target="#viewer"
+                hx-swap="outerHTML">
+                Quality control (peeks)
+            </a>
+        </div>
+        <div
+            class="
+                text-nowrap px-4 py-2
+                {% if view == 'logs' %}bg-slate-300{% endif %}
+            ">
+            <a
+                href="#"
+                hx-get="{{ url_for("participant_log") }}"
+                hx-include="#source-select, #participant-select"
+                hx-target="#viewer"
+                hx-swap="outerHTML">
+                Logs
+            </a>
+        </div>
+    </div>
+    <div class="m-4">
+        {% block content %}{% endblock %}
+    </div>
+</div>

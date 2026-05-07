@@ -1,0 +1,41 @@
+{% extends "participant_base.html" %}
+
+{% block content %}
+    <h3 class="text-xl my-2 mt-4">Summary</h3>
+    XXXTODO
+    <h3 class="text-xl my-2 mt-4">Steps</h3>
+    <h3 class="text-xl my-2 mt-4">Quality control</h3>
+    <ul>
+        {% for img_file in qc %}
+            <li>
+                <a
+                    class="text-blue-800 hover:underline"
+                    href="#"
+                    hx-get="{{ url_for('participant_peeks') }}"
+                    hx-include="#source-select, #participant-select"
+                    hx-target="#viewer"
+                    hx-swap="outerHTML"
+                    hx-vals='{"img": "{{ img_file|urlencode }}"}'>
+                    {{ img_file }}
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+    <h3 class="text-xl my-2 mt-4">Logs</h3>
+    <ul>
+        {% for log_file in logs %}
+            <li>
+                <a
+                    class="text-blue-800 hover:underline"
+                    href="#"
+                    hx-get="{{ url_for('participant_log') }}"
+                    hx-include="#source-select, #participant-select"
+                    hx-target="#viewer"
+                    hx-swap="outerHTML"
+                    hx-vals='{"log": "{{ log_file|urlencode }}"}'>
+                    {{ log_file }}
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+{% endblock %}
