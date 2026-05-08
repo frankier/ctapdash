@@ -1,5 +1,16 @@
 # CTAP Dashboard
 
-Run with the following command:
+A dashboard for viewing the outputs of [CTAP](https://version.helsinki.fi/hipercog/Methods/ctap) pipelines.
 
-$ TAPPED_DIRECTORY=/path/to/tapped/directory uv run uvicorn main:app
+*Step 1.* Write your configuration file to e.g. `conf.toml`:
+
+```toml
+[sources]
+source_name = "/path/to/TAPPED"
+```
+
+*Step 2.* Then run the dashboard with the following command:
+
+```bash
+CTAPDASH_SETTINGS="/path/to/conf.toml" uv run uvicorn main:app
+```
