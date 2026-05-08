@@ -1,15 +1,21 @@
+import re
 from os import environ
 from pathlib import Path
 from mne.io import read_raw_eeglab, read_epochs_eeglab
 import tomlkit
 
 from starlette.applications import Starlette
+from starlette.exceptions import HTTPException
 from starlette.responses import HTMLResponse
 from starlette.routing import Route, Mount
 from starlette.templating import Jinja2Templates
 from ctapdash.plots import set_onionskin_eeg, perform_monkeypatch
 from starlette_webagg import get_head_content, get_app as get_webagg_app, figure_html
 from starlette_webagg.utils import composed_lifespan
+
+
+SCALP_REGEX = re.compile("(?P<stem>[^-]+)-badChan-scalp.png")
+CH_REGEX = re.compile("(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
 
 
 perform_monkeypatch()
@@ -23,7 +29,6 @@ def load_sources():
 
 
 SOURCES = load_sources()
-print("Sources:", SOURCES)
 
 
 templates = Jinja2Templates(directory="templates")
@@ -126,9 +131,58 @@ def collect_qc(source_path, participant):
             if not file.startswith(participant):
                 continue
             file_path = root / file
-            rel_path = file_path.relative_to(source_path)
-            qc.append(str(rel_path))
+            rel_path = file_path.relative_to(qc_dir)
+            qc.append(rel_path)
     return qc
+
+
+def qc_to_tree(qcs):
+    tree = {}
+    for qc in qcs:
+        tree.setdefault(qc.parts[0], []).append(qc)
+
+    def group_channels(values):
+        groups = {}
+        rest = {}
+        for value, path in values:
+            match = SCALP_REGEX.match(value)
+            if match:
+                stem = match.group("stem")
+                groups.setdefault(stem, {})["scalp"] = (value, path)
+                continue
+            match = CH_REGEX.match(value)
+            if match:
+                stem = match.group("stem")
+                ch_start = int(match.group("ch_start"))
+                ch_end = int(match.group("ch_end"))
+                groups.setdefault(stem, {}).setdefault("chs", []).append((ch_start, ch_end, value, path))
+                groups[stem]["chs"].sort()
+                continue
+            rest[value] = path
+        return groups, rest
+
+    def form_sets(peek_list):
+        peek_dict = {}
+        rest = {}
+        for directory in peek_list:
+            first_seg = directory.parts[1]
+            if first_seg.startswith("set"):
+                peek_dict.setdefault(directory.parts[1], []).append((directory.parts[-1], directory))
+            else:
+                sub_peek_dict, rest_dict = form_sets(directory)
+                peek_dict.update(sub_peek_dict)
+                rest.update(rest_dict)
+        return peek_dict, rest
+
+    new_tree = {}
+    for root, peek_list in tree.items():
+        peek_dict, rest = form_sets(peek_list)
+        
+        assert len(rest) == 0
+        peek_dict = {k: group_channels(v) for k, v in peek_dict.items()}
+        new_tree[root] = peek_dict
+
+    return new_tree
 
 
 async def participant_steps_fragment(request):
@@ -141,30 +195,79 @@ async def participant_steps_fragment(request):
     )
 
 
-async def participant_peeks_fragment(request):
+def encode_qc(source_path, path):
+    from wand.image import Image
     import base64
 
-    print("participant_peeks_fragment")
-    from pprint import pprint
-    pprint(request.query_params)
-    print("/participant_peeks_fragment")
+    filename = source_path / "quality_control" / path
+    with Image(filename=filename) as img:
+        img.trim()
+        return base64.b64encode(img.make_blob("png")).decode("utf-8")
+
+
+def map_encode_qc(source_path, val):
+    if isinstance(val, Path):
+        return encode_qc(source_path, val)
+    elif isinstance(val, list):
+        return [map_encode_qc(source_path, v) for v in val]
+    elif isinstance(val, tuple):
+        return tuple(map_encode_qc(source_path, v) for v in val)
+    elif isinstance(val, dict):
+        return {k: map_encode_qc(source_path, v) for k, v in val.items()}
+    else:
+        return val
+
+
+async def participant_peeks_fragment(request):
     source = request.query_params["source"]
     participant = request.query_params["participant"]
-    img = request.query_params["img"]
     source_path = Path(SOURCES[source])
-    encoded_string = None
-    with open(source_path / img, "rb") as f:
-        encoded_string = base64.b64encode(f.read()).decode("utf-8")
     qcs = collect_qc(source_path, participant)
+    tree = qc_to_tree(qcs)
+    peek_param = request.query_params.get("peek")
+    set_param = request.query_params.get("set")
+    if set_param is None:
+        peek_tree = tree.get(peek_param)
+        if peek_tree is not None and len(peek_tree) > 0:
+            set_param = list(peek_tree.keys())[0]
+    bit_param = request.query_params.get("bit")
+    if bit_param is None:
+        groupsrest = tree.get(peek_param, {}).get(set_param)
+        if groupsrest is not None:
+            groups, rest = groupsrest
+            if len(groups) > 0:
+                bit_param = list(groups.keys())[0]
+            if len(rest) > 0:
+                bit_param = list(rest.keys())[0]
+    qcs = [str(qc) for qc in qcs]
+    context = {
+        "view": "peeks",
+        "qcs": qcs,
+        "tree": tree,
+        "peek_param": peek_param,
+        "set_param": set_param,
+        "bit_param": bit_param,
+    }
+    if peek_param:
+        groups, rest = tree.get(peek_param, {}).get(set_param, ({}, {}))
+        if bit_param in groups:
+            context.update({
+                "qc_type": "eeg",
+                "eeg": map_encode_qc(source_path, groups[bit_param]),
+            })
+        elif bit_param in rest:
+            path = rest[bit_param]
+            context.update({
+                "qc_type": "image",
+                "path": str(path),
+                "encoded_string": encode_qc(source_path, path),
+            })
+        elif "set" in request.query_params and "bit" in request.query_params:
+            raise HTTPException(status_code=404)
     return templates.TemplateResponse(
         request,
         'participant_peeks.html',
-        context={
-            "view": "peeks",
-            "qc": img,
-            "qcs": qcs,
-            "encoded_string": encoded_string,
-        }
+        context=context
     )
 
 
@@ -190,8 +293,6 @@ async def participant_log(request):
     participant = request.query_params["participant"]
     source_path = Path(SOURCES[source])
     logs = collect_logs(source_path, participant)
-    print("logs")
-    print(logs)
     if "log" in request.query_params:
         log = request.query_params["log"]
         log_path = source_path / log

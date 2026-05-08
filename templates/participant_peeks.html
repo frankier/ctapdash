@@ -1,30 +1,118 @@
 {% extends "participant_base.html" %}
 
 {% block content %}
-    <div class="text-nowrap">
-        Peek file:
-        <select
-            name="img"
-            id="peek-select"
-            hx-get="{{ url_for('participant_peeks') }}"
-            hx-target="#viewer"
-            hx-swap="outerHTML"
-            hx-include="#source-select, #participant-select"
-            class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
-            <option
-                value=""
-                {% if not current_log_file %}selected{% endif %}
-            >--Please choose an option--</option>
-            {% for img in qcs %}
-                <option 
-                    {% if img == qc %}selected{% endif %}
-                    value="{{ img|urlencode }}">
-                    {{ img }}
-                </option>
+    <div class="p-2 bg-slate-100 flex flex-wrap w-full">
+        <div class="text-nowrap mx-4">
+            Peek:
+            <select
+                    hx-get="{{ url_for('participant_peeks') }}"
+                    hx-target="#viewer"
+                    hx-swap="outerHTML"
+                    hx-include="#source-select, #participant-select"
+                    name="peek"
+                    id="peek-select"
+                    class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
+                <option {% if not peek_param %}selected{% endif %} value="">--Please choose an option--</option>
+                {% for (root, sets) in tree.items() %}
+                    <option
+                        {% if peek_param == root %}selected{% endif %} 
+                        value="{{ root|urlencode }}">
+                        {{ root }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% for (root, sets) in tree.items() %}
+            {% if peek_param == root %}
+                <div class="text-nowrap mx-4">
+                    Set:
+                    <select
+                        hx-get="{{ url_for('participant_peeks') }}"
+                        hx-target="#viewer"
+                        hx-swap="outerHTML"
+                        hx-include="#source-select, #participant-select, #peek-select"
+                        name="set"
+                        id="set-select"
+                        class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
+                        {% for (set_name, bits) in sets.items() %}
+                            <option
+                                {% if set_param == set_name %}selected{% endif %} 
+                                value="{{ set_name }}">
+                                {{ set_name }}
+                            </option>
+                        {% endfor %}#}
+                    </select>
+                </div>
+            {% endif %}
+        {% endfor %}
+        {% for (root, sets) in tree.items() %}
+            {% for (set_name, bits) in sets.items() %}
+                {% if peek_param == root and set_name == set_param %}
+                    <div class="text-nowrap mx-4">
+                        Bit:
+                        <select
+                            hx-get="{{ url_for('participant_peeks') }}"
+                            hx-target="#viewer"
+                            hx-swap="outerHTML"
+                            hx-include="#source-select, #participant-select, #peek-select, #set-select"
+                            name="bit"
+                            class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
+                            {% for group in bits[0] %}
+                                <option
+                                    {% if bit_param == group %}selected{% endif %}
+                                    value="{{ group }}">
+                                    {{ group }}
+                                </option>
+                            {% endfor %}
+                            {% for rest, full_path in bits[1].items() %}
+                                <option
+                                    {% if bit_param == rest %}selected{% endif %}
+                                    value="{{ rest }}">
+                                    {{ rest }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                {% endif %}
             {% endfor %}
-        </select>
+        {% endfor %}
+        {% if qc_type == 'eeg' and 'scalp' in eeg %}
+            <button @click="show_scalp = !show_scalp" class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white ml-auto">
+                Toggle scalp
+            </button>
+        {% endif %}
     </div>
     <div class="flex-1 p-4" id="peek-content">
-        <img src="data:image/png;base64, {{ encoded_string }}">
+        {% if qc_type == 'image' %}
+            {% if encoded_string %}
+                <img
+                    class="mx-auto"
+                    title="{{ path }}"
+                    alt="{{ path }}"
+                    src="data:image/png;base64, {{ encoded_string }}">
+            {% endif %}
+        {% elif qc_type == 'eeg' %}
+            <div class="flex justify-center-safe">
+                {% if 'scalp' in eeg %}
+                    <template x-if="show_scalp">
+                        <div class="flex-1">
+                            <img
+                                title="{{ eeg.scalp[0] }}"
+                                alt="{{ eeg.scalp[0] }}"
+                                src="data:image/png;base64, {{ eeg.scalp[1] }}">
+                        </div>
+                    </template>
+                {% endif %}
+                <div class="flex-2 text-center">
+                    {% for ch_lo, ch_hi, filename, base64 in eeg.chs %}
+                        <img
+                            class="mx-auto"
+                            title="{{ ch_lo }} - {{ ch_hi }}: {{ filename }}"
+                            alt="{{ ch_lo }} - {{ ch_hi }}: {{ filename }}"
+                            src="data:image/png;base64, {{ base64 }}">
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
     </div>
 {% endblock %}
