@@ -10,7 +10,7 @@
                     hx-target="#viewer"
                     hx-include="#view-selector, #source-select"
                     class="mt-1 inline-block mt-1 rounded-md border border-black p-1 bg-white">
-                    <option value="" selected>--Please choose an option--</option>
+                    <option value="" selected>--- Please choose an option ---</option>
                     {% for participant, count in participants %}
                         <option value="{{ participant }}">{{ participant }} [{{ count }}]</option>
                     {% endfor %}
@@ -26,7 +26,7 @@
                     hx-target="#viewer"
                     hx-include="#view-selector, #source-select"
                     class="mt-1 inline-block mt-1 rounded-md border border-black p-1 bg-white">
-                    <option value="" selected>--Please choose an option--</option>
+                    <option value="" selected>--- Please choose an option ---</option>
                     {% for step_num, step_dir in steps %}
                         <option value="{{ step_num }}">{{ step_dir.name }}</option>
                     {% endfor %}
@@ -42,7 +42,7 @@
                     hx-target="#viewer"
                     hx-include="#view-selector, #source-select"
                     class="mt-1 inline-block mt-1 rounded-md border border-black p-1 bg-white">
-                    <option value="" selected>--Please choose an option--</option>
+                    <option value="" selected>--- Please choose an option ---</option>
                     {% for log in logs %}
                         <option value="{{ log }}">{{ log }}</option>
                     {% endfor %}

@@ -9,7 +9,7 @@
             hx-swap="outerHTML"
             hx-include="#source-select"
             class="mx-4 my-2 rounded-md border border-black p-1 bg-white">
-            <option value="" selected>--Please choose an option--</option>
+            <option value="" selected>--- Please choose an option ---</option>
             {% for participant, count in participants %}
                 <option value="{{ participant }}">{{ participant }} [{{ count }}]</option>
             {% endfor %}

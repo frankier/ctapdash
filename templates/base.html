@@ -29,5 +29,10 @@
         </div>
     </div>
     {% block content %}{% endblock %}
+    <div id="spinner" class="htmx-indicator fixed inset-0 place-self-center p-20 bg-white z-50 drop-shadow-xl">
+        <img
+            src="/static/img/flask.gif"
+            alt="Loading...">
+    </div>
 </body>
 </html>

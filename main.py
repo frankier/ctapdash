@@ -319,7 +319,7 @@ async def participant_overview_fragment(request):
     source_path = Path(SOURCES[source])
     logs = collect_logs(source_path, participant)
     qc = collect_qc(source_path, participant)
-    steps = collect_steps(source_path)
+    steps = get_steps_for_participant(source_path, participant)
     return templates.TemplateResponse(
         request,
         'participant_overview.html',
@@ -327,6 +327,7 @@ async def participant_overview_fragment(request):
             "view": "overview",
             "logs": logs,
             "qc": qc,
+            "steps": steps,
         }
     )
 

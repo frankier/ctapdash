@@ -12,7 +12,7 @@
                     name="peek"
                     id="peek-select"
                     class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
-                <option {% if not peek_param %}selected{% endif %} value="">--Please choose an option--</option>
+                <option {% if not peek_param %}selected{% endif %} value="">--- Please choose an option ---</option>
                 {% for (root, sets) in tree.items() %}
                     <option
                         {% if peek_param == root %}selected{% endif %} 

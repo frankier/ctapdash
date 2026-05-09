@@ -15,7 +15,7 @@
                 <option
                     value=""
                     {% if not current_log_file %}selected{% endif %}
-                >--Please choose an option--</option>
+                >--- Please choose an option ---</option>
                 {% for log_file in logs %}
                     <option
                         {% if current_log_file == log_file %}selected{% endif %}

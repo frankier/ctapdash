@@ -13,6 +13,10 @@
                 hx-include="#source-select, #participant-select"
                 hx-indicator="#spinner"
                 class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
+                <option
+                    value=""
+                    {% if not current_step %}selected{% endif %}
+                >--- Please choose an option ---</option>
                 {% for step_num, subdir in steps %}
                     <option
                         {% if step_num == current_step %}selected{% endif %}
@@ -24,11 +28,7 @@
         </div>
     </div>
     <div class="m-4">
-        <div id="spinner" class="htmx-indicator fixed inset-0 place-self-center p-20 bg-white z-50 drop-shadow-xl">
-            <img
-                src="/static/img/flask.gif"
-                alt="Loading...">
-        </div>
+        <div id="mpl-warnings"></div>
         {{ eeg_fig|safe }}
     </div>
 {% endblock %}
