@@ -1,28 +1,30 @@
 {% extends "participant_base.html" %}
 
 {% block content %}
-    <div class="text-nowrap m-4">
-        Log file:
-        <select
-            name="log"
-            id="log-select"
-            hx-get="{{ url_for('participant_log') }}"
-            hx-target="#viewer"
-            hx-swap="outerHTML"
-            hx-include="#source-select, #participant-select"
-            class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
-            <option
-                value=""
-                {% if not current_log_file %}selected{% endif %}
-            >--Please choose an option--</option>
-            {% for log_file in logs %}
-                <option 
-                    {% if current_log_file == log_file %}selected{% endif %}
-                    value="{{ log_file|urlencode }}">
-                    {{ log_file }}
-                </option>
-            {% endfor %}
-        </select>
+    <div class="p-2 bg-slate-100 flex flex-wrap w-full">
+        <div class="text-nowrap">
+            Log file:
+            <select
+                name="log"
+                id="log-select"
+                hx-get="{{ url_for('participant_log') }}"
+                hx-target="#viewer"
+                hx-swap="outerHTML"
+                hx-include="#source-select, #participant-select"
+                class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
+                <option
+                    value=""
+                    {% if not current_log_file %}selected{% endif %}
+                >--Please choose an option--</option>
+                {% for log_file in logs %}
+                    <option
+                        {% if current_log_file == log_file %}selected{% endif %}
+                        value="{{ log_file|urlencode }}">
+                        {{ log_file }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
     </div>
     <div class="flex-1 p-4" id="log-content">
         <pre class="whitespace-pre-wrap">{{ content }}</pre>

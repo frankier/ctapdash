@@ -3,11 +3,13 @@ from os import environ
 from pathlib import Path
 from mne.io import read_raw_eeglab, read_epochs_eeglab
 import tomlkit
+from natsort import natsorted
 
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.responses import HTMLResponse
 from starlette.routing import Route, Mount
+from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.plots import set_onionskin_eeg, perform_monkeypatch
 from starlette_webagg import get_head_content, get_app as get_webagg_app, figure_html
@@ -31,7 +33,13 @@ def load_sources():
 SOURCES = load_sources()
 
 
-templates = Jinja2Templates(directory="templates")
+def webagg_context(request):
+    return {
+        'head_webagg': get_head_content(request, core=True),
+    }
+
+
+templates = Jinja2Templates(directory="templates", context_processors=[webagg_context])
 
 
 def read_eeglab(path):
@@ -43,11 +51,25 @@ def read_eeglab(path):
             return read_raw_eeglab(path, preload=True)
 
 
+def get_steps_for_participant(root_path, participant):
+    steps = []
+    for subdir in root_path.iterdir():
+        if not subdir.name[0].isnumeric():
+            continue
+        path = subdir / (participant + ".set")
+        if not path.exists():
+            continue
+        step_num = int(subdir.name.split("_", 1)[0])
+        steps.append((step_num, subdir))
+    steps = natsorted(steps)
+    return steps
+
+
 def read_eegs(root_path, participant, steps):
     eegs = []
     step_num_to_eeg_idx = {}
     for eeg_idx, (step_num, step) in enumerate(steps):
-        path = root_path / step / participant
+        path = root_path / step / (participant + ".set")
         if not path.exists():
             print(f"Not found: {path}")
             continue
@@ -87,7 +109,6 @@ async def index(request):
         request,
         'index.html',
         context={
-            'head_content': get_head_content(request, core=True),
             "sources": SOURCES,
             "display_selector": False,
         }
@@ -133,6 +154,7 @@ def collect_qc(source_path, participant):
             file_path = root / file
             rel_path = file_path.relative_to(qc_dir)
             qc.append(rel_path)
+    qc = natsorted(qc)
     return qc
 
 
@@ -186,12 +208,32 @@ def qc_to_tree(qcs):
 
 
 async def participant_steps_fragment(request):
+    source = request.query_params["source"]
+    participant = request.query_params["participant"]
+    source_path = Path(SOURCES[source])
+    steps = get_steps_for_participant(source_path, participant)
+    context = {
+        "steps": steps,
+        "view": "steps",
+    }
+    if "step" in request.query_params:
+        steps_dict = dict(steps)
+        step = request.query_params["step"]
+        step = int(step)
+        if step not in steps_dict:
+            raise HTTPException(status_code=404, detail="Step not found")
+        step_full = steps_dict[step]
+        path = step_full / (participant + ".set")
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Path not found")
+        eeg = read_eeglab(path)
+        fig = eeg.plot(show=False)
+        context["eeg_fig"] = figure_html(request.app, fig)
+        context["current_step"] = step
     return templates.TemplateResponse(
         request,
         'participant_steps.html',
-        context={
-            "view": "steps",
-        }
+        context=context,
     )
 
 
@@ -277,6 +319,7 @@ async def participant_overview_fragment(request):
     source_path = Path(SOURCES[source])
     logs = collect_logs(source_path, participant)
     qc = collect_qc(source_path, participant)
+    steps = collect_steps(source_path)
     return templates.TemplateResponse(
         request,
         'participant_overview.html',
@@ -321,6 +364,7 @@ async def participant_log(request):
 
 app = Starlette(debug=True, routes=[
     Route('/', index, name="index"),
+    Mount('/static', app=StaticFiles(directory='static'), name="static"),
     Route('/fragments/participant/selector', participant_selector, name="participant_selector"),
     Route('/fragments/participant/overview', participant_overview_fragment, name="participant_overview"),
     Route('/fragments/participant/steps', participant_steps_fragment, name="participant_steps"),
