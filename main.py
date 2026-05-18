@@ -2,6 +2,7 @@ import re
 from os import environ
 from pathlib import Path
 from mne.io import read_raw_eeglab, read_epochs_eeglab
+from mne import BaseEpochs
 import tomlkit
 from natsort import natsorted
 
@@ -210,11 +211,14 @@ def qc_to_tree(qcs):
 async def participant_steps_fragment(request):
     source = request.query_params["source"]
     participant = request.query_params["participant"]
+    yaxis = request.query_params.get("yaxis", "overdraw")
     source_path = Path(SOURCES[source])
     steps = get_steps_for_participant(source_path, participant)
     context = {
         "steps": steps,
         "view": "steps",
+        "yaxis": yaxis,
+        "yaxis_options": []
     }
     if "step" in request.query_params:
         steps_dict = dict(steps)
@@ -227,7 +231,20 @@ async def participant_steps_fragment(request):
         if not path.exists():
             raise HTTPException(status_code=404, detail="Path not found")
         eeg = read_eeglab(path)
-        fig = eeg.plot(show=False)
+        if yaxis == "normalize":
+            scalings = "auto"
+        else:
+            scalings = None
+        context["yaxis_options"].extend(["overdraw", "normalize"])
+        if isinstance(eeg, BaseEpochs):
+            fig = eeg.plot(show=False, scalings=scalings)
+        else:
+            context["yaxis_options"].append("clamp")
+            if yaxis == "clip":
+                clipping = "clamp"
+            else:
+                clipping = None
+            fig = eeg.plot(show=False, scalings=scalings, clipping=clipping)
         context["eeg_fig"] = figure_html(request.app, fig)
         context["current_step"] = step
     return templates.TemplateResponse(

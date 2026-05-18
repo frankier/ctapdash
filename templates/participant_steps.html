@@ -10,7 +10,7 @@
                 hx-get="{{ url_for('participant_steps') }}"
                 hx-target="#viewer"
                 hx-swap="outerHTML"
-                hx-include="#source-select, #participant-select"
+                hx-include="#source-select, #participant-select, #yaxis-select"
                 hx-indicator="#spinner"
                 class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                 <option
@@ -26,6 +26,26 @@
                 {% endfor %}
             </select>
         </div>
+        {% if yaxis_options %}
+            <div class="text-nowrap">
+                Y-axis:
+                <select
+                    name="yaxis"
+                    id="yaxis-select"
+                    hx-get="{{ url_for('participant_steps') }}"
+                    hx-target="#viewer"
+                    hx-swap="outerHTML"
+                    hx-include="#source-select, #participant-select, #step-select"
+                    hx-indicator="#spinner"
+                    class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
+                    {% for option in yaxis_options %}
+                        <option
+                            {% if yaxis == option %}selected{% endif %}
+                            value="{{ option }}">{{ option.title() }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        {% endif %}
     </div>
     <div class="m-4">
         <div id="mpl-warnings"></div>
