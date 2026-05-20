@@ -1,8 +1,12 @@
-{% extends "participant_base.html" %}
+{% if request.state['htmx'] %}
+    {% extends "participant_fragment_base.html" %}
+{% else %}
+    {% extends "participant_base.html" %}
+{% endif %}
 
-{% block content %}
+{% block participant_view_content %}
     <div class="m-4">
-        <h3 class="text-xl my-2 mt-4">Steps</h3>
+        <h3 class="text-xl my-2 mt-4">Steps {{ request.htmx }}</h3>
         <ul>
             {% for step_num, step in steps %}
                 <li>

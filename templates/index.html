@@ -4,22 +4,7 @@
 
 {% block content %}
     <div class="p-2 bg-slate-100 flex flex-wrap w-full">
-        <div class="text-nowrap mx-4">
-            Dataset: 
-            <select
-                name="source"
-                id="source-select"
-                hx-get="/fragments/participant/selector"
-                hx-target="#participant-select-container"
-                hx-swap="outerHTML"
-                hx-trigger="load, change"
-                class="mx-4 my-2 rounded-md border border-black p-1 bg-white">
-                <option value="" selected>--- Please choose an option ---</option>
-                {% for name, directory in sources.items() %}
-                    <option value="{{ name }}">{{ directory }}</option>
-                {% endfor %}
-            </select>
-        </div>
+        {% include "dataset_select_fragment.html" %}
         {% include "participant_select_fragment.html" %}
     </div>
     <div class="flex" id="viewer">

@@ -7,8 +7,10 @@ import tomlkit
 from natsort import natsorted
 import matplotlib as mpl
 
+from starlette_htmx.middleware import HtmxMiddleware
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
+from starlette.middleware import Middleware
 from starlette.responses import HTMLResponse
 from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
@@ -42,7 +44,18 @@ def webagg_context(request):
     }
 
 
-templates = Jinja2Templates(directory="templates", context_processors=[webagg_context])
+def sources_context(request):
+    ctx = {
+        "sources": SOURCES,
+    }
+    participant = request.query_params.get("participant")
+    if participant:
+        ctx["participant"] = participant
+        ctx.update(participant_selector_ctx(request))
+    return ctx
+
+
+templates = Jinja2Templates(directory="templates", context_processors=[webagg_context, sources_context])
 
 
 def read_eeglab(path):
@@ -118,7 +131,7 @@ async def index(request):
     )
 
 
-async def participant_selector(request):
+def participant_selector_ctx(request):
     source = request.query_params["source"]
     context = {}
     if source == "":
@@ -127,10 +140,14 @@ async def participant_selector(request):
         context["display_selector"] = True
         source_path = Path(SOURCES[source])
         context.update(collect_steps(source_path))
+    return context
+
+
+async def participant_selector(request):
     return templates.TemplateResponse(
         request,
         'participant_select_fragment.html',
-        context=context
+        context=participant_selector_ctx(request)
     )
 
 
@@ -356,39 +373,38 @@ async def participant_log(request):
     participant = request.query_params["participant"]
     source_path = Path(SOURCES[source])
     logs = collect_logs(source_path, participant)
+    ctx = {
+        "view": "logs",
+        "logs": logs,
+    }
     if "log" in request.query_params:
         log = request.query_params["log"]
         log_path = source_path / log
         with open(log_path) as f:
             content = f.read()
-        return templates.TemplateResponse(
-            request,
-            'participant_log.html',
-            context={
-                "view": "logs",
-                "logs": logs,
-                "current_log_file": log,
-                "content": content,
-            }
-        )
-    else:
-        return templates.TemplateResponse(
-            request,
-            'participant_log.html',
-            context={
-                "view": "logs",
-                "logs": logs,
-            }
-        )
+        ctx.update({
+            "current_log_file": log,
+            "content": content,
+        })
+    return templates.TemplateResponse(
+        request,
+        'participant_log.html',
+        context=ctx
+    )
 
 
-app = Starlette(debug=True, routes=[
-    Route('/', index, name="index"),
-    Mount('/static', app=StaticFiles(directory='static'), name="static"),
-    Route('/fragments/participant/selector', participant_selector, name="participant_selector"),
-    Route('/fragments/participant/overview', participant_overview_fragment, name="participant_overview"),
-    Route('/fragments/participant/steps', participant_steps_fragment, name="participant_steps"),
-    Route('/fragments/participant/peeks', participant_peeks_fragment, name="participant_peeks"),
-    Route('/fragments/participant/log', participant_log, name="participant_log"),
-    Mount("/webagg", app=get_webagg_app(), name="webagg"),
-], lifespan=composed_lifespan())
+app = Starlette(
+    debug=True,
+    routes=[
+        Route('/', index, name="index"),
+        Mount('/static', app=StaticFiles(directory='static'), name="static"),
+        Route('/participant/selector', participant_selector, name="participant_selector"),
+        Route('/participant/overview', participant_overview_fragment, name="participant_overview"),
+        Route('/participant/steps', participant_steps_fragment, name="participant_steps"),
+        Route('/participant/peeks', participant_peeks_fragment, name="participant_peeks"),
+        Route('/participant/log', participant_log, name="participant_log"),
+        Mount("/webagg", app=get_webagg_app(), name="webagg"),
+    ],
+    lifespan=composed_lifespan(),
+    middleware=[Middleware(HtmxMiddleware)]
+)

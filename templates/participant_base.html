@@ -1,60 +1,18 @@
-<div id="viewer"
-    {% if view == 'peeks' and qc_type == 'eeg' %}
-        x-data='{show_scalp: true}'
-    {% endif %}
->
-    <div class="bg-slate-400 flex flex-wrap w-full">
-        <div class="text-nowrap px-4 py-2
-            {% if view == 'overview' %}bg-slate-300{% endif %}
-        ">
-            <a
-                href="#"
-                hx-get="{{ url_for("participant_overview") }}"
-                hx-include="#source-select, #participant-select"
-                hx-target="#viewer"
-                hx-swap="outerHTML">
-                Overview
-            </a>
-        </div>
-        <div class="text-nowrap px-4 py-2
-            {% if view == 'steps' %}bg-slate-300{% endif %}
-        ">
-            <a
-                href="#"
-                hx-get="{{ url_for("participant_steps") }}"
-                hx-include="#source-select, #participant-select"
-                hx-target="#viewer"
-                hx-swap="outerHTML">
-                Steps (onionskin)
-            </a>
-        </div>
-        <div class="
-            text-nowrap px-4 py-2
-            {% if view == 'peeks' %}bg-slate-300{% endif %}
-        ">
-            <a
-                href="#"
-                hx-get="{{ url_for("participant_peeks") }}"
-                hx-include="#source-select, #participant-select"
-                hx-target="#viewer"
-                hx-swap="outerHTML">
-                Quality control (peeks)
-            </a>
-        </div>
-        <div
-            class="
-                text-nowrap px-4 py-2
-                {% if view == 'logs' %}bg-slate-300{% endif %}
-            ">
-            <a
-                href="#"
-                hx-get="{{ url_for("participant_log") }}"
-                hx-include="#source-select, #participant-select"
-                hx-target="#viewer"
-                hx-swap="outerHTML">
-                Logs
-            </a>
-        </div>
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+    <div class="p-2 bg-slate-100 flex flex-wrap w-full">
+        {% include "dataset_select_fragment.html" %}
+        {% include "participant_select_fragment.html" %}
     </div>
-    {% block content %}{% endblock %}
-</div>
+    <div id="viewer"
+        {% if view == 'peeks' and qc_type == 'eeg' %}
+            x-data='{show_scalp: true}'
+        {% endif %}
+    >
+        {% include "participant_views_fragment.html" %}
+        {% block participant_view_content %}{% endblock %}
+    </div>
+{% endblock %}

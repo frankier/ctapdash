@@ -6,7 +6,7 @@
                 <select
                     name="participant"
                     id="participant-select"
-                    hx-get="/fragments/participant"
+                    hx-get="{{ url_for('participant_overview') }}"
                     hx-target="#viewer"
                     hx-include="#view-selector, #source-select"
                     class="mt-1 inline-block mt-1 rounded-md border border-black p-1 bg-white">
@@ -22,7 +22,7 @@
                 <select
                     name="step"
                     id="step-select"
-                    hx-get="/fragments/step"
+                    hx-get="{{ url_for('participant_steps') }}"
                     hx-target="#viewer"
                     hx-include="#view-selector, #source-select"
                     class="mt-1 inline-block mt-1 rounded-md border border-black p-1 bg-white">
@@ -38,7 +38,7 @@
                 <select
                     name="log"
                     id="log-select"
-                    hx-get="/fragments/log"
+                    hx-get="{{ url_for('participant_log') }}"
                     hx-target="#viewer"
                     hx-include="#view-selector, #source-select"
                     class="mt-1 inline-block mt-1 rounded-md border border-black p-1 bg-white">

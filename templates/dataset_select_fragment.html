@@ -1,0 +1,16 @@
+<div class="text-nowrap mx-4">
+    Dataset: 
+    <select
+        name="source"
+        id="source-select"
+        hx-get="{{ url_for('participant_selector') }}"
+        hx-target="#participant-select-container"
+        hx-swap="outerHTML"
+        hx-trigger="load, change"
+        class="mx-4 my-2 rounded-md border border-black p-1 bg-white">
+        <option value="" selected>--- Please choose an option ---</option>
+        {% for name, directory in sources.items() %}
+            <option value="{{ name }}">{{ directory }}</option>
+        {% endfor %}
+    </select>
+</div>

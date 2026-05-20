@@ -17,6 +17,19 @@
         }
     }
     </style>
+    <script>
+    // https://github.com/bigskysoftware/htmx/issues/2156#issuecomment-1968042842
+    htmx.defineExtension('push-url-w-params', {
+        onEvent : function(name, e) {
+            if (name === "htmx:configRequest") {
+                const path = e.target.getAttribute('data-push-url')
+                const params = new URLSearchParams(e.detail.parameters).toString()
+                const url = `${window.location.origin}${path}?${params}`
+                window.history.pushState({}, '', url);
+            }
+        }
+    })
+    </script>
     {% block extra_head %}{% endblock %}
 </head>
 <body class="min-h-screen relative" {% block body_attrs %}{% endblock %}>

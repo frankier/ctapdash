@@ -4,14 +4,21 @@
         <select
             name="participant"
             id="participant-select"
-            hx-get="/fragments/participant/overview"
+            hx-get="{{ url_for('participant_overview') }}"
+            hx-push-url="true"
             hx-target="#viewer"
             hx-swap="outerHTML"
             hx-include="#source-select"
             class="mx-4 my-2 rounded-md border border-black p-1 bg-white">
-            <option value="" selected>--- Please choose an option ---</option>
-            {% for participant, count in participants %}
-                <option value="{{ participant }}">{{ participant }} [{{ count }}]</option>
+            <option
+                value=""
+                {% if not participant %}selected{% endif %}
+            >--- Please choose an option ---</option>
+            {% for some_participant, count in participants %}
+                <option
+                    value="{{ some_participant }}"
+                    {% if participant == some_participant %}selected{% endif %}
+                >{{ some_participant }} [{{ count }}]</option>
             {% endfor %}
         </select>
     {% endif %}

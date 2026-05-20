@@ -1,0 +1,8 @@
+<div id="viewer"
+    {% if view == 'peeks' and qc_type == 'eeg' %}
+        x-data='{show_scalp: true}'
+    {% endif %}
+>
+    {% include "participant_views_fragment.html" %}
+    {% block participant_view_content %}{% endblock %}
+</div>

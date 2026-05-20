@@ -1,6 +1,10 @@
-{% extends "participant_base.html" %}
+{% if request.state['htmx'] %}
+    {% extends "participant_fragment_base.html" %}
+{% else %}
+    {% extends "participant_base.html" %}
+{% endif %}
 
-{% block content %}
+{% block participant_view_content %}
     <div class="p-2 bg-slate-100 flex flex-wrap w-full">
         <div class="text-nowrap">
             Log file:
@@ -8,6 +12,8 @@
                 name="log"
                 id="log-select"
                 hx-get="{{ url_for('participant_log') }}"
+                hx-ext="push-url-w-params"
+                data-push-url="{{ url_for('participant_log') }}"
                 hx-target="#viewer"
                 hx-swap="outerHTML"
                 hx-include="#source-select, #participant-select"
