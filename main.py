@@ -5,6 +5,7 @@ from mne.io import read_raw_eeglab, read_epochs_eeglab
 from mne import BaseEpochs
 import tomlkit
 from natsort import natsorted
+import matplotlib as mpl
 
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
@@ -21,6 +22,7 @@ SCALP_REGEX = re.compile("(?P<stem>[^-]+)-badChan-scalp.png")
 CH_REGEX = re.compile("(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
 
 
+mpl.use('webagg')
 perform_monkeypatch()
 
 with open(environ["CTAPDASH_SETTINGS"]) as f:
