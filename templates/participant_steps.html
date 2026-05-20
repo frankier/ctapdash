@@ -5,8 +5,8 @@
 {% endif %}
 
 {% block participant_view_content %}
-    <div class="p-2 bg-slate-100 flex flex-wrap w-full">
-        <div class="text-nowrap">
+    <div class="p-2 bg-slate-100 flex items-center flex-wrap w-full">
+        <div class="text-nowrap mx-4">
             Step:
             <select
                 name="step"
@@ -16,7 +16,7 @@
                 data-push-url="{{ url_for('participant_steps') }}"
                 hx-target="#viewer"
                 hx-swap="outerHTML"
-                hx-include="#source-select, #participant-select, #yaxis-select"
+                hx-include="#source-select, #participant-select, #yaxis-select, #onionskin-checkbox"
                 hx-indicator="#spinner"
                 class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                 <option
@@ -43,7 +43,7 @@
                     data-push-url="{{ url_for('participant_steps') }}"
                     hx-target="#viewer"
                     hx-swap="outerHTML"
-                    hx-include="#source-select, #participant-select, #step-select"
+                    hx-include="#source-select, #participant-select, #step-select, #onionskin-checkbox"
                     hx-indicator="#spinner"
                     class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                     {% for option in yaxis_options %}
@@ -52,6 +52,26 @@
                             value="{{ option }}">{{ option.title() }}</option>
                     {% endfor %}
                 </select>
+            </div>
+        {% endif %}
+        {% if has_prev %}
+            <div class="text-nowrap mx-4">
+                <input
+                    name="onionskin"
+                    id="onionskin-checkbox"
+                    type="checkbox"
+                    value="onionskin"
+                    hx-get="{{ url_for('participant_steps') }}"
+                    hx-ext="push-url-w-params"
+                    data-push-url="{{ url_for('participant_steps') }}"
+                    hx-target="#viewer"
+                    hx-swap="outerHTML"
+                    hx-include="#source-select, #participant-select, #step-select, #yaxis-select"
+                    hx-indicator="#spinner"
+                    class="inline-block p-1"
+                    {% if onionskin %}checked{% endif %}
+                >
+                Onionskin
             </div>
         {% endif %}
     </div>

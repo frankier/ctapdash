@@ -16,6 +16,7 @@ from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.plots import set_onionskin_eeg, perform_monkeypatch
+from ctapdash.middleware import GlobalRequestMiddleware
 from starlette_webagg import get_head_content, get_app as get_webagg_app, figure_html
 from starlette_webagg.utils import composed_lifespan
 
@@ -48,10 +49,16 @@ def sources_context(request):
     ctx = {
         "sources": SOURCES,
     }
+    source = request.query_params.get("source", "")
+    ctx["source"] = source
+    if source:
+        source_path = Path(SOURCES[source])
+        ctx.update(collect_steps(source_path))
     participant = request.query_params.get("participant")
-    if participant:
+    if participant is not None:
         ctx["participant"] = participant
-        ctx.update(participant_selector_ctx(request))
+    if source and participant:
+        ctx["source_participant_qs"] = f"?source={source}&participant={participant}"
     return ctx
 
 
@@ -126,28 +133,7 @@ async def index(request):
         'index.html',
         context={
             "sources": SOURCES,
-            "display_selector": False,
         }
-    )
-
-
-def participant_selector_ctx(request):
-    source = request.query_params["source"]
-    context = {}
-    if source == "":
-        context["display_selector"] = False
-    else:
-        context["display_selector"] = True
-        source_path = Path(SOURCES[source])
-        context.update(collect_steps(source_path))
-    return context
-
-
-async def participant_selector(request):
-    return templates.TemplateResponse(
-        request,
-        'participant_select_fragment.html',
-        context=participant_selector_ctx(request)
     )
 
 
@@ -239,17 +225,30 @@ async def participant_steps_fragment(request):
         "yaxis": yaxis,
         "yaxis_options": []
     }
-    if "step" in request.query_params:
+    step = request.query_params.get("step", "")
+    if step:
         steps_dict = dict(steps)
-        step = request.query_params["step"]
-        step = int(step)
+        try:
+            step = int(step)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Step must be integer")
         if step not in steps_dict:
             raise HTTPException(status_code=404, detail="Step not found")
+        has_prev = (step - 1) in steps_dict
+        context["has_prev"] = has_prev
+        onionskin = has_prev and request.query_params.get("onionskin") == "onionskin"
+        context["onionskin"] = onionskin
         step_full = steps_dict[step]
         path = step_full / (participant + ".set")
         if not path.exists():
             raise HTTPException(status_code=404, detail="Path not found")
         eeg = read_eeglab(path)
+        if onionskin:
+            path = steps_dict[step - 1] / (participant + ".set")
+            if not path.exists():
+                raise HTTPException(status_code=404, detail="Path not found")
+            prev_eeg = read_eeglab(path)
+            set_onionskin_eeg(prev_eeg)
         if yaxis == "normalize":
             scalings = "auto"
         else:
@@ -398,7 +397,6 @@ app = Starlette(
     routes=[
         Route('/', index, name="index"),
         Mount('/static', app=StaticFiles(directory='static'), name="static"),
-        Route('/participant/selector', participant_selector, name="participant_selector"),
         Route('/participant/overview', participant_overview_fragment, name="participant_overview"),
         Route('/participant/steps', participant_steps_fragment, name="participant_steps"),
         Route('/participant/peeks', participant_peeks_fragment, name="participant_peeks"),
@@ -406,5 +404,5 @@ app = Starlette(
         Mount("/webagg", app=get_webagg_app(), name="webagg"),
     ],
     lifespan=composed_lifespan(),
-    middleware=[Middleware(HtmxMiddleware)]
+    middleware=[Middleware(HtmxMiddleware), Middleware(GlobalRequestMiddleware)]
 )

@@ -24,11 +24,16 @@
             if (name === "htmx:configRequest") {
                 const path = e.target.getAttribute('data-push-url')
                 const params = new URLSearchParams(e.detail.parameters).toString()
-                const url = `${window.location.origin}${path}?${params}`
+                let url;
+                if (path.indexOf("://") == -1) {
+                    url = `${window.location.origin}${path}?${params}`
+                } else {
+                    url = `${path}?${params}`
+                }
                 window.history.pushState({}, '', url);
             }
         }
-    })
+    });
     </script>
     {% block extra_head %}{% endblock %}
 </head>
@@ -41,7 +46,9 @@
             Dataset comparison
         </div>
     </div>
-    {% block content %}{% endblock %}
+    <div id="content">
+        {% block content %}{% endblock %}
+    </div>
     <div id="spinner" class="htmx-indicator fixed inset-0 place-self-center p-20 bg-white z-50 drop-shadow-xl">
         <img
             src="/static/img/flask.gif"

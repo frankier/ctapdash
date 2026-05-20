@@ -1,4 +1,8 @@
-{% extends "base.html" %}
+{% if request.state['htmx'] %}
+    {% extends "base_fragment.html" %}
+{% else %}
+    {% extends "base.html" %}
+{% endif %}
 
 {% block title %}Home{% endblock %}
 

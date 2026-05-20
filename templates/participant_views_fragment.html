@@ -3,7 +3,7 @@
         {% if view == 'overview' %}bg-slate-300{% endif %}
     ">
         <a
-            href="{{ url_for("participant_overview") }}"
+            href="{{ url_for("participant_overview") }}{{ source_participant_qs }}"
             hx-get="{{ url_for("participant_overview") }}"
             hx-push-url="true"
             hx-include="#source-select, #participant-select"
@@ -16,7 +16,7 @@
         {% if view == 'steps' %}bg-slate-300{% endif %}
     ">
         <a
-            href="{{ url_for("participant_steps") }}"
+            href="{{ url_for("participant_steps") }}{{ source_participant_qs }}"
             hx-get="{{ url_for("participant_steps") }}"
             hx-push-url="true"
             hx-include="#source-select, #participant-select"
@@ -30,7 +30,7 @@
         {% if view == 'peeks' %}bg-slate-300{% endif %}
     ">
         <a
-            href="{{ url_for("participant_peeks") }}"
+            href="{{ url_for("participant_peeks") }}{{ source_participant_qs }}"
             hx-get="{{ url_for("participant_peeks") }}"
             hx-push-url="true"
             hx-include="#source-select, #participant-select"
@@ -45,7 +45,7 @@
             {% if view == 'logs' %}bg-slate-300{% endif %}
         ">
         <a
-            href="{{ url_for("participant_log") }}"
+            href="{{ url_for("participant_log") }}{{ source_participant_qs }}"
             hx-get="{{ url_for("participant_log") }}"
             hx-push-url="true"
             hx-include="#source-select, #participant-select"

@@ -1,9 +1,9 @@
-onionskin_eeg = None
+from ctapdash.middleware import get_current_request
 
 
 def set_onionskin_eeg(eeg):
-    global onionskin_eeg
-    onionskin_eeg = eeg
+    request = get_current_request()
+    request.state["onionskin_eeg"] = eeg
 
 
 def perform_monkeypatch():
@@ -24,9 +24,11 @@ def perform_monkeypatch():
             from mne.io.base import BaseRaw
             import numpy as np
             super()._update_data()
-            if onionskin_eeg is None:
+            request = get_current_request()
+            if "onionskin_eeg" not in request.state:
                 self.mne.onionskin_data = None
                 return
+            onionskin_eeg = request.state["onionskin_eeg"]
             start, stop = self._get_start_stop()
             if isinstance(onionskin_eeg, BaseRaw):
                 if stop is None:

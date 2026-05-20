@@ -12,7 +12,7 @@
                 <li>
                     <a
                         class="text-blue-800 hover:underline"
-                        href="#"
+                        href="{{ url_for('participant_steps') }}{{ source_participant_qs }}"
                         hx-get="{{ url_for('participant_steps') }}"
                         hx-include="#source-select, #participant-select"
                         hx-target="#viewer"
@@ -30,7 +30,7 @@
                 <li>
                     <a
                         class="text-blue-800 hover:underline"
-                        href="#"
+                        href="{{ url_for('participant_peeks') }}{{ source_participant_qs }}"
                         hx-get="{{ url_for('participant_peeks') }}"
                         hx-include="#source-select, #participant-select"
                         hx-target="#viewer"
@@ -47,7 +47,7 @@
                 <li>
                     <a
                         class="text-blue-800 hover:underline"
-                        href="#"
+                        href="{{ url_for('participant_log') }}{{ source_participant_qs }}"
                         hx-get="{{ url_for('participant_log') }}"
                         hx-include="#source-select, #participant-select"
                         hx-target="#viewer"
