@@ -17,9 +17,9 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.plots import set_onionskin_eeg, perform_monkeypatch
 from ctapdash.middleware import GlobalRequestMiddleware
-from starlette_webagg import get_head_content, get_app as get_webagg_app, figure_html, use_backend
-from starlette_webagg.middleware import lifespan as webagg_lifespan
-from starlette_webagg.utils import composed_lifespan
+from mplbed import get_head_content, get_app as get_webagg_app, figure_html, use_backend
+from mplbed.middleware import lifespan as webagg_lifespan
+from mplbed.utils import composed_lifespan
 
 
 SCALP_REGEX = re.compile("(?P<stem>[^-]+)-badChan-scalp.png")
