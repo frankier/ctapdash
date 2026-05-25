@@ -25,6 +25,8 @@ def perform_monkeypatch():
             import numpy as np
             super()._update_data()
             request = get_current_request()
+            if not request:
+                return
             if "onionskin_eeg" not in request.state:
                 self.mne.onionskin_data = None
                 return

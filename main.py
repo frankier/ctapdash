@@ -17,7 +17,8 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.plots import set_onionskin_eeg, perform_monkeypatch
 from ctapdash.middleware import GlobalRequestMiddleware
-from starlette_webagg import get_head_content, get_app as get_webagg_app, figure_html
+from starlette_webagg import get_head_content, get_app as get_webagg_app, figure_html, use_backend
+from starlette_webagg.middleware import lifespan as webagg_lifespan
 from starlette_webagg.utils import composed_lifespan
 
 
@@ -25,7 +26,7 @@ SCALP_REGEX = re.compile("(?P<stem>[^-]+)-badChan-scalp.png")
 CH_REGEX = re.compile("(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
 
 
-mpl.use('webagg')
+use_backend()
 perform_monkeypatch()
 
 with open(environ["CTAPDASH_SETTINGS"]) as f:
@@ -41,7 +42,7 @@ SOURCES = load_sources()
 
 def webagg_context(request):
     return {
-        'head_webagg': get_head_content(request, core=True),
+        'head_webagg': get_head_content(core=True),
     }
 
 
@@ -263,7 +264,7 @@ async def participant_steps_fragment(request):
             else:
                 clipping = None
             fig = eeg.plot(show=False, scalings=scalings, clipping=clipping)
-        context["eeg_fig"] = figure_html(request.app, fig)
+        context["eeg_fig"] = figure_html(fig, on_close="msg_disable")
         context["current_step"] = step
     return templates.TemplateResponse(
         request,
@@ -403,6 +404,6 @@ app = Starlette(
         Route('/participant/log', participant_log, name="participant_log"),
         Mount("/webagg", app=get_webagg_app(), name="webagg"),
     ],
-    lifespan=composed_lifespan(),
+    lifespan=composed_lifespan(webagg_lifespan),
     middleware=[Middleware(HtmxMiddleware), Middleware(GlobalRequestMiddleware)]
 )
