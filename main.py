@@ -1,7 +1,6 @@
 import re
 from os import environ
 from pathlib import Path
-from mne.io import read_raw_eeglab, read_epochs_eeglab
 from mne import BaseEpochs
 import tomlkit
 from natsort import natsorted
@@ -15,6 +14,7 @@ from starlette.responses import HTMLResponse
 from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
+from ctapdash.io import read_eeglab
 from ctapdash.plots import set_onionskin_eeg, perform_monkeypatch
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import get_head_content, get_app as get_webagg_app, figure_html, use_backend
@@ -66,15 +66,6 @@ def sources_context(request):
 templates = Jinja2Templates(directory="templates", context_processors=[webagg_context, sources_context])
 
 
-def read_eeglab(path):
-    import warnings
-    with warnings.catch_warnings(action="ignore"):
-        try:
-            return read_epochs_eeglab(path)
-        except ValueError:
-            return read_raw_eeglab(path, preload=True)
-
-
 def get_steps_for_participant(root_path, participant):
     steps = []
     for subdir in root_path.iterdir():
@@ -87,20 +78,6 @@ def get_steps_for_participant(root_path, participant):
         steps.append((step_num, subdir))
     steps = natsorted(steps)
     return steps
-
-
-def read_eegs(root_path, participant, steps):
-    eegs = []
-    step_num_to_eeg_idx = {}
-    for eeg_idx, (step_num, step) in enumerate(steps):
-        path = root_path / step / (participant + ".set")
-        if not path.exists():
-            print(f"Not found: {path}")
-            continue
-        eeg = read_eeglab(path)
-        eegs.append(eeg)
-        step_num_to_eeg_idx[step_num] = eeg_idx
-    return eegs, step_num_to_eeg_idx
 
 
 def collect_steps(root_path):
