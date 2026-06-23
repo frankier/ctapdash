@@ -5,19 +5,21 @@
 {% endif %}
 
 {% block participant_view_content %}
-    <div class="p-2 bg-slate-100 flex items-center flex-wrap w-full">
+    <form id="steps-form"
+          class="p-2 bg-slate-100 flex items-center flex-wrap w-full"
+          hx-get="{{ url_for('participant_steps') }}"
+          hx-ext="push-url-w-params"
+          data-push-url="{{ url_for('participant_steps') }}"
+          hx-target="#viewer"
+          hx-trigger="change"
+          hx-include="#source-select, #participant-select"
+          hx-swap="outerHTML"
+          hx-indicator="#spinner">
         <div class="text-nowrap mx-4">
             Step:
             <select
                 name="step"
                 id="step-select"
-                hx-get="{{ url_for('participant_steps') }}"
-                hx-ext="push-url-w-params"
-                data-push-url="{{ url_for('participant_steps') }}"
-                hx-target="#viewer"
-                hx-swap="outerHTML"
-                hx-include="#source-select, #participant-select, #yaxis-select, #onionskin-checkbox"
-                hx-indicator="#spinner"
                 class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                 <option
                     value=""
@@ -38,13 +40,6 @@
                 <select
                     name="yaxis"
                     id="yaxis-select"
-                    hx-get="{{ url_for('participant_steps') }}"
-                    hx-ext="push-url-w-params"
-                    data-push-url="{{ url_for('participant_steps') }}"
-                    hx-target="#viewer"
-                    hx-swap="outerHTML"
-                    hx-include="#source-select, #participant-select, #step-select, #onionskin-checkbox"
-                    hx-indicator="#spinner"
                     class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                     {% for option in yaxis_options %}
                         <option
@@ -61,20 +56,13 @@
                     id="onionskin-checkbox"
                     type="checkbox"
                     value="onionskin"
-                    hx-get="{{ url_for('participant_steps') }}"
-                    hx-ext="push-url-w-params"
-                    data-push-url="{{ url_for('participant_steps') }}"
-                    hx-target="#viewer"
-                    hx-swap="outerHTML"
-                    hx-include="#source-select, #participant-select, #step-select, #yaxis-select"
-                    hx-indicator="#spinner"
                     class="inline-block p-1"
                     {% if onionskin %}checked{% endif %}
                 >
                 Onionskin
             </div>
         {% endif %}
-    </div>
+    </form>
     <div class="m-4">
         <div id="mpl-warnings"></div>
         {{ eeg_fig|safe }}
