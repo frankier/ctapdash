@@ -15,7 +15,7 @@ from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.io import read_eeglab
-from ctapdash.plots import set_onionskin_eeg, perform_monkeypatch
+from ctapdash.plots import set_onionskin_eeg, OnionskinMNEBrowseFigure
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import get_head_content, get_app as get_webagg_app, figure_html, use_backend
 from mplbed.middleware import lifespan as webagg_lifespan
@@ -27,7 +27,6 @@ CH_REGEX = re.compile("(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).p
 
 
 use_backend()
-perform_monkeypatch()
 
 with open(environ["CTAPDASH_SETTINGS"]) as f:
     SETTINGS = tomlkit.parse(f.read())
@@ -233,14 +232,14 @@ async def participant_steps_fragment(request):
             scalings = None
         context["yaxis_options"].extend(["overdraw", "normalize"])
         if isinstance(eeg, BaseEpochs):
-            fig = eeg.plot(show=False, scalings=scalings)
+            fig = eeg.plot(show=False, scalings=scalings, FigureClass=OnionskinMNEBrowseFigure)
         else:
             context["yaxis_options"].append("clamp")
             if yaxis == "clip":
                 clipping = "clamp"
             else:
                 clipping = None
-            fig = eeg.plot(show=False, scalings=scalings, clipping=clipping)
+            fig = eeg.plot(show=False, scalings=scalings, clipping=clipping, FigureClass=OnionskinMNEBrowseFigure)
         context["eeg_fig"] = figure_html(fig, on_close="msg_disable")
         context["current_step"] = step
     return templates.TemplateResponse(
