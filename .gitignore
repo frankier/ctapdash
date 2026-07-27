@@ -11,3 +11,7 @@ wheels/
 
 # Marimo
 /__marimo__/
+
+# Config file
+/.envrc
+/conf.toml
