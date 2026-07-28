@@ -1,0 +1,105 @@
+{% if request.state['htmx'] %}
+    {% extends "base_fragment.html" %}
+{% else %}
+    {% extends "base.html" %}
+{% endif %}
+
+{% block title %}Set up{% endblock %}
+
+{% block content %}
+<div id="setup" class="max-w-3xl mx-auto p-8">
+    <h1 class="text-2xl small-caps tracking-wider mb-2">Data sources</h1>
+    <p class="text-slate-600 mb-6">
+        Point the dashboard at one or more CTAP output directories (the folder
+        containing the numbered step directories).
+    </p>
+
+    {% if error %}
+        <div class="mb-4 p-3 rounded-md bg-red-100 border border-red-400">{{ error }}</div>
+    {% endif %}
+    {% if saved_to %}
+        <div class="mb-4 p-3 rounded-md bg-green-100 border border-green-400">
+            Saved to <code>{{ saved_to }}</code>. Next time, start the dashboard with
+            <code>--config {{ saved_to }}</code> to load it automatically.
+        </div>
+    {% endif %}
+
+    {% if sources %}
+        <table class="w-full mb-6 border border-slate-300">
+            <thead class="bg-slate-100">
+                <tr><th class="text-left p-2">Name</th><th class="text-left p-2">Directory</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for name, directory in sources.items() %}
+                    <tr class="border-t border-slate-300">
+                        <td class="p-2 font-mono">{{ name }}</td>
+                        <td class="p-2 font-mono text-sm">{{ directory }}</td>
+                        <td class="p-2 text-right">
+                            <form hx-post="{{ url_for('setup_remove') }}" hx-target="#setup" hx-swap="outerHTML">
+                                <input type="hidden" name="token" value="{{ token }}">
+                                <input type="hidden" name="name" value="{{ name }}">
+                                <button type="submit" class="text-red-700 hover:underline">Remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="mb-6 p-4 bg-slate-100 rounded-md text-slate-600">No sources configured yet.</p>
+    {% endif %}
+
+    {% if native %}
+        <form hx-post="{{ url_for('setup_pick') }}" hx-target="#setup" hx-swap="outerHTML" class="mb-6">
+            <input type="hidden" name="token" value="{{ token }}">
+            <button type="submit" class="rounded-md border border-black px-4 py-2 bg-white hover:bg-sky-100">
+                Browse&hellip;
+            </button>
+        </form>
+    {% else %}
+        <form hx-post="{{ url_for('setup_add') }}" hx-target="#setup" hx-swap="outerHTML"
+              class="mb-6 flex flex-wrap items-end gap-3">
+            <input type="hidden" name="token" value="{{ token }}">
+            <label class="flex flex-col">
+                <span class="text-sm text-slate-600">Directory</span>
+                <input name="path" required size="46"
+                       placeholder="/path/to/TAPPED"
+                       class="rounded-md border border-black p-1 bg-white font-mono">
+            </label>
+            <label class="flex flex-col">
+                <span class="text-sm text-slate-600">Name (optional)</span>
+                <input name="name" size="16" class="rounded-md border border-black p-1 bg-white">
+            </label>
+            <button type="submit" class="rounded-md border border-black px-4 py-2 bg-white hover:bg-sky-100">
+                Add source
+            </button>
+        </form>
+    {% endif %}
+
+    {% if sources %}
+        <div class="flex flex-wrap items-end gap-3 border-t border-slate-300 pt-6">
+            <a href="{{ url_for('index') }}"
+               class="rounded-md border border-black px-4 py-2 bg-white hover:bg-sky-100">
+                Open dashboard
+            </a>
+            <form hx-post="{{ url_for('setup_save') }}" hx-target="#setup" hx-swap="outerHTML"
+                  class="flex items-end gap-3">
+                <input type="hidden" name="token" value="{{ token }}">
+                {% if not native %}
+                    <label class="flex flex-col">
+                        <span class="text-sm text-slate-600">Save configuration to</span>
+                        <input name="path" required size="36" placeholder="/path/to/conf.toml"
+                               class="rounded-md border border-black p-1 bg-white font-mono">
+                    </label>
+                {% endif %}
+                <button type="submit" class="rounded-md border border-black px-4 py-2 bg-white hover:bg-sky-100">
+                    Save configuration{% if native %}&hellip;{% endif %}
+                </button>
+            </form>
+        </div>
+        <p class="mt-3 text-sm text-slate-600">
+            Sources added here are not remembered between runs unless you save them to a file.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}

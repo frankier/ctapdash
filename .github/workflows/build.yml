@@ -1,0 +1,93 @@
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+            binary: dist/ctapdash/ctapdash
+          - os: windows-latest
+            target: windows-x86_64
+            binary: dist/ctapdash/ctapdash.exe
+          - os: macos-latest
+            target: macos-arm64
+            binary: dist/CTAP Dashboard.app/Contents/MacOS/ctapdash
+          - os: macos-13
+            target: macos-x86_64
+            binary: dist/CTAP Dashboard.app/Contents/MacOS/ctapdash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --group build
+
+      - name: Build
+        run: uv run pyinstaller ctapdash.spec --noconfirm --clean
+
+      # A successful PyInstaller run proves very little: its failures are
+      # runtime missing-import failures. The self-check starts the frozen
+      # binary, serves, and forces the lazy MNE/matplotlib paths.
+      - name: Smoke test
+        shell: bash
+        run: '"${{ matrix.binary }}" --smoke-test'
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p artifacts
+          tar -czf "artifacts/ctapdash-${{ matrix.target }}.tar.gz" -C dist ctapdash
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Compress-Archive -Path dist/ctapdash -DestinationPath "artifacts/ctapdash-${{ matrix.target }}.zip"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p artifacts
+          # ditto, not zip: zip mangles the symlinks inside .app bundles.
+          ditto -c -k --keepParent "dist/CTAP Dashboard.app" "artifacts/ctapdash-${{ matrix.target }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ctapdash-${{ matrix.target }}
+          path: artifacts/*
+          if-no-files-found: error
+          # These are ~200 MB each; do not keep every branch build forever.
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/v') && 90 || 7 }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

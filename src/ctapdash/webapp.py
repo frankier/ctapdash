@@ -1,59 +1,41 @@
 import re
-from os import environ
+from importlib.resources import files
 from pathlib import Path
 from mne import BaseEpochs
-import tomlkit
 from natsort import natsorted
-import matplotlib as mpl
 
 from starlette_htmx.middleware import HtmxMiddleware
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
-from starlette.responses import HTMLResponse
 from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
+from ctapdash.config import SETTINGS
 from ctapdash.io import read_eeglab
-from ctapdash.plots import set_onionskin_eeg, perform_monkeypatch
+from ctapdash.plots import set_onionskin_eeg, OnionskinMNEBrowseFigure
 from ctapdash.middleware import GlobalRequestMiddleware
-from mplbed import get_head_content, get_app as get_webagg_app, figure_html, use_backend
-from mplbed.middleware import lifespan as webagg_lifespan
-from mplbed.utils import composed_lifespan
+from mplbed import mplbed_starlette, safe_html
 
 
 SCALP_REGEX = re.compile("(?P<stem>[^-]+)-badChan-scalp.png")
 CH_REGEX = re.compile("(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
 
-
-use_backend()
-perform_monkeypatch()
-
-with open(environ["CTAPDASH_SETTINGS"]) as f:
-    SETTINGS = tomlkit.parse(f.read())
-
-def load_sources():
-    sources_settings = SETTINGS["sources"]
-    return dict(sources_settings.items())
-
-
-SOURCES = load_sources()
-
-
-def webagg_context(request):
-    return {
-        'head_webagg': get_head_content(core=True),
-    }
+# importlib.resources works both from a normal install and from inside a
+# PyInstaller onedir bundle, where the frozen loader reports a real directory.
+_PKG = files("ctapdash")
+TEMPLATES_DIR = str(_PKG / "templates")
+STATIC_DIR = str(_PKG / "static")
 
 
 def sources_context(request):
     ctx = {
-        "sources": SOURCES,
+        "sources": SETTINGS.sources,
     }
     source = request.query_params.get("source", "")
     ctx["source"] = source
     if source:
-        source_path = Path(SOURCES[source])
+        source_path = Path(SETTINGS.sources[source])
         ctx.update(collect_steps(source_path))
     participant = request.query_params.get("participant")
     if participant is not None:
@@ -63,7 +45,7 @@ def sources_context(request):
     return ctx
 
 
-templates = Jinja2Templates(directory="templates", context_processors=[webagg_context, sources_context])
+templates = Jinja2Templates(directory=TEMPLATES_DIR, context_processors=[sources_context])
 
 
 def get_steps_for_participant(root_path, participant):
@@ -110,7 +92,7 @@ async def index(request):
         request,
         'index.html',
         context={
-            "sources": SOURCES,
+            "sources": SETTINGS.sources,
         }
     )
 
@@ -195,7 +177,7 @@ async def participant_steps_fragment(request):
     source = request.query_params["source"]
     participant = request.query_params["participant"]
     yaxis = request.query_params.get("yaxis", "overdraw")
-    source_path = Path(SOURCES[source])
+    source_path = Path(SETTINGS.sources[source])
     steps = get_steps_for_participant(source_path, participant)
     context = {
         "steps": steps,
@@ -233,15 +215,15 @@ async def participant_steps_fragment(request):
             scalings = None
         context["yaxis_options"].extend(["overdraw", "normalize"])
         if isinstance(eeg, BaseEpochs):
-            fig = eeg.plot(show=False, scalings=scalings)
+            fig = eeg.plot(show=False, scalings=scalings, FigureClass=OnionskinMNEBrowseFigure)
         else:
             context["yaxis_options"].append("clamp")
             if yaxis == "clip":
                 clipping = "clamp"
             else:
                 clipping = None
-            fig = eeg.plot(show=False, scalings=scalings, clipping=clipping)
-        context["eeg_fig"] = figure_html(fig, on_close="msg_disable")
+            fig = eeg.plot(show=False, scalings=scalings, clipping=clipping, FigureClass=OnionskinMNEBrowseFigure)
+        context["eeg_fig"] = safe_html.figure_html(fig, on_close="msg_discrete")
         context["current_step"] = step
     return templates.TemplateResponse(
         request,
@@ -250,14 +232,36 @@ async def participant_steps_fragment(request):
     )
 
 
+def trim(img):
+    """Crop away the uniform border, as ImageMagick's trim() did.
+
+    The reference colour is the top-left pixel, matching ImageMagick. Unlike
+    ImageMagick there is no fuzz tolerance, which is fine for CTAP's flat-
+    background QC plots.
+    """
+    from PIL import Image, ImageChops
+
+    if img.mode in ("RGBA", "LA"):
+        bbox = img.getchannel("A").getbbox()
+        if bbox:
+            return img.crop(bbox)
+    rgb = img.convert("RGB")
+    background = Image.new("RGB", rgb.size, rgb.getpixel((0, 0)))
+    bbox = ImageChops.difference(rgb, background).getbbox()
+    return img.crop(bbox) if bbox else img
+
+
 def encode_qc(source_path, path):
-    from wand.image import Image
+    from PIL import Image
     import base64
+    import io
 
     filename = source_path / "quality_control" / path
-    with Image(filename=filename) as img:
-        img.trim()
-        return base64.b64encode(img.make_blob("png")).decode("utf-8")
+    with Image.open(filename) as img:
+        img.load()
+        out = io.BytesIO()
+        trim(img).save(out, format="PNG")
+        return base64.b64encode(out.getvalue()).decode("utf-8")
 
 
 def map_encode_qc(source_path, val):
@@ -276,7 +280,7 @@ def map_encode_qc(source_path, val):
 async def participant_peeks_fragment(request):
     source = request.query_params["source"]
     participant = request.query_params["participant"]
-    source_path = Path(SOURCES[source])
+    source_path = Path(SETTINGS.sources[source])
     qcs = collect_qc(source_path, participant)
     tree = qc_to_tree(qcs)
     peek_param = request.query_params.get("peek")
@@ -329,7 +333,7 @@ async def participant_peeks_fragment(request):
 async def participant_overview_fragment(request):
     source = request.query_params["source"]
     participant = request.query_params["participant"]
-    source_path = Path(SOURCES[source])
+    source_path = Path(SETTINGS.sources[source])
     logs = collect_logs(source_path, participant)
     qc = collect_qc(source_path, participant)
     steps = get_steps_for_participant(source_path, participant)
@@ -348,7 +352,7 @@ async def participant_overview_fragment(request):
 async def participant_log(request):
     source = request.query_params["source"]
     participant = request.query_params["participant"]
-    source_path = Path(SOURCES[source])
+    source_path = Path(SETTINGS.sources[source])
     logs = collect_logs(source_path, participant)
     ctx = {
         "view": "logs",
@@ -370,17 +374,27 @@ async def participant_log(request):
     )
 
 
-app = Starlette(
-    debug=True,
-    routes=[
-        Route('/', index, name="index"),
-        Mount('/static', app=StaticFiles(directory='static'), name="static"),
-        Route('/participant/overview', participant_overview_fragment, name="participant_overview"),
-        Route('/participant/steps', participant_steps_fragment, name="participant_steps"),
-        Route('/participant/peeks', participant_peeks_fragment, name="participant_peeks"),
-        Route('/participant/log', participant_log, name="participant_log"),
-        Mount("/webagg", app=get_webagg_app(), name="webagg"),
-    ],
-    lifespan=composed_lifespan(webagg_lifespan),
-    middleware=[Middleware(HtmxMiddleware), Middleware(GlobalRequestMiddleware)]
-)
+def create_app(debug=False):
+    from ctapdash.setup_ui import RequireConfigMiddleware, setup_routes
+
+    app = Starlette(
+        debug=debug,
+        routes=[
+            Route('/', index, name="index"),
+            Mount('/static', app=StaticFiles(directory=STATIC_DIR), name="static"),
+            Route('/participant/overview', participant_overview_fragment, name="participant_overview"),
+            Route('/participant/steps', participant_steps_fragment, name="participant_steps"),
+            Route('/participant/peeks', participant_peeks_fragment, name="participant_peeks"),
+            Route('/participant/log', participant_log, name="participant_log"),
+            *setup_routes(),
+        ],
+        middleware=[
+            Middleware(RequireConfigMiddleware),
+            Middleware(HtmxMiddleware),
+            Middleware(GlobalRequestMiddleware),
+        ],
+    )
+    # Installs MplbedMiddleware (which does its own /webagg routing), registers
+    # the mplbed_head context processor, and selects the webaggext backend.
+    mplbed_starlette.setup(app, templates=templates, prefix="/webagg")
+    return app
