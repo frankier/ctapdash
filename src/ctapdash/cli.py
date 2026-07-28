@@ -70,6 +70,10 @@ def main(argv=None):
         # not to nothing at all.
         print(f"Could not open a native window ({err}); falling back to the browser.",
               file=sys.stderr)
+        # uvicorn closes the sockets it was handed when it shuts down, so the
+        # socket run_window used is dead by now; the fallback needs a fresh one.
+        sock.close()
+        sock = desktop.bind_socket(args.host, args.port)
         desktop.run_browser(app, sock, open_browser=not args.no_browser)
     return 0
 
