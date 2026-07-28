@@ -215,14 +215,14 @@ async def participant_steps_fragment(request):
             scalings = None
         context["yaxis_options"].extend(["overdraw", "normalize"])
         if isinstance(eeg, BaseEpochs):
-            fig = eeg.plot(show=False, scalings=scalings, FigureClass=OnionskinMNEBrowseFigure)
+            fig = eeg.plot(show=False, scalings=scalings, figure_class=OnionskinMNEBrowseFigure)
         else:
             context["yaxis_options"].append("clamp")
             if yaxis == "clip":
                 clipping = "clamp"
             else:
                 clipping = None
-            fig = eeg.plot(show=False, scalings=scalings, clipping=clipping, FigureClass=OnionskinMNEBrowseFigure)
+            fig = eeg.plot(show=False, scalings=scalings, clipping=clipping, figure_class=OnionskinMNEBrowseFigure)
         context["eeg_fig"] = safe_html.figure_html(fig, on_close="msg_discrete")
         context["current_step"] = step
     return templates.TemplateResponse(
