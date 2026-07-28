@@ -1,6 +1,6 @@
 [project]
 name = "ctapdash"
-version = "0.1.0"
+version = "0.1.1"
 description = "A dashboard for viewing the outputs of CTAP pipelines"
 readme = "README.md"
 license = { file = "LICENCE" }
