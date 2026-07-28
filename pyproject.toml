@@ -1,21 +1,40 @@
 [project]
 name = "ctapdash"
 version = "0.1.0"
-description = "Add your description here"
+description = "A dashboard for viewing the outputs of CTAP pipelines"
 readme = "README.md"
+license = { file = "LICENCE" }
 requires-python = ">=3.14"
 dependencies = [
-    "marimo>=0.23.4",
     "matplotlib>=3.10.9",
     "mne>=1.12.1",
-    "mplbed",
+    "mplbed>=0.1.1",
     "natsort>=8.4.0",
+    "pillow>=12.0",
     "starlette>=1.0.0",
     "starlette-htmx>=0.1.1",
     "uvicorn>=0.46.0",
-    "wand>=0.7.0",
+    # mplbed serves every figure over a WebSocket; uvicorn does not pull in a
+    # WebSocket implementation by itself.
+    "websockets>=15",
+    # No native window on Linux: pywebview needs PyGObject/WebKitGTK there,
+    # which cannot be frozen reliably, so we open the system browser instead.
+    "pywebview>=6.2.1; sys_platform != 'linux'",
+]
+
+[project.scripts]
+ctapdash = "ctapdash.cli:main"
+ctapdash-warm = "ctapdash.warm:main"
+
+[dependency-groups]
+build = [
+    "pyinstaller>=6.21.0",
+    "pyinstaller-hooks-contrib",
 ]
 
 [build-system]
 requires = ["uv_build >= 0.11.7, <0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+mne = { git = "https://github.com/mne-tools/mne-python.git" }

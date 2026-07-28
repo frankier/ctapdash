@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    {{ head_webagg|safe }}
-    <link href="https://unpkg.com/tabulator-tables/dist/css/tabulator.min.css" rel="stylesheet">
-    <script type="text/javascript" src="//unpkg.com/tabulator-tables/dist/js/tabulator.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.js" integrity="sha384-yWakaGAFicqusuwOYEmoRjLNOC+6OFsdmwC2lbGQaRELtuVEqNzt11c2J711DeCZ" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.2" integrity="sha384-BkCCd4DbvhfvRLfThp+5RN2KiB1FBROoAtwZFfceJishUnpFW1eF/aqG14M5TwA2" crossorigin="anonymous"></script>
-    <script src="//unpkg.com/alpinejs" defer></script>
+    {{ mplbed_head(core=True) }}
+    <link href="{{ url_for('static', path='vendor/tabulator.min.css') }}" rel="stylesheet">
+    <script src="{{ url_for('static', path='vendor/tabulator.min.js') }}"></script>
+    <script src="{{ url_for('static', path='vendor/tailwind-browser.js') }}"></script>
+    <script src="{{ url_for('static', path='vendor/htmx.min.js') }}"></script>
+    <script src="{{ url_for('static', path='vendor/htmx-ext-sse.js') }}"></script>
+    <script src="{{ url_for('static', path='vendor/alpine.min.js') }}" defer></script>
     <title>{% block title %}{% endblock %}</title>
     <style>
     @layer utilities {
@@ -51,7 +51,7 @@
     </div>
     <div id="spinner" class="htmx-indicator fixed inset-0 place-self-center p-20 bg-white z-50 drop-shadow-xl">
         <img
-            src="/static/img/flask.gif"
+            src="{{ url_for('static', path='img/flask.gif') }}"
             alt="Loading...">
     </div>
 </body>

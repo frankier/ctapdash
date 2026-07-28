@@ -15,3 +15,6 @@ wheels/
 # Config file
 /.envrc
 /conf.toml
+
+# Profiling output
+/profiles/
