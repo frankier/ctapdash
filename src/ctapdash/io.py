@@ -19,7 +19,7 @@ DESCRIPTIVE_STATISTICS = (
 )
 
 
-def _channel_samples(instance):
+def _channel_samples(instance: BaseRaw | BaseEpochs) -> np.ndarray:
     if isinstance(instance, BaseRaw):
         return instance.get_data()
     if isinstance(instance, BaseEpochs):
@@ -31,14 +31,14 @@ def _channel_samples(instance):
     )
 
 
-def _channel_values(value, n_channels):
+def _channel_values(value, n_channels: int) -> np.ndarray:
     values = np.asarray(value)
     if values.ndim == 0:
         return np.full(n_channels, values.item())
     return values
 
 
-def describe(*instances):
+def describe(*instances: BaseRaw | BaseEpochs) -> xr.Dataset:
     """Return SciPy descriptive statistics for each MNE channel.
 
     Raw observations are time samples. Epochs observations combine every epoch

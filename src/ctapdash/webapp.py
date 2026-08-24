@@ -1,18 +1,24 @@
 import re
 from importlib.resources import files
 from pathlib import Path
+
+import numpy as np
+from matplotlib import colormaps
+from matplotlib.colors import to_hex
 from mne import BaseEpochs
+from mne.io import BaseRaw
 from natsort import natsorted
 
 from starlette_htmx.middleware import HtmxMiddleware
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
 from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.config import SETTINGS
-from ctapdash.io import read_eeglab
+from ctapdash.io import describe, read_eeglab
 from ctapdash.plots import set_onionskin_eeg, OnionskinMNEBrowseFigure
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
@@ -20,6 +26,19 @@ from mplbed import mplbed_starlette, safe_html
 
 SCALP_REGEX = re.compile("(?P<stem>[^-]+)-badChan-scalp.png")
 CH_REGEX = re.compile("(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
+
+STATISTIC_LABELS = {
+    "min": "Min",
+    "max": "Max",
+    "mean": "Mean",
+    "variance": "Var",
+    "skewness": "Skew",
+    "kurtosis": "Kurt",
+}
+
+MAX_HEATMAP_CHANNELS = 32
+MIN_HEATMAP_GROUP_CHANNELS = 10
+NUMBERED_CHANNEL_RE = re.compile(r"^(?P<prefix>.*?)(?P<number>[0-9]+)$")
 
 # importlib.resources works both from a normal install and from inside a
 # PyInstaller onedir bundle, where the frozen loader reports a real directory.
@@ -46,6 +65,193 @@ def sources_context(request):
 
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR, context_processors=[sources_context])
+
+
+def _display_statistic(value):
+    return f"{value:.4g}"
+
+
+def _viridis_gradient():
+    stops = ", ".join(
+        f"{to_hex(colormaps['viridis'](position))} {position:.0%}"
+        for position in np.linspace(0, 1, 9)
+    )
+    return f"background: linear-gradient(to right, {stops})"
+
+
+def _split_heatmap_channels(channels, limit=MAX_HEATMAP_CHANNELS):
+    """Return the table width and slices, preserving substantial sensor groups."""
+    runs = []
+    index = 0
+    while index < len(channels):
+        match = NUMBERED_CHANNEL_RE.match(str(channels[index]))
+        if match is None:
+            index += 1
+            continue
+
+        prefix = match.group("prefix")
+        previous_number = int(match.group("number"))
+        run_end = index + 1
+        while run_end < len(channels):
+            next_match = NUMBERED_CHANNEL_RE.match(str(channels[run_end]))
+            if (
+                next_match is None
+                or next_match.group("prefix") != prefix
+                or int(next_match.group("number")) != previous_number + 1
+            ):
+                break
+            previous_number += 1
+            run_end += 1
+        if run_end - index >= MIN_HEATMAP_GROUP_CHANNELS:
+            runs.append((index, run_end))
+        index = run_end
+
+    largest_group = max((end - start for start, end in runs), default=len(channels))
+    maximum = min(limit, largest_group)
+    slices = []
+
+    def append_chunks(start, end):
+        slices.extend(
+            (chunk_start, min(chunk_start + maximum, end))
+            for chunk_start in range(start, end, maximum)
+        )
+
+    loose_start = 0
+    for start, end in runs:
+        append_chunks(loose_start, start)
+        append_chunks(start, end)
+        loose_start = end
+    append_chunks(loose_start, len(channels))
+    return maximum, slices
+
+
+def _descriptive_heatmap(summary):
+    """Convert a descriptive-statistics Dataset into a Jinja table model."""
+    channel_order = []
+    index = 0
+    while index < len(summary.channel):
+        match = NUMBERED_CHANNEL_RE.match(str(summary.channel.values[index]))
+        if match is None:
+            channel_order.append(index)
+            index += 1
+            continue
+
+        prefix = match.group("prefix")
+        run_end = index + 1
+        while run_end < len(summary.channel):
+            next_match = NUMBERED_CHANNEL_RE.match(
+                str(summary.channel.values[run_end])
+            )
+            if next_match is None or next_match.group("prefix") != prefix:
+                break
+            run_end += 1
+        channel_order.extend(
+            natsorted(
+                range(index, run_end),
+                key=lambda item: str(summary.channel.values[item]),
+            )
+        )
+        index = run_end
+    summary = summary.isel(channel=channel_order)
+    rows = []
+    for statistic, variable in summary.data_vars.items():
+        if statistic == "nobs":
+            continue
+        values = np.asarray(variable.values, dtype=float)
+        finite = np.isfinite(values)
+        low = high = None
+        if finite.any():
+            low = values[finite].min()
+            high = values[finite].max()
+        value_range = {
+            "minimum": "—" if low is None else _display_statistic(low),
+            "maximum": "—" if high is None else _display_statistic(high),
+            "style": _viridis_gradient() if low is not None else "background: #e2e8f0",
+        }
+
+        for recording_index, recording in enumerate(summary.recording.values):
+            cells = []
+            for channel_index in range(len(summary.channel)):
+                value = values[recording_index, channel_index]
+                missing = not finite[recording_index, channel_index]
+                if missing:
+                    style = "background-color: #e2e8f0"
+                    title = "Not available"
+                else:
+                    normalized = 0.0 if high == low else (value - low) / (high - low)
+                    style = f"background-color: {to_hex(colormaps['viridis'](normalized))}"
+                    title = _display_statistic(value)
+                cells.append(
+                    {
+                        "style": style,
+                        "title": title,
+                    }
+                )
+            rows.append(
+                {
+                    "statistic": statistic,
+                    "statistic_label": STATISTIC_LABELS.get(
+                        statistic, statistic.replace("_", " ").title()
+                    ),
+                    "recording": recording.item()
+                    if hasattr(recording, "item")
+                    else recording,
+                    "cells": cells,
+                    "range": value_range,
+                }
+            )
+
+    channels = [str(channel) for channel in summary.channel.values]
+    maximum_columns, channel_slices = _split_heatmap_channels(channels)
+    groups = []
+    for start, end in channel_slices:
+        groups.append(
+            {
+                "channels": channels[start:end],
+                "rows": [dict(row, cells=row["cells"][start:end]) for row in rows],
+                "padding": maximum_columns - (end - start),
+            }
+        )
+
+    return {
+        "channels": channels,
+        "rows": rows,
+        "groups": groups,
+        "maximum_columns": maximum_columns,
+    }
+
+
+def _participant_descriptive_heatmap(steps, participant):
+    recordings = [
+        read_eeglab(step_path / (participant + ".set"))
+        for _, step_path in steps
+    ]
+    summary = describe(*recordings).assign_coords(
+        recording=[step_num for step_num, _ in steps]
+    )
+    return _descriptive_heatmap(summary)
+
+
+def _observation_count(instance):
+    if isinstance(instance, BaseEpochs):
+        return len(instance) * len(instance.times)
+    if isinstance(instance, BaseRaw):
+        return instance.n_times
+    raise TypeError(f"Expected MNE Raw or Epochs, got {type(instance).__name__}")
+
+
+def _participant_step_rows(root_path, steps, participant):
+    rows = []
+    for step_num, step_path in steps:
+        instance = read_eeglab(step_path / (participant + ".set"))
+        rows.append(
+            {
+                "number": step_num,
+                "directory": str(step_path.relative_to(root_path)),
+                "observations": _observation_count(instance),
+            }
+        )
+    return rows
 
 
 def get_steps_for_participant(root_path, participant):
@@ -223,7 +429,7 @@ async def participant_steps_fragment(request):
             else:
                 clipping = None
             fig = eeg.plot(show=False, scalings=scalings, clipping=clipping, figure_class=OnionskinMNEBrowseFigure)
-        context["eeg_fig"] = safe_html.figure_html(fig, on_close="msg_discrete")
+        context["eeg_fig"] = safe_html.figure_html(fig, on_close="msg_discrete", prevent_default_navigation=True)
         context["current_step"] = step
     return templates.TemplateResponse(
         request,
@@ -337,6 +543,9 @@ async def participant_overview_fragment(request):
     logs = collect_logs(source_path, participant)
     qc = collect_qc(source_path, participant)
     steps = get_steps_for_participant(source_path, participant)
+    step_rows = await run_in_threadpool(
+        _participant_step_rows, source_path, steps, participant
+    )
     return templates.TemplateResponse(
         request,
         'participant_overview.html',
@@ -345,7 +554,40 @@ async def participant_overview_fragment(request):
             "logs": logs,
             "qc": qc,
             "steps": steps,
+            "step_rows": step_rows,
         }
+    )
+
+
+async def participant_statistics_fragment(request):
+    source = request.query_params["source"]
+    participant = request.query_params["participant"]
+    source_path = Path(SETTINGS.sources[source])
+    steps = get_steps_for_participant(source_path, participant)
+    selected_step = request.query_params.get("step", "all")
+    selected_steps = steps
+    if selected_step != "all":
+        try:
+            step_num = int(selected_step)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Step must be integer or all")
+        steps_by_number = dict(steps)
+        if step_num not in steps_by_number:
+            raise HTTPException(status_code=404, detail="Step not found")
+        selected_steps = [(step_num, steps_by_number[step_num])]
+
+    descriptive_heatmap = None
+    if selected_steps:
+        descriptive_heatmap = await run_in_threadpool(
+            _participant_descriptive_heatmap, selected_steps, participant
+        )
+    return templates.TemplateResponse(
+        request,
+        "participant_statistics.html",
+        context={
+            "descriptive_heatmap": descriptive_heatmap,
+            "show_step": selected_step == "all",
+        },
     )
 
 
@@ -383,6 +625,7 @@ def create_app(debug=False):
             Route('/', index, name="index"),
             Mount('/static', app=StaticFiles(directory=STATIC_DIR), name="static"),
             Route('/participant/overview', participant_overview_fragment, name="participant_overview"),
+            Route('/participant/statistics', participant_statistics_fragment, name="participant_statistics"),
             Route('/participant/steps', participant_steps_fragment, name="participant_steps"),
             Route('/participant/peeks', participant_peeks_fragment, name="participant_peeks"),
             Route('/participant/log', participant_log, name="participant_log"),

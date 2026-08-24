@@ -1,0 +1,94 @@
+{% if descriptive_heatmap %}
+    <p class="mb-3 text-sm text-slate-600">
+        Color intensity is relative within each statistic. Hover over a tile
+        to see its value. Missing channels and undefined values are grey.
+    </p>
+    <div class="max-w-full overflow-x-auto border border-slate-300">
+        <table class="min-w-max table-fixed border-collapse text-sm">
+            <caption class="sr-only">
+                Per-channel descriptive statistics for each processing step
+            </caption>
+            {% for group in descriptive_heatmap.groups %}
+                <tbody{% if not loop.first %} class="border-t-4 border-slate-400"{% endif %}>
+                    <tr class="bg-slate-200">
+                        {% if loop.first %}
+                            <th scope="col" class="border border-slate-300 px-2 py-1 text-left">
+                                Stats
+                            </th>
+                        {% else %}
+                            <td class="border border-slate-300" aria-hidden="true"></td>
+                        {% endif %}
+                        {% if show_step %}
+                            {% if loop.first %}
+                                <th scope="col" class="border border-slate-300 px-2 py-1 text-left">
+                                    Step
+                                </th>
+                            {% else %}
+                                <td class="border border-slate-300" aria-hidden="true"></td>
+                            {% endif %}
+                        {% endif %}
+                        {% for channel in group.channels %}
+                            <th
+                                scope="col"
+                                class="w-5 min-w-5 max-w-5 border border-slate-300 p-0.5 align-bottom text-center font-normal"
+                                title="{{ channel }}">
+                                <span style="writing-mode: vertical-rl; transform: rotate(180deg)">{{ channel }}</span>
+                            </th>
+                        {% endfor %}
+                        {% if group.padding %}
+                            <td
+                                colspan="{{ group.padding }}"
+                                class="border border-slate-300 bg-white"
+                                aria-hidden="true"></td>
+                        {% endif %}
+                        {% if loop.first %}
+                            <th scope="col" class="w-48 border border-slate-300 px-2 py-1 text-left">
+                                Range
+                            </th>
+                        {% else %}
+                            <td class="w-48 border border-slate-300" aria-hidden="true"></td>
+                        {% endif %}
+                    </tr>
+                    {% for row in group.rows %}
+                        <tr>
+                            <th scope="row" class="h-6 whitespace-nowrap border border-slate-300 px-2 text-left font-medium">
+                                {{ row.statistic_label }}
+                            </th>
+                            {% if show_step %}
+                                <td class="h-6 border border-slate-300 bg-white px-2 text-left">
+                                    {{ row.recording }}
+                                </td>
+                            {% endif %}
+                            {% for cell in row.cells %}
+                                <td
+                                    class="h-6 w-5 min-w-5 max-w-5 border border-slate-300 p-0"
+                                    style="{{ cell.style }}"
+                                    title="{{ cell.title }}"
+                                    aria-label="{{ group.channels[loop.index0] }}: {{ cell.title }}">
+                                </td>
+                            {% endfor %}
+                            {% if group.padding %}
+                                <td
+                                    colspan="{{ group.padding }}"
+                                    class="border border-slate-300 bg-white"
+                                    aria-hidden="true"></td>
+                            {% endif %}
+                            <td class="h-6 w-48 border border-slate-300 bg-white px-1">
+                                <div class="flex items-center gap-1 whitespace-nowrap tabular-nums">
+                                    <span class="w-20 shrink-0 text-right">{{ row.range.minimum }}</span>
+                                    <span
+                                        class="h-2 flex-1 border border-slate-400"
+                                        style="{{ row.range.style }}"
+                                        aria-hidden="true"></span>
+                                    <span class="w-20 shrink-0">{{ row.range.maximum }}</span>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            {% endfor %}
+        </table>
+    </div>
+{% else %}
+    <p class="text-sm text-slate-600">No processing steps are available.</p>
+{% endif %}

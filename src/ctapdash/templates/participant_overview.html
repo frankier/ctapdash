@@ -5,25 +5,84 @@
 {% endif %}
 
 {% block participant_view_content %}
-    <div class="m-4">
+    <div class="m-4 bg-white text-slate-900">
         <h3 class="text-xl my-2 mt-4">Steps {{ request.htmx }}</h3>
-        <ul>
-            {% for step_num, step in steps %}
-                <li>
-                    <a
-                        class="text-blue-800 hover:underline"
-                        href="{{ url_for('participant_steps') }}{{ source_participant_qs }}"
-                        hx-get="{{ url_for('participant_steps') }}"
-                        hx-include="#source-select, #participant-select"
-                        hx-target="#viewer"
-                        hx-swap="outerHTML"
-                        hx-vals='{"step": "{{ step_num|urlencode }}"}'
-                        hx-indicator="#spinner">
-                        {{ step }}
-                    </a>
-                </li>
-            {% endfor %}
-        </ul>
+        <div class="max-w-full overflow-x-auto">
+            <table class="border-collapse text-sm">
+                <thead class="bg-slate-200">
+                    <tr>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-left">Step</th>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-left">Directory</th>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-right">Observations</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for step in step_rows %}
+                        <tr>
+                            <th scope="row" class="border border-slate-300 px-3 py-2 text-left font-normal">
+                                <a
+                                    class="text-blue-800 hover:underline"
+                                    href="{{ url_for('participant_steps') }}{{ source_participant_qs }}"
+                                    hx-get="{{ url_for('participant_steps') }}"
+                                    hx-include="#source-select, #participant-select"
+                                    hx-target="#viewer"
+                                    hx-swap="outerHTML"
+                                    hx-vals='{"step": "{{ step.number|urlencode }}"}'
+                                    hx-indicator="#spinner">
+                                    {{ step.number }}
+                                </a>
+                            </th>
+                            <td class="border border-slate-300 px-3 py-2">{{ step.directory }}</td>
+                            <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                {{ "{:,}".format(step.observations) }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <section class="mt-6 bg-white text-slate-900" aria-labelledby="channel-statistics-heading">
+            <h3 id="channel-statistics-heading" class="text-xl my-2">
+                Channel statistics
+            </h3>
+            <label for="statistics-step" class="mr-2 text-sm font-medium">Step</label>
+            <select
+                id="statistics-step"
+                name="step"
+                class="border border-slate-400 bg-white px-2 py-1 text-sm"
+                hx-get="{{ url_for('participant_statistics') }}"
+                hx-trigger="change"
+                hx-include="#source-select, #participant-select"
+                hx-target="#channel-statistics-table"
+                hx-sync="#channel-statistics-table:replace"
+                hx-indicator="#chanload"
+                aria-controls="channel-statistics-table">
+                <option value="all" selected>All</option>
+                {% for step_num, _ in steps %}
+                    <option value="{{ step_num }}">{{ step_num }}</option>
+                {% endfor %}
+            </select>
+            <div class="relative min-h-64">
+                <div
+                    id="channel-statistics-table"
+                    class="mt-3"
+                    hx-get="{{ url_for('participant_statistics') }}{{ source_participant_qs }}"
+                    hx-trigger="load"
+                    hx-sync="#channel-statistics-table:replace"
+                    hx-indicator="#chanload"
+                    aria-live="polite">
+                </div>
+                <div id="chanload" class="htmx-indicator py-12 text-2xl place-self-center inset-0 absolute">
+                    <p class="animate-pulse text-slate-600 text-center">
+                        <img
+                            class="inline"
+                            src="{{ url_for('static', path='img/flask.gif') }}"
+                            alt="Loading...">
+                        Loading channel statistics…
+                    </p>
+                </div>
+            </div>
+        </section>
         <h3 class="text-xl my-2 mt-4">Quality control</h3>
         <ul>
             {% for img_file in qc %}

@@ -33,6 +33,8 @@ IMPORT_CHECKS = [
     ("ctapdash.plots", "ctapdash.plots", "OnionskinMNEBrowseFigure"),
     ("ctapdash.io", "ctapdash.io", "read_eeglab"),
     ("scipy.io.loadmat", "scipy.io", "loadmat"),
+    ("scipy.stats.describe", "scipy.stats", "describe"),
+    ("xarray.Dataset", "xarray", "Dataset"),
     ("PIL.Image", "PIL.Image", "open"),
     ("PIL.ImageChops", "PIL.ImageChops", "difference"),
     (
@@ -117,6 +119,34 @@ def _check_mne_plot(failures):
         print("OK   mne plot", flush=True)
 
 
+def _check_describe(failures):
+    """Exercise the public MNE-to-xarray statistics path."""
+    try:
+        import mne
+        import numpy as np
+
+        from ctapdash import describe
+
+        info = mne.create_info(["a", "b"], sfreq=100.0, ch_types="eeg")
+        raw = mne.io.RawArray(np.arange(20.0).reshape(2, 10), info, verbose="error")
+        summary = describe(raw)
+        assert summary.sizes == {"recording": 1, "channel": 2}
+        assert list(summary.data_vars) == [
+            "nobs",
+            "min",
+            "max",
+            "mean",
+            "variance",
+            "skewness",
+            "kurtosis",
+        ]
+    except Exception as err:
+        failures.append(f"describe: {err!r}")
+        print(f"FAIL describe: {err!r}", flush=True)
+    else:
+        print("OK   describe", flush=True)
+
+
 def run_smoke_test(app, sock):
     server = desktop.ServerThread(app, sock, log_level="warning").start()
     failures = []
@@ -128,6 +158,7 @@ def run_smoke_test(app, sock):
             _check_import(label, module, attr, failures)
         _check_backend(failures)
         _check_mne_plot(failures)
+        _check_describe(failures)
     finally:
         server.stop()
 
