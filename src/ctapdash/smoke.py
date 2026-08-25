@@ -20,7 +20,6 @@ HTTP_CHECKS = [
     ("static/vendor/htmx.min.js", None),
     ("static/vendor/tailwind-browser.js", None),
     ("webagg/mpl.js", None),
-    ("webagg/webaggext.js", None),
     ("webagg/_static/js/mpl.js", None),
 ]
 
