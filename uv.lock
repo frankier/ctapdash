@@ -248,7 +248,7 @@ dependencies = [
     { name = "scipy" },
     { name = "starlette" },
     { name = "starlette-htmx" },
-    { name = "tbb" },
+    { name = "tbb4u" },
     { name = "uvicorn" },
     { name = "websockets" },
     { name = "xarray" },
@@ -275,7 +275,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "starlette", specifier = ">=1.0.0" },
     { name = "starlette-htmx", specifier = ">=0.1.1" },
-    { name = "tbb", specifier = ">=2023.1.0" },
+    { name = "tbb4u", specifier = ">=2023.1.0" },
     { name = "uvicorn", specifier = ">=0.46.0" },
     { name = "websockets", specifier = ">=15" },
     { name = "xarray", specifier = ">=2026.2.0" },
@@ -1177,25 +1177,10 @@ wheels = [
 ]
 
 [[package]]
-name = "tbb"
+name = "tbb4u"
 version = "2023.1.0"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "tcmlib" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/25/0c/0266c71e3fa50a71db5ce8a1d0807863df3215c5f7b5fe7c98b257561138/tbb-2023.1.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:64ad35241c736a595498f5343abec8eaaa203e9fe0dbdbf4b86d37c5a3ab1d9c", size = 6840282, upload-time = "2026-07-01T15:10:33.348Z" },
-    { url = "https://files.pythonhosted.org/packages/ac/ff/168d3498762069b0cd2dff20ab34d53fa48a0a35ffd1965cf456c603f292/tbb-2023.1.0-py3-none-win_amd64.whl", hash = "sha256:27df1315202defc67a73800c667ba4fbd03cf8924f73949373d4a34d1443fca2", size = 428501, upload-time = "2026-07-01T15:12:55.771Z" },
-]
-
-[[package]]
-name = "tcmlib"
-version = "1.5.0"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/24/aa409bb20703acc70cf4d3bc620a55c789639c2995b2667fb44ae7236ec9/tcmlib-1.5.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:9d7c01cff35aae9bf5390b620680ebdf10a7d211c22d6488a27a029502e7d0aa", size = 2812669, upload-time = "2026-04-24T14:14:18.557Z" },
-    { url = "https://files.pythonhosted.org/packages/67/6d/9095c93326d0f8a5469ab22480d02795f24c08f1e7f383c73316ff106347/tcmlib-1.5.0-py2.py3-none-win_amd64.whl", hash = "sha256:f7b62787214083d490b39d7650f1e477eeacc875e7f86799feb9aa1fd34460d4", size = 366719, upload-time = "2026-04-24T14:09:45.977Z" },
-]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/7d/48d63424bf3be30196eb80a73a23cc640775f8de52779319084fd376d0d7/tbb4u-2023.1.0.tar.gz", hash = "sha256:70d424b098e042be4977e7de02e7b97930e48040b0b1f03d00a3ae60ed8fdc55", size = 5108, upload-time = "2026-08-26T11:52:35.565Z" }
 
 [[package]]
 name = "tornado"
