@@ -39,7 +39,7 @@ def _channel_values(value, n_channels: int) -> np.ndarray:
     return values
 
 
-def describe_mne(*instances: BaseRaw | BaseEpochs, impl="scipy") -> xr.Dataset:
+def describe_mne(*instances: BaseRaw | BaseEpochs) -> xr.Dataset:
     """Return SciPy descriptive statistics for each MNE channel.
 
     Raw observations are time samples. Epochs observations combine every epoch
@@ -52,11 +52,7 @@ def describe_mne(*instances: BaseRaw | BaseEpochs, impl="scipy") -> xr.Dataset:
     summaries = []
     for instance in instances:
         samples = _channel_samples(instance)
-        if impl == "scipy":
-            result = stats.describe(samples, axis=-1, nan_policy="omit")
-        else:
-            assert impl == "numba"
-            result = describe(samples, axis=-1)
+        result = describe(samples, axis=-1)
         values = (
             result.nobs,
             result.minmax[0],
@@ -101,11 +97,12 @@ def single_scan_stats(a):
 
 
 @numba.njit
-def moments(a, mean, orders, results):
+def moments(a, mean, n, orders, results):
     for x in a:
         demean = x - mean
         for i, order in enumerate(orders):
             results[i] += demean ** order
+    results /= n
 
 
 DescribeResult = namedtuple('DescribeResult',
@@ -120,13 +117,13 @@ def _describe_1d(a):
     if isnan(mean):
         m2 = m3 = m4 = sk = kurt = float("nan")
     else:
-        moments(a, mean, (2, 3, 4), mo)
+        moments(a, mean, n, (2, 3, 4), mo)
         m2, m3, m4 = mo
         if m2 == 0.0:
             sk = kurt = float("nan")
         else:
             sk = m3 / m2**1.5
-            kurt = m4 / m2**2.0
+            kurt = m4 / m2**2.0 - 3
 
     return DescribeResult(n, (mn, mx), mean, m2, sk, kurt)
 
