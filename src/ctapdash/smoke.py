@@ -29,7 +29,7 @@ IMPORT_CHECKS = [
     ("mne.io.read_raw_eeglab", "mne.io", "read_raw_eeglab"),
     ("mne.read_epochs", "mne", "read_epochs"),
     ("mne.viz._mpl_figure", "mne.viz._mpl_figure", "MNEBrowseFigure"),
-    ("ctapdash.plots", "ctapdash.plots", "OnionskinMNEBrowseFigure"),
+    ("ctapdash.plotting.mne", "ctapdash.plotting.mne", "OnionskinMNEBrowseFigure"),
     ("ctapdash.io", "ctapdash.io", "read_eeglab"),
     ("scipy.io.loadmat", "scipy.io", "loadmat"),
     ("scipy.stats.describe", "scipy.stats", "describe"),

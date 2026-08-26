@@ -19,7 +19,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.config import SETTINGS
 from ctapdash.io import describe, read_eeglab
-from ctapdash.plots import set_onionskin_eeg, OnionskinMNEBrowseFigure
+from ctapdash.plotting.mne import set_onionskin_eeg, OnionskinMNEBrowseFigure
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
 
