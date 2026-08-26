@@ -186,7 +186,7 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
         patch("ctapdash.webapp.collect_qc", return_value=[]),
         patch("ctapdash.webapp.get_steps_for_participant", return_value=steps),
         patch("ctapdash.webapp._participant_step_rows", return_value=step_rows),
-        patch("ctapdash.webapp.describe") as describe,
+        patch("ctapdash.webapp.describe_mne") as describe_mne,
         patch(
             "ctapdash.webapp.run_in_threadpool",
             side_effect=lambda function, *args: function(*args),
@@ -198,7 +198,7 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
         response = asyncio.run(participant_overview_fragment(request))
 
     assert response is rendered
-    describe.assert_not_called()
+    describe_mne.assert_not_called()
     context = template_response.call_args.kwargs["context"]
     assert context["step_rows"][0]["observations"] == 100
     assert "descriptive_heatmap" not in context

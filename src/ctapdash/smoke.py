@@ -124,7 +124,7 @@ def _check_describe(failures):
         import mne
         import numpy as np
 
-        from ctapdash import describe
+        from ctapdash.stats import describe
 
         info = mne.create_info(["a", "b"], sfreq=100.0, ch_types="eeg")
         raw = mne.io.RawArray(np.arange(20.0).reshape(2, 10), info, verbose="error")

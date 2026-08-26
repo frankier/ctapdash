@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from ctapdash import describe
+from ctapdash.stats import describe_mne as describe
 
 
 @pytest.fixture
