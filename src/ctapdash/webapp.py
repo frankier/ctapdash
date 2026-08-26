@@ -18,7 +18,8 @@ from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.config import SETTINGS
-from ctapdash.io import describe, read_eeglab
+from ctapdash.io import read_eeglab
+from ctapdash.stats import describe_mne
 from ctapdash.plotting.mne import set_onionskin_eeg, OnionskinMNEBrowseFigure
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
@@ -226,7 +227,7 @@ def _participant_descriptive_heatmap(steps, participant):
         read_eeglab(step_path / (participant + ".set"))
         for _, step_path in steps
     ]
-    summary = describe(*recordings).assign_coords(
+    summary = describe_mne(*recordings, impl="numba").assign_coords(
         recording=[step_num for step_num, _ in steps]
     )
     return _descriptive_heatmap(summary)

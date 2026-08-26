@@ -22,6 +22,7 @@ dependencies = [
     # which cannot be frozen reliably, so we open the system browser instead.
     "pywebview>=6.2.1; sys_platform != 'linux'",
     "xarray>=2026.2.0",
+    "numba>=0.67.0",
 ]
 
 [project.scripts]

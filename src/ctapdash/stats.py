@@ -1,0 +1,133 @@
+import numpy as np
+from mne import BaseEpochs
+from mne.io import BaseRaw
+from scipy import stats
+import xarray as xr
+import numba
+from collections import namedtuple
+from numpy import ma
+from math import isnan
+
+
+DESCRIPTIVE_STATISTICS = (
+    "nobs",
+    "min",
+    "max",
+    "mean",
+    "variance",
+    "skewness",
+    "kurtosis",
+)
+
+
+def _channel_samples(instance: BaseRaw | BaseEpochs) -> np.ndarray:
+    if isinstance(instance, BaseRaw):
+        return instance.get_data()
+    if isinstance(instance, BaseEpochs):
+        data = instance.get_data(copy=False)
+        return data.swapaxes(0, 1).reshape(len(instance.ch_names), -1)
+    raise TypeError(
+        "describe() inputs must be MNE Raw or Epochs instances, "
+        f"got {type(instance).__name__}"
+    )
+
+
+def _channel_values(value, n_channels: int) -> np.ndarray:
+    values = np.asarray(value)
+    if values.ndim == 0:
+        return np.full(n_channels, values.item())
+    return values
+
+
+def describe_mne(*instances: BaseRaw | BaseEpochs, impl="scipy") -> xr.Dataset:
+    """Return SciPy descriptive statistics for each MNE channel.
+
+    Raw observations are time samples. Epochs observations combine every epoch
+    and time sample for a channel. Multiple inputs are indexed by ``recording``;
+    xarray aligns their channel-name union and fills absent channels with NaN.
+    """
+    if not instances:
+        raise ValueError("describe() requires at least one Raw or Epochs instance")
+
+    summaries = []
+    for instance in instances:
+        samples = _channel_samples(instance)
+        if impl == "scipy":
+            result = stats.describe(samples, axis=-1, nan_policy="omit")
+        else:
+            assert impl == "numba"
+            result = describe(samples)
+        print(result)
+        values = (
+            result.nobs,
+            result.minmax[0],
+            result.minmax[1],
+            result.mean,
+            result.variance,
+            result.skewness,
+            result.kurtosis,
+        )
+        summaries.append(
+            xr.Dataset(
+                {
+                    name: ("channel", _channel_values(value, len(instance.ch_names)))
+                    for name, value in zip(DESCRIPTIVE_STATISTICS, values, strict=True)
+                },
+                coords={"channel": instance.ch_names},
+            )
+        )
+
+    return xr.concat(
+        summaries,
+        dim=xr.IndexVariable("recording", np.arange(len(summaries))),
+        join="outer",
+    )
+
+
+@numba.njit
+def single_scan_stats(a):
+    n = 0
+    mn = float("inf")
+    mx = float("-inf")
+    tot = 0
+    for x in a:
+        n += 1
+        tot += x
+        if x < mn:
+            mn = x
+        if x > mx:
+            mx = x
+    mean = tot / n if n > 0 else float("nan")
+    return (n, mn, mx, mean)
+
+
+@numba.njit
+def moments(a, mean, orders, results):
+    for x in a:
+        demean = x - mean
+        for i, order in enumerate(orders):
+            results[i] += demean ** order
+
+
+DescribeResult = namedtuple('DescribeResult',
+                            ('nobs', 'minmax', 'mean', 'variance', 'skewness',
+                             'kurtosis'))
+
+
+@numba.njit
+def describe(a):
+    mo = np.zeros((3,), dtype=a.dtype)
+    a = a.flat
+    (n, mn, mx, mean) = single_scan_stats(a)
+    if isnan(mean):
+        m2 = m3 = m4 = sk = kurt = float("nan")
+    else:
+        moments(a, mean, (2, 3, 4), mo)
+        m2, m3, m4 = mo
+        if m2 == 0.0:
+            sk = kurt = float("nan")
+        else:
+            sk = m3 / m2**1.5
+            kurt = m4 / m2**2.0
+
+    return DescribeResult(n, (mn, mx), mean, m2, sk, kurt)
