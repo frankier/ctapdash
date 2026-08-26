@@ -56,8 +56,7 @@ def describe_mne(*instances: BaseRaw | BaseEpochs, impl="scipy") -> xr.Dataset:
             result = stats.describe(samples, axis=-1, nan_policy="omit")
         else:
             assert impl == "numba"
-            result = describe(samples)
-        print(result)
+            result = describe(samples, axis=-1)
         values = (
             result.nobs,
             result.minmax[0],
@@ -115,9 +114,8 @@ DescribeResult = namedtuple('DescribeResult',
 
 
 @numba.njit
-def describe(a):
+def _describe_1d(a):
     mo = np.zeros((3,), dtype=a.dtype)
-    a = a.flat
     (n, mn, mx, mean) = single_scan_stats(a)
     if isnan(mean):
         m2 = m3 = m4 = sk = kurt = float("nan")
@@ -131,3 +129,31 @@ def describe(a):
             kurt = m4 / m2**2.0
 
     return DescribeResult(n, (mn, mx), mean, m2, sk, kurt)
+
+
+@numba.njit(parallel=True, cache=True)
+def describe(a, axis=-1):
+    if axis < 0:
+        axis += a.ndim
+    reduced = np.ascontiguousarray(np.moveaxis(a, axis, -1))
+    rows = reduced.reshape(-1, reduced.shape[-1])
+    shape = (rows.shape[0],)
+    nobs = np.empty(shape, dtype=np.int64)
+    mn = np.empty(shape)
+    mx = np.empty(shape)
+    mean = np.empty(shape)
+    variance = np.empty(shape)
+    skewness = np.empty(shape)
+    kurtosis = np.empty(shape)
+    for i in numba.prange(rows.shape[0]):
+        result = _describe_1d(rows[i])
+        nobs[i] = result.nobs
+        mn[i] = result.minmax[0]
+        mx[i] = result.minmax[1]
+        mean[i] = result.mean
+        variance[i] = result.variance
+        skewness[i] = result.skewness
+        kurtosis[i] = result.kurtosis
+    return DescribeResult(
+        nobs, (mn, mx), mean, variance, skewness, kurtosis
+    )
