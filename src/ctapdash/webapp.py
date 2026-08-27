@@ -227,7 +227,7 @@ def _participant_descriptive_heatmap(steps, participant):
         read_eeglab(step_path / (participant + ".set"))
         for _, step_path in steps
     ]
-    summary = describe_mne(*recordings, impl="numba").assign_coords(
+    summary = describe_mne(*recordings).assign_coords(
         recording=[step_num for step_num, _ in steps]
     )
     return _descriptive_heatmap(summary)
