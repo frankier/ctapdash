@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from ctapdash import describe
+from ctapdash.stats import describe_mne as describe
 
 
 @pytest.fixture
@@ -16,7 +16,7 @@ def test_raw_returns_scipy_statistics_by_channel(info):
     raw = mne.io.RawArray(data, info, verbose="error")
 
     result = describe(raw)
-    expected = stats.describe(data, axis=-1)
+    expected = stats.describe(data, axis=-1, ddof=0)
 
     assert dict(result.sizes) == {"recording": 1, "channel": 2}
     assert list(result.data_vars) == [
