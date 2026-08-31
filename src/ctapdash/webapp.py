@@ -1,3 +1,6 @@
+from collections.abc import AsyncGenerator
+from functools import partial
+from contextlib import asynccontextmanager
 import re
 from importlib.resources import files
 from pathlib import Path
@@ -5,6 +8,7 @@ from pathlib import Path
 from mne import BaseEpochs
 from mne.io import BaseRaw
 
+from bokeh.server.asgi import BokehASGI
 from starlette_htmx.middleware import HtmxMiddleware
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
@@ -19,7 +23,6 @@ from ctapdash.stats import describe_mne
 from ctapdash.plotting.mne import set_onionskin_eeg, OnionskinMNEBrowseFigure
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
-
 
 
 # importlib.resources works both from a normal install and from inside a
@@ -87,12 +90,12 @@ def participant_context(request):
         "source": dataset.source,
         "participant": dataset.participant,
         "steps": steps,
-        "view": "steps",
     }
 
 
 async def participant_steps_fragment(request):
     context = participant_context(request)
+    context["view"] = "steps"
     yaxis = request.query_params.get("yaxis", "overdraw")
     context = {
         **context,
@@ -146,6 +149,218 @@ async def participant_steps_fragment(request):
         'participant_steps.html',
         context=context,
     )
+
+
+def bokeh_document(request, path, *args, **kwargs):
+    from bokeh.embed import server_document
+    from markupsafe import Markup
+
+    url = str(request.url_for("bokeh", path=path))
+    return Markup(server_document(url, relative_urls=True, *args, **kwargs))
+
+
+async def time_series(request):
+    context = participant_context(request)
+    context["view"] = "time_series"
+    context["time_series"] = bokeh_document(request, "/time-series", arguments={
+        "source": context["source"],
+        "participant": context["participant"],
+    })
+
+    return templates.TemplateResponse(
+        request,
+        'time_series.html',
+        context=context
+    )
+
+
+def maybe_int(value):
+    try:
+        return int(value)
+    except TypeError, ValueError:
+        return None
+
+
+def time_series_bokeh(doc):
+    import numpy as np
+    import xarray as xr
+    from bokeh.layouts import column
+    from bokeh.events import RangesUpdate
+    from bokeh.models import (
+        ColumnDataSource,
+        FixedTicker,
+        FullscreenTool,
+        HoverTool,
+        Range1d,
+        WheelZoomTool,
+    )
+    from bokeh.plotting import figure
+
+    dataset = ObservationData.from_bokeh_doc(doc)
+    steps = dataset.get_steps()
+
+    pyramid_path = steps[0][-1] / (dataset.participant + ".set.pyramid")
+    ts_dt = xr.open_datatree(pyramid_path, engine="zarr", consolidated=True)
+
+    X_PADDING = 0.2  # buffer x-range to reduce update latency with pans and zoom-outs
+
+    def extract_ds(ts_dt, level, channels=None):
+        """Extract a dataset at a specific level"""
+        ds = ts_dt[str(level)].ds
+        return ds if channels is None else ds.sel(ch=channels)
+
+    # Grab the timestamps from the coarsest level for initialization.
+    # DataTree includes the (usually empty) root group in ``groups``. Only
+    # nodes containing pyramid samples are levels.
+    groups = tuple(
+        sorted(
+            (group for group in ts_dt.groups if "time" in ts_dt[group].ds),
+            key=lambda group: ts_dt[group].ds["time"].size,
+            reverse=True,
+        )
+    )
+    num_levels = len(groups)
+    coarsest_level = groups[-1]
+    time_da = extract_ds(ts_dt, coarsest_level)["time"]
+    channels = ts_dt[coarsest_level].ds["ch"].values
+    num_channels = len(channels)
+    x_range = (time_da.min().item(), time_da.max().item())
+
+    plot = figure(
+        x_range=Range1d(*x_range),
+        y_range=Range1d(-2, num_channels + 1),
+        x_axis_label="Time (s)",
+        y_axis_label="Channel",
+        min_height=600,
+        sizing_mode="stretch_both",
+        tools="pan,box_zoom,reset,save",
+        active_drag="box_zoom",
+        #output_backend="webgl",
+    )
+    plot.yaxis.ticker = FixedTicker(ticks=list(range(num_channels)))
+    plot.yaxis.major_label_overrides = {
+        index: str(channel) for index, channel in enumerate(channels)
+    }
+    plot.ygrid.grid_line_color = None
+
+    wheel_zoom = WheelZoomTool(dimensions="width")
+    plot.toolbar.logo = None
+    plot.add_tools(wheel_zoom)
+    plot.add_tools(FullscreenTool())
+    plot.toolbar.active_scroll = wheel_zoom
+
+    hover = HoverTool(
+        tooltips=[
+            ("ch", "$name"),
+            ("time", "$x{0.000} s"),
+            ("amplitude", "$y{0.000} µV"),
+        ],
+        mode="mouse",
+        renderers=[],
+    )
+    plot.add_tools(hover)
+
+    sources = {}
+    amplitude_ranges = {}
+    for index, channel in enumerate(channels):
+        channel_name = str(channel)
+        source = ColumnDataSource(data={"time": [], "amplitude": []})
+        amplitude_range = Range1d(0, 1)
+        channel_plot = plot.subplot(
+            x_source=plot.x_range,
+            x_target=plot.x_range,
+            y_source=amplitude_range,
+            # Match HoloViews' subcoordinate_scale=4 around each channel.
+            y_target=Range1d(index - 2, index + 2),
+        )
+        renderer = channel_plot.line(
+            "time",
+            "amplitude",
+            source=source,
+            name=channel_name,
+            color="black",
+            line_width=1,
+        )
+        hover.renderers.append(renderer)
+        sources[channel_name] = source
+        amplitude_ranges[channel_name] = amplitude_range
+
+    def update_plot(x_range, width=None, height=None):
+        x_padding = (x_range[1] - x_range[0]) * X_PADDING
+        time_slice = slice(x_range[0] - x_padding, x_range[1] + x_padding)
+
+        # Pick the nearest level that has at least one sample per horizontal
+        # pixel. Before browser layout is known, start with the coarsest level.
+        if not width:
+            pyramid_level = num_levels - 1
+            size = time_da.size
+        else:
+            sizes = np.array(
+                [
+                    extract_ds(ts_dt, pyramid_level)["time"].sel(time=time_slice).size
+                    for pyramid_level in groups
+                ]
+            )
+            diffs = sizes - width
+            pyramid_level = np.argmin(np.where(diffs >= 0, diffs, np.inf))  # nearest higher-res
+            size = sizes[pyramid_level]
+
+        plot.title.text = (
+            f"[Pyramid Level {pyramid_level} ({x_range[0]:.2f}s - {x_range[1]:.2f}s)]   "
+            f"[Time Samples: {size}]  [Plot Size WxH: {width}x{height}]"
+        )
+
+        ds = (
+            extract_ds(ts_dt, groups[pyramid_level], channels)
+            .sel(time=time_slice)
+            .load()
+        )
+        for channel in ds["ch"].values.tolist():
+            channel_name = str(channel)
+            channel_data = ds.sel(ch=channel)
+            amplitudes = np.asarray(channel_data["data"].values)
+            sources[channel_name].data = {
+                "time": np.asarray(channel_data["time"].values),
+                "amplitude": amplitudes,
+            }
+
+            finite = amplitudes[np.isfinite(amplitudes)]
+            if finite.size:
+                start, end = float(finite.min()), float(finite.max())
+                if start == end:
+                    padding = abs(start) * 0.1 or 1.0
+                    start, end = start - padding, end + padding
+                amplitude_ranges[channel_name].start = start
+                amplitude_ranges[channel_name].end = end
+
+    def plot_dimension(name):
+        try:
+            return getattr(plot, name) or None
+        except ValueError:  # Bokeh raises while layout dimensions are unset.
+            return None
+
+    def update_from_viewport(width=None):
+        update_plot(
+            (plot.x_range.start, plot.x_range.end),
+            width or plot_dimension("inner_width"),
+            plot_dimension("inner_height"),
+        )
+
+    def update_from_range(event):
+        update_from_viewport()
+
+    def update_from_size(attr, old, new):
+        update_from_viewport(width=new)
+
+    plot.on_event(RangesUpdate, update_from_range)
+    plot.on_change("inner_width", update_from_size)
+
+    update_plot(x_range)
+    root = column(
+        plot,
+        sizing_mode="stretch_both",
+    )
+    doc.add_root(root)
 
 
 def trim(img):
@@ -324,6 +539,20 @@ async def participant_log(request):
 def create_app(debug=False):
     from ctapdash.setup_ui import RequireConfigMiddleware, setup_routes
 
+    bokeh_application = BokehASGI({
+        "/time-series": time_series_bokeh,
+    })
+
+    @asynccontextmanager
+    async def lifespan(_app: Starlette) -> AsyncGenerator[None, None]:
+        # Mounted Starlette applications don't receive lifespan events. Start and
+        # stop Bokeh from the parent application's lifespan instead.
+        await bokeh_application.core.start()
+        try:
+            yield
+        finally:
+            await bokeh_application.core.stop()
+
     app = Starlette(
         debug=debug,
         routes=[
@@ -332,15 +561,18 @@ def create_app(debug=False):
             Route('/participant/overview', participant_overview_fragment, name="participant_overview"),
             Route('/participant/statistics', participant_statistics_fragment, name="participant_statistics"),
             Route('/participant/steps', participant_steps_fragment, name="participant_steps"),
+            Route('/participant/time-series', time_series, name="time_series"),
             Route('/participant/peeks', participant_peeks_fragment, name="participant_peeks"),
             Route('/participant/log', participant_log, name="participant_log"),
             *setup_routes(),
+            Mount("/bokeh", bokeh_application, name="bokeh"),
         ],
         middleware=[
             Middleware(RequireConfigMiddleware),
             Middleware(HtmxMiddleware),
             Middleware(GlobalRequestMiddleware),
         ],
+        lifespan=lifespan
     )
     # Installs MplbedMiddleware (which does its own /webagg routing), registers
     # the mplbed_head context processor, and selects the webaggext backend.

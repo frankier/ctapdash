@@ -22,7 +22,20 @@
             hx-include="#source-select, #participant-select"
             hx-target="#viewer"
             hx-swap="outerHTML">
-            Steps (onionskin)
+            Time series (MNE)
+        </a>
+    </div>
+    <div class="text-nowrap px-4 py-2
+        {% if view == 'time_series' %}bg-slate-300{% endif %}
+    ">
+        <a
+            href="{{ url_for("time_series") }}{{ source_participant_qs }}"
+            hx-get="{{ url_for("time_series") }}"
+            hx-push-url="true"
+            hx-include="#source-select, #participant-select"
+            hx-target="#viewer"
+            hx-swap="outerHTML">
+            Time series (HV)
         </a>
     </div>
     <div class="

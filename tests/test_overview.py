@@ -220,7 +220,7 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     with (
         patch("ctapdash.webapp.get_steps_for_participant", return_value=steps),
         patch(
-            "ctapdash.webapp._participant_descriptive_heatmap",
+            "ctapdash.plotting.stats_heatmap import participant_descriptive_heatmap",
             return_value=heatmap,
         ) as build_heatmap,
         patch(
