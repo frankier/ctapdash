@@ -1,12 +1,23 @@
 import os
 import warnings
 import re
+import xarray as xr
+
 
 from natsort import natsorted
 import numpy as np
-from mne import read_epochs, BaseEpochs
+from mne import BaseEpochs, read_epochs, read_events
 from mne.io import BaseRaw, read_raw_eeglab, read_epochs_eeglab, read_raw_fif
-from mne.io.eeglab.eeglab import CAL, _check_eeglab_fname, _check_load_mat
+from mne.io.eeglab.eeglab import (
+    CAL,
+    EpochsEEGLAB,
+    RawEEGLAB,
+    _bunchify,
+    _check_eeglab_fname,
+    _check_load_mat,
+    _get_info,
+    _set_dig_montage_in_init,
+)
 from scipy import stats
 
 
@@ -14,8 +25,7 @@ SCALP_REGEX = re.compile("(?P<stem>[^-]+)-badChan-scalp.png")
 CH_REGEX = re.compile("(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
 
 
-def _scaled_eeglab_memmap(data_fname, shape, order):
-    """Map an EEGLAB float file and apply MNE's volts calibration."""
+def _eeglab_memmap(data_fname, shape, order):
     expected_size = np.prod(shape, dtype=np.int64) * np.dtype("<f4").itemsize
     actual_size = os.path.getsize(data_fname)
     if actual_size != expected_size:
@@ -24,10 +34,10 @@ def _scaled_eeglab_memmap(data_fname, shape, order):
             f"bytes for shape {shape}."
         )
 
-    return np.memmap(data_fname, dtype="<f4", shape=shape, order=order)
+    return np.memmap(data_fname, dtype="<f4", mode="r", shape=shape, order=order)
 
 
-def mmap_eeglab(eeg, return_xarray=False):
+def mmap_eeglab(eeg, *, return_xarray=False):
     """Return float32 data from an MNE EEGLAB object.
 
     External EEGLAB ``.fdt`` data is memory-mapped copy-on-write and calibrated
@@ -67,15 +77,13 @@ def mmap_eeglab(eeg, return_xarray=False):
             if orig_nchan != len(eeg.ch_names):
                 raise ValueError("mmap_eeglab does not support picked Raw channels")
             n_total = os.path.getsize(data_fname) // (orig_nchan * 4)
-            data = _scaled_eeglab_memmap(
+            data = _eeglab_memmap(
                 data_fname, (orig_nchan, n_total), order="F"
             )
             data = data[:, eeg.first_samp : eeg.last_samp + 1]
         else:
             data = np.asarray(eeg.get_data(), dtype=np.float32)
             data = data / CAL
-        dims = ("ch", "time")
-        coords = (eeg.ch_names, eeg.times)
     else:
         set_fname = getattr(eeg, "filename", None)
         if set_fname is None or not os.fspath(set_fname).lower().endswith(".set"):
@@ -91,7 +99,7 @@ def mmap_eeglab(eeg, return_xarray=False):
                 raise ValueError("mmap_eeglab does not support selected or dropped epochs")
             if len(eeg.times) != eeglab.pnts:
                 raise ValueError("mmap_eeglab does not support cropped epochs")
-            data = _scaled_eeglab_memmap(
+            data = _eeglab_memmap(
                 data_fname,
                 (eeglab.nbchan, eeglab.pnts, eeglab.trials),
                 order="F",
@@ -99,14 +107,235 @@ def mmap_eeglab(eeg, return_xarray=False):
         else:
             data = np.asarray(eeg.get_data(), dtype=np.float32)
             data = data / CAL
-        dims = ("epoch", "ch", "time")
-        coords = (np.asarray(eeg.selection), eeg.ch_names, eeg.times)
 
     if return_xarray:
-        import xarray as xr
-
+        if isinstance(eeg, BaseRaw):
+            dims = ("ch", "time")
+            coords = (eeg.ch_names, eeg.times)
+        else:
+            dims = ("epoch", "ch", "time")
+            coords = (np.asarray(eeg.selection), eeg.ch_names, eeg.times)
         return xr.DataArray(data, coords=coords, dims=dims)
     return data
+
+
+class MmapRawEEGLAB(RawEEGLAB):
+    def __init__(
+        self,
+        input_fname,
+        eog=(),
+        preload=False,
+        *,
+        uint16_codec=None,
+        montage_units="auto",
+        verbose=None,
+    ):
+        if preload:
+            raise ValueError("Preload has been disabled. Use .mmap(...)")
+        super().__init__(
+            input_fname,
+            eog,
+            preload,
+            uint16_codec=uint16_codec,
+            montage_units=montage_units,
+            verbose=verbose,
+        )
+
+    def mmap(self, *, return_xarray=False):
+        return mmap_eeglab(self, return_xarray=return_xarray)
+
+    def __reduce__(self):
+        return _restore_mmap_eeglab, (type(self),), _mmap_eeglab_state(self)
+
+    def _read_segment_file(self, *args, **kwargs):
+        raise ValueError(
+            "This method has been disabled since it would load data into "
+            "memory rather than using mmap"
+        )
+
+
+class MmapEpochEEGLAB(EpochsEEGLAB):
+    """Metadata-only EEGLAB epochs backed by an external ``.fdt`` file."""
+
+    def __init__(
+        self,
+        input_fname,
+        events=None,
+        event_id=None,
+        tmin=0,
+        baseline=None,
+        reject=None,
+        flat=None,
+        reject_tmin=None,
+        reject_tmax=None,
+        eog=(),
+        uint16_codec=None,
+        montage_units="auto",
+        verbose=None,
+    ):
+        unsupported = {
+            "tmin": tmin != 0,
+            "baseline": baseline is not None,
+            "reject": reject is not None,
+            "flat": flat is not None,
+            "reject_tmin": reject_tmin is not None,
+            "reject_tmax": reject_tmax is not None,
+        }
+        unsupported = [name for name, supplied in unsupported.items() if supplied]
+        if unsupported:
+            raise NotImplementedError(
+                "MmapEpochEEGLAB does not support " + ", ".join(unsupported)
+            )
+
+        input_fname = os.fspath(input_fname)
+        eeg = _check_load_mat(input_fname, uint16_codec, preload=False)
+        if eeg.trials <= 1:
+            raise ValueError(
+                "The file does not contain epochs (trials must be greater than 1)"
+            )
+        if not isinstance(eeg.data, str):
+            raise ValueError(
+                "MmapEpochEEGLAB requires data stored in an external .fdt file"
+            )
+        # Validate the referenced data file, but deliberately do not open it.
+        _check_eeglab_fname(input_fname, eeg.data)
+
+        if not (
+            (events is None and event_id is None)
+            or (events is not None and event_id is not None)
+        ):
+            raise ValueError("Both `events` and `event_id` must be None or not None")
+
+        if events is None:
+            events, event_id = self._events_from_eeglab(eeg)
+        elif isinstance(events, str | os.PathLike):
+            events = read_events(events)
+
+        info, eeg_montage, _ = _get_info(
+            eeg, eog=eog, montage_units=montage_units
+        )
+        assert events is not None
+        assert event_id is not None
+        BaseEpochs.__init__(
+            self,
+            info,
+            None,
+            events,
+            event_id,
+            eeg.xmin,
+            eeg.xmax,
+            baseline=None,
+            filename=input_fname,
+            verbose=verbose,
+        )
+        self._bad_dropped = True
+        _set_dig_montage_in_init(self, eeg_montage)
+
+    @staticmethod
+    def _events_from_eeglab(eeg):
+        """Construct MNE events without touching the external data file."""
+        epochs = _bunchify(eeg.get("epoch", []))
+        eeg_events = _bunchify(eeg.get("event", []))
+        if len(epochs) == 0 or len(eeg_events) == 0:
+            warnings.warn(
+                "The EEGLAB file contains no event information. All epochs "
+                "will be assigned to a single 'unknown' event."
+            )
+            return (
+                np.column_stack(
+                    (
+                        np.arange(eeg.trials),
+                        np.zeros(eeg.trials, dtype=int),
+                        np.ones(eeg.trials, dtype=int),
+                    )
+                ),
+                {"unknown": 1},
+            )
+
+        event_names = []
+        event_latencies = []
+        unique_events = []
+        event_index = 0
+        multiple_events = False
+        for epoch in epochs:
+            if isinstance(epoch.eventtype, int | float):
+                epoch.eventtype = str(epoch.eventtype)
+            if isinstance(epoch.eventtype, str):
+                event_type = epoch.eventtype
+                event_index_increment = 1
+            else:
+                event_type = "/".join(str(value) for value in epoch.eventtype)
+                event_index_increment = len(epoch.eventtype)
+                multiple_events = True
+            event_names.append(event_type)
+            event_latencies.append(eeg_events[event_index].latency - 1)
+            event_index += event_index_increment
+            if event_type not in unique_events:
+                unique_events.append(event_type)
+
+        if multiple_events:
+            warnings.warn(
+                "At least one epoch has multiple events. Only the latency of "
+                "the first event will be retained."
+            )
+
+        event_id = {
+            event_name: index + 1
+            for index, event_name in enumerate(unique_events)
+        }
+        events = np.zeros((eeg.trials, 3), dtype=int)
+        for index, (event_name, latency) in enumerate(
+            zip(event_names, event_latencies, strict=True)
+        ):
+            previous_stimulus = 0
+            if index > 0 and latency - event_latencies[index - 1] == 1:
+                previous_stimulus = event_id[event_names[index - 1]]
+            events[index] = latency, previous_stimulus, event_id[event_name]
+        return events, event_id
+
+    def mmap(self, *, return_xarray=False):
+        return mmap_eeglab(self, return_xarray=return_xarray)
+
+    def __reduce__(self):
+        return _restore_mmap_eeglab, (type(self),), _mmap_eeglab_state(self)
+
+    def _data_disabled(self):
+        raise RuntimeError(
+            "Normal MNE data loading is disabled; use MmapEpochEEGLAB.mmap()"
+        )
+
+    def get_data(self, *args, **kwargs):
+        self._data_disabled()
+
+    def _get_data(self, *args, **kwargs):
+        self._data_disabled()
+
+    def _get_epoch_from_raw(self, *args, **kwargs):
+        self._data_disabled()
+
+    def load_data(self, *args, **kwargs):
+        self._data_disabled()
+
+
+def _mmap_eeglab_state(eeg):
+    """Return metadata state without sample data or reconstructible duplicates."""
+    state = eeg.__dict__.copy()
+    state.pop("_data", None)
+    state.pop("_raw", None)
+    state.pop("_init_kwargs", None)
+
+    # MNE can add an embedded-data cache to raw extras after construction.
+    # Never allow such a cache to leak into the pickle.
+    if "_raw_extras" in state:
+        state["_raw_extras"] = [extra.copy() for extra in state["_raw_extras"]]
+        for extra in state["_raw_extras"]:
+            extra.pop("cached_data", None)
+    return state
+
+
+def _restore_mmap_eeglab(eeglab_class):
+    """Allocate without invoking an EEGLAB constructor or reading its .set file."""
+    return eeglab_class.__new__(eeglab_class)
 
 
 def cached_path(path, raw=True):
