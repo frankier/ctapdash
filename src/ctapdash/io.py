@@ -18,11 +18,17 @@ from mne.io.eeglab.eeglab import (
     _get_info,
     _set_dig_montage_in_init,
 )
+import pickle
 from scipy import stats
 
 
 SCALP_REGEX = re.compile("(?P<stem>[^-]+)-badChan-scalp.png")
 CH_REGEX = re.compile("(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
+
+
+def is_epoched(path):
+    import pymatreader
+    return len(pymatreader.read_mat(path, "epoch").get("epoch", ())) > 0
 
 
 def _eeglab_memmap(data_fname, shape, order):
@@ -338,21 +344,23 @@ def _restore_mmap_eeglab(eeglab_class):
     return eeglab_class.__new__(eeglab_class)
 
 
-def cached_path(path, raw=True):
-    if raw:
-        return path.parent / ("." + path.stem + "-raw.fif")
-    else:
-        return path.parent / ("." + path.stem + "-epo.fif")
+def cached_path(path):
+    return path.parent / ("." + path.stem + ".pkl")
 
 
-def _try_cache(load_func, path, base_stat, preload=False, warm=False, force_cache=False):
+def pickle_load(path):
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+
+def _try_cache(load_func, path, base_stat, warm=False, force_cache=False):
     if path.exists():
         invalid = False
         cached_raw_stat = os.stat(path)
         mtime_valid = cached_raw_stat.st_mtime >= base_stat.st_mtime
         if mtime_valid:
             try:
-                result = load_func(path, preload=preload)
+                result = load_func(path)
             except ValueError as err:
                 if force_cache:
                     raise err
@@ -371,33 +379,36 @@ def _try_cache(load_func, path, base_stat, preload=False, warm=False, force_cach
     return None
 
 
-def read_eeglab(path, use_cache=True, warm=False, force_cache=False):
+def read_eeglab(path, use_cache=True, warm=False, force_cache=False, mmap=True):
     base_stat = os.stat(path)
-    cached_raw_path = cached_path(path, raw=True)
-    cached_epo_path = cached_path(path, raw=False)
+    cache_path = cached_path(path)
+    if not mmap and (use_cache or force_cache or warm):
+        raise ValueError("Cache is not implemented for mmap=False")
     if use_cache or force_cache:
-        raw_cached = _try_cache(read_raw_fif, cached_raw_path, base_stat, preload=False, warm=warm, force_cache=force_cache)
-        if raw_cached is not None:
-            return raw_cached
-        epo_cached = _try_cache(read_epochs, cached_epo_path, base_stat, preload=False, warm=warm, force_cache=force_cache)
-        if epo_cached is not None:
-            return epo_cached
+        cached = _try_cache(pickle_load, cache_path, base_stat, warm=warm, force_cache=force_cache)
+        if cached is not None:
+            return cached
     if force_cache:
         raise ValueError("Wasn't able to load from cache when force_cache=True")
     with warnings.catch_warnings(action="ignore"):
-        try:
-            base_eeg = read_epochs_eeglab(path)
-        except ValueError:
-            base_eeg = read_raw_eeglab(path, preload=False)
-        if not use_cache:
-            return base_eeg
-        if isinstance(base_eeg, BaseEpochs):
-            base_eeg.save(cached_epo_path)
+        if mmap:
+            if is_epoched(path):
+                eeg = MmapEpochEEGLAB(path)
+            else:
+                eeg = MmapRawEEGLAB(path)
+            if not use_cache:
+                return eeg
+            with open(cached_path(path), "wb") as f:
+                pickle.dump(eeg, f)
+            if warm:
+                return True
+            return eeg
         else:
-            base_eeg.save(cached_raw_path)
-        if warm:
-            return True
-        return read_eeglab(path, force_cache=True)
+            if is_epoched(path):
+                eeg = read_epochs_eeglab(path)
+            else:
+                eeg = read_raw_eeglab(path, preload=False)
+            return eeg
 
 
 def collect_logs(source_path, participant):

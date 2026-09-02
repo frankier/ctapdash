@@ -8,10 +8,12 @@ import pytest
 import xarray as xr
 
 from ctapdash.config import SETTINGS
-from ctapdash.webapp import (
+from ctapdash.plotting.stats_heatmap import (
     _descriptive_heatmap,
-    _participant_step_rows,
     _split_heatmap_channels,
+)
+from ctapdash.webapp import (
+    _participant_step_rows,
     participant_overview_fragment,
     participant_statistics_fragment,
     templates,

@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 import re
 from importlib.resources import files
 from pathlib import Path
+from ctapdash.pyramid import load_pyramid
+import panel.io.resources as panel_resources
 
 from mne import BaseEpochs
 from mne.io import BaseRaw
@@ -19,7 +21,6 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.config import SETTINGS
 from ctapdash.io import read_eeglab, ObservationData
-from ctapdash.stats import describe_mne
 from ctapdash.plotting.mne import set_onionskin_eeg, OnionskinMNEBrowseFigure
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
@@ -30,6 +31,7 @@ from mplbed import mplbed_starlette, safe_html
 _PKG = files("ctapdash")
 TEMPLATES_DIR = str(_PKG / "templates")
 STATIC_DIR = str(_PKG / "static")
+panel_resources.RESOURCE_MODE = "cdn"
 
 
 def sources_context(request):
@@ -62,7 +64,9 @@ def _observation_count(instance):
 def _participant_step_rows(root_path, steps, participant):
     rows = []
     for step_num, step_path in steps:
-        instance = read_eeglab(step_path / (participant + ".set"))
+        path = step_path / (participant + ".set")
+        instance = read_eeglab(path)
+        print(path, instance)
         rows.append(
             {
                 "number": step_num,
@@ -174,6 +178,21 @@ async def time_series(request):
     )
 
 
+async def hv_viewer(request):
+    context = participant_context(request)
+    context["view"] = "hv_viewer"
+    context["hv_plot"] = bokeh_document(request, "/hv-viewer", arguments={
+        "source": context["source"],
+        "participant": context["participant"],
+    })
+
+    return templates.TemplateResponse(
+        request,
+        'hv_viewer.html',
+        context=context
+    )
+
+
 def maybe_int(value):
     try:
         return int(value)
@@ -200,7 +219,7 @@ def time_series_bokeh(doc):
     steps = dataset.get_steps()
 
     pyramid_path = steps[0][-1] / (dataset.participant + ".set.pyramid")
-    ts_dt = xr.open_datatree(pyramid_path, engine="zarr", consolidated=True)
+    ts_dt = xr.open_datatree(pyramid_path, engine="zarr")
 
     X_PADDING = 0.2  # buffer x-range to reduce update latency with pans and zoom-outs
 
@@ -209,9 +228,6 @@ def time_series_bokeh(doc):
         ds = ts_dt[str(level)].ds
         return ds if channels is None else ds.sel(ch=channels)
 
-    # Grab the timestamps from the coarsest level for initialization.
-    # DataTree includes the (usually empty) root group in ``groups``. Only
-    # nodes containing pyramid samples are levels.
     groups = tuple(
         sorted(
             (group for group in ts_dt.groups if "time" in ts_dt[group].ds),
@@ -361,6 +377,101 @@ def time_series_bokeh(doc):
         sizing_mode="stretch_both",
     )
     doc.add_root(root)
+
+
+def hv_viewer_bokeh(doc):
+    """EEG viewer based on hvPlot (see
+    https://hvplot.holoviz.org/user_guide/Large_Timeseries.html).
+
+    Renders channels as vertically stacked curves with ``subcoordinate_y``.
+    A Panel dropdown switches between plain WebGL rendering of a downsampled
+    pyramid level and Datashader rasterization of the full-resolution data.
+    """
+    import panel as pn
+    import xarray as xr
+    import hvplot.xarray  # noqa: F401  (registers the .hvplot accessor)
+
+    dataset = ObservationData.from_bokeh_doc(doc)
+    steps = dataset.get_steps()
+
+    groups, ts_dt = load_pyramid(steps[0][-1] / (dataset.participant + ".set")
+    finest_level, coarsest_level = groups[0], groups[-1]
+
+    channels = [str(ch) for ch in ts_dt[coarsest_level].ds["ch"].values]
+
+    # WebGL rendering ships all selected samples to the browser, so use the
+    # finest pyramid level that stays below a sane per-channel point budget.
+    WEBGL_MAX_POINTS_PER_CHANNEL = 200_000
+    webgl_level = coarsest_level
+    for level in groups:  # finest -> coarsest
+        if ts_dt[level].ds["time"].size <= WEBGL_MAX_POINTS_PER_CHANNEL:
+            webgl_level = level
+            break
+
+    yticks = [(index, channel) for index, channel in enumerate(channels)]
+    common_opts = dict(
+        x="time",
+        y="data",
+        by="ch",
+        subcoordinate_y=True,
+        responsive=True,
+        min_height=600,
+        line_width=1,
+        yticks=yticks,
+        xlabel="Time (s)",
+        ylabel="Channel",
+        tools=["xwheel_zoom"],
+        title=dataset.participant,
+    )
+
+    def make_plot(render_mode):
+        #if render_mode == "Datashader":
+            # Rasterize the full-resolution level server-side; only an image
+            # sized to the viewport is sent to the browser.
+        return (
+            ts_dt[finest_level].ds["data"]
+            .hvplot.line(
+                rasterize=True,
+                cmap=["black"],
+                colorbar=False,
+                **common_opts,
+            )
+        )
+        """
+        return (
+            ts_dt[webgl_level].ds["data"]
+            .hvplot.line(
+                color="black",
+                hover_tooltips=[
+                    ("Channel", "$label"),
+                    ("Time", "$x{0.000} s"),
+                    ("Amplitude", "$y{0.000} µV"),
+                ],
+                **common_opts,
+            )
+        )
+        """
+
+    render_mode = pn.widgets.Select(
+        options=["WebGL", "Datashader"],
+        value="WebGL",
+        name="Render mode",
+    )
+    print("Making plot")
+    plot_pane = pn.panel(make_plot(render_mode.value))
+    print("Made plot")
+    #render_mode.param.watch(
+    #lambda event: setattr(plot_pane, "object", make_plot(event.new)),
+    #"value",
+    #)
+
+    layout = pn.Column(
+        pn.Row(render_mode),
+        plot_pane,
+        sizing_mode="stretch_both",
+    )
+    doc.add_root(layout.get_root(doc))
+    print("Done")
 
 
 def trim(img):
@@ -541,6 +652,7 @@ def create_app(debug=False):
 
     bokeh_application = BokehASGI({
         "/time-series": time_series_bokeh,
+        "/hv-viewer": hv_viewer_bokeh,
     })
 
     @asynccontextmanager
@@ -562,6 +674,7 @@ def create_app(debug=False):
             Route('/participant/statistics', participant_statistics_fragment, name="participant_statistics"),
             Route('/participant/steps', participant_steps_fragment, name="participant_steps"),
             Route('/participant/time-series', time_series, name="time_series"),
+            Route('/participant/hv-viewer', hv_viewer, name="hv_viewer"),
             Route('/participant/peeks', participant_peeks_fragment, name="participant_peeks"),
             Route('/participant/log', participant_log, name="participant_log"),
             *setup_routes(),

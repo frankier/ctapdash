@@ -38,6 +38,19 @@
             Time series (HV)
         </a>
     </div>
+    <div class="text-nowrap px-4 py-2
+        {% if view == 'hv_viewer' %}bg-slate-300{% endif %}
+    ">
+        <a
+            href="{{ url_for("hv_viewer") }}{{ source_participant_qs }}"
+            hx-get="{{ url_for("hv_viewer") }}"
+            hx-push-url="true"
+            hx-include="#source-select, #participant-select"
+            hx-target="#viewer"
+            hx-swap="outerHTML">
+            Time series (hvPlot)
+        </a>
+    </div>
     <div class="
         text-nowrap px-4 py-2
         {% if view == 'peeks' %}bg-slate-300{% endif %}
