@@ -36,12 +36,13 @@ def pyramid_source(tmp_path):
 
 
 def test_pyramid_groups_finest_to_coarsest(pyramid_source):
+    from ctapdash.pyramid import _pyramid_groups
     ts_dt = xr.open_datatree(
         pyramid_source / "01_test" / "p.set.pyramid",
         engine="zarr",
         consolidated=True,
     )
-    assert webapp._pyramid_groups(ts_dt) == ("/factor_1", "/factor_10")
+    assert _pyramid_groups(ts_dt) == ("/factor_1", "/factor_10")
 
 
 def test_hv_viewer_bokeh_webgl(pyramid_source):

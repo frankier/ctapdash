@@ -394,7 +394,7 @@ def hv_viewer_bokeh(doc):
     dataset = ObservationData.from_bokeh_doc(doc)
     steps = dataset.get_steps()
 
-    groups, ts_dt = load_pyramid(steps[0][-1] / (dataset.participant + ".set"))
+    ts_dt, groups = load_pyramid(steps[0][-1] / (dataset.participant + ".set"))
     finest_level, coarsest_level = groups[0], groups[-1]
 
     channels = [str(ch) for ch in ts_dt[coarsest_level].ds["ch"].values]
@@ -425,19 +425,18 @@ def hv_viewer_bokeh(doc):
     )
 
     def make_plot(render_mode):
-        #if render_mode == "Datashader":
+        if render_mode == "Datashader":
             # Rasterize the full-resolution level server-side; only an image
             # sized to the viewport is sent to the browser.
-        return (
-            ts_dt[finest_level].ds["data"]
-            .hvplot.line(
-                rasterize=True,
-                cmap=["black"],
-                colorbar=False,
-                **common_opts,
+            return (
+                ts_dt[finest_level].ds["data"]
+                .hvplot.line(
+                    rasterize=True,
+                    cmap=["black"],
+                    colorbar=False,
+                    **common_opts,
+                )
             )
-        )
-        """
         return (
             ts_dt[webgl_level].ds["data"]
             .hvplot.line(
@@ -450,20 +449,17 @@ def hv_viewer_bokeh(doc):
                 **common_opts,
             )
         )
-        """
 
     render_mode = pn.widgets.Select(
         options=["WebGL", "Datashader"],
         value="WebGL",
         name="Render mode",
     )
-    print("Making plot")
     plot_pane = pn.panel(make_plot(render_mode.value))
-    print("Made plot")
-    #render_mode.param.watch(
-    #lambda event: setattr(plot_pane, "object", make_plot(event.new)),
-    #"value",
-    #)
+    render_mode.param.watch(
+        lambda event: setattr(plot_pane, "object", make_plot(event.new)),
+        "value",
+    )
 
     layout = pn.Column(
         pn.Row(render_mode),
@@ -471,7 +467,6 @@ def hv_viewer_bokeh(doc):
         sizing_mode="stretch_both",
     )
     doc.add_root(layout.get_root(doc))
-    print("Done")
 
 
 def trim(img):

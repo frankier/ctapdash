@@ -47,6 +47,7 @@ def _write_eeglab(tmp_path, n_epochs):
 @pytest.mark.parametrize("n_epochs", [1, 2])
 def test_mmap_eeglab_matches_mne(tmp_path, n_epochs):
     import mne
+    from mne.io.eeglab.eeglab import CAL
 
     set_path = _write_eeglab(tmp_path, n_epochs)
     if n_epochs == 1:
@@ -60,7 +61,7 @@ def test_mmap_eeglab_matches_mne(tmp_path, n_epochs):
 
     assert isinstance(data, np.memmap)
     assert data.dtype == np.float32
-    np.testing.assert_allclose(data, eeg.get_data(), rtol=1e-6, atol=0)
+    np.testing.assert_allclose(data, eeg.get_data() / CAL, rtol=1e-6, atol=0)
     assert fdt_path.read_bytes() == original_bytes
 
 
@@ -81,6 +82,7 @@ def test_mmap_eeglab_xarray(tmp_path):
 
 def test_mmap_eeglab_epochs_xarray(tmp_path):
     import mne
+    from mne.io.eeglab.eeglab import CAL
 
     eeg = mne.read_epochs_eeglab(
         _write_eeglab(tmp_path, 2), verbose="error"
@@ -91,7 +93,7 @@ def test_mmap_eeglab_epochs_xarray(tmp_path):
     assert data.dims == ("epoch", "ch", "time")
     assert isinstance(data.data, np.memmap)
     np.testing.assert_array_equal(data.epoch, eeg.selection)
-    np.testing.assert_allclose(data, eeg.get_data(), rtol=1e-6, atol=0)
+    np.testing.assert_allclose(data, eeg.get_data() / CAL, rtol=1e-6, atol=0)
 
 
 def test_mmap_raw_eeglab(tmp_path):
@@ -120,7 +122,7 @@ def test_mmap_epoch_eeglab(tmp_path, monkeypatch):
     assert eeg._data is None
     assert data.dims == ("epoch", "ch", "time")
     assert isinstance(data.data, np.memmap)
-    expected = np.arange(16, dtype=np.float32).reshape(2, 2, 4) * 1e-6
+    expected = np.arange(16, dtype=np.float32).reshape(2, 2, 4)
     np.testing.assert_allclose(data, expected, rtol=1e-6, atol=0)
     with pytest.raises(RuntimeError, match=r"use MmapEpochEEGLAB\.mmap"):
         eeg.get_data()

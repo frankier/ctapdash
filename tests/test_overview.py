@@ -183,10 +183,15 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
     rendered = object()
 
     monkeypatch.setattr(SETTINGS, "sources", {"example": "/data"})
+    dataset = SimpleNamespace(
+        source_path=Path("/data"),
+        participant="sub-01",
+        get_logs=lambda: [],
+        get_qc=lambda: [],
+        get_steps=lambda: steps,
+    )
     with (
-        patch("ctapdash.webapp.collect_logs", return_value=[]),
-        patch("ctapdash.webapp.collect_qc", return_value=[]),
-        patch("ctapdash.io.get_steps_for_participant", return_value=steps),
+        patch("ctapdash.webapp.ObservationData.from_request", return_value=dataset),
         patch("ctapdash.webapp._participant_step_rows", return_value=step_rows),
         patch("ctapdash.stats.describe_mne") as describe_mne,
         patch(
@@ -219,10 +224,14 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     rendered = object()
 
     monkeypatch.setattr(SETTINGS, "sources", {"example": "/data"})
+    dataset = SimpleNamespace(
+        participant="sub-01",
+        get_steps=lambda: steps,
+    )
     with (
-        patch("ctapdash.webapp.get_steps_for_participant", return_value=steps),
+        patch("ctapdash.webapp.ObservationData.from_request", return_value=dataset),
         patch(
-            "ctapdash.plotting.stats_heatmap import participant_descriptive_heatmap",
+            "ctapdash.plotting.stats_heatmap.participant_descriptive_heatmap",
             return_value=heatmap,
         ) as build_heatmap,
         patch(

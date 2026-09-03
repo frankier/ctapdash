@@ -46,9 +46,10 @@ def _eeglab_memmap(data_fname, shape, order):
 def mmap_eeglab(eeg, *, return_xarray=False):
     """Return float32 data from an MNE EEGLAB object.
 
-    External EEGLAB ``.fdt`` data is memory-mapped copy-on-write and calibrated
-    to volts, matching :meth:`mne.io.BaseRaw.get_data`. Embedded ``.set`` data
-    cannot be memory-mapped and is returned as an ordinary float32 array.
+    External EEGLAB ``.fdt`` data is returned in its native stored units so the
+    result can remain a direct memory map. Embedded ``.set`` data cannot be
+    memory-mapped and is returned as an ordinary float32 array in the same
+    units.
 
     Parameters
     ----------
