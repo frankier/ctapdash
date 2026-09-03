@@ -103,6 +103,8 @@ def mne_to_rangepyramid(arr, rangepyramid_path, factors):
         effective_factor *= factor
         cur_len = cur_len // factor
         out = np.zeros((*leading_shape, cur_len, 2), dtype=arr.dtype)
+        out[..., 0] = np.inf
+        out[..., 1] = -np.inf
         name = "factor_" + str(effective_factor)
         if len(leading_dims) == 1:
             range_downsample_with_ch(cur_arr, factor, out)
