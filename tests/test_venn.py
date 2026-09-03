@@ -1,9 +1,19 @@
 import numpy as np
 import pytest
+import xarray as xr
 from bokeh.document import Document
 
-from ctapdash.plotting.venn_ts.range_series import ArrayRangeSeries, resolve_channel
-from ctapdash.plotting.venn_ts.renderer import PageMailbox, VennTimeSeriesRenderer
+from ctapdash.plotting.venn_ts.range_series import (
+    ArrayRangeSeries,
+    RecordingTileSource,
+    resolve_channel,
+    validate_tile_source_alignment,
+)
+from ctapdash.plotting.venn_ts.renderer import (
+    PageMailbox,
+    TileCoordinator,
+    VennTimeSeriesRenderer,
+)
 from ctapdash.plotting.venn_ts.venn import (
     build_manifest,
     load_page,
@@ -19,6 +29,24 @@ def series(values, times=None, *, name="recording:channel", levels=None):
     if times is None:
         times = np.arange(len(values), dtype=np.float64) * 0.25
     return ArrayRangeSeries(values, times, channel_identity=name, levels=levels)
+
+
+class FakeMmapRecording:
+    ch_names = ["Fz", "Cz", "Pz"]
+
+    def __init__(self, offset=0, times=None):
+        self.offset = offset
+        self._times = np.arange(12, dtype=float) * 0.25 if times is None else times
+        self.mmap_calls = 0
+
+    def mmap(self, *, return_xarray=False):
+        self.mmap_calls += 1
+        values = np.arange(36, dtype=np.float32).reshape(3, 12) + self.offset
+        return xr.DataArray(
+            values,
+            coords=(self.ch_names, self._times),
+            dims=("ch", "time"),
+        )
 
 
 def test_cli_selection_requires_exactly_two_and_resolves_names_or_indices(tmp_path):
@@ -152,3 +180,91 @@ def test_bokeh_model_manifest_and_mailbox_protocol():
     assert len(data["minimum"]) == 10
     np.testing.assert_array_equal(metadata["series_id"], [0, 1])
     mailbox.close()
+
+
+def test_recording_tile_source_reuses_one_mmap_and_reads_rectangles(tmp_path):
+    path = tmp_path / "recording.set"
+    path.touch()
+    recording = FakeMmapRecording()
+    source = RecordingTileSource(path, recording=recording)
+
+    assert recording.mmap_calls == 1
+    np.testing.assert_array_equal(
+        source.slice_lines(1, [1, 2], 3, 6)[1],
+        np.arange(36, dtype=np.float32).reshape(3, 12)[[1, 2], 3:6],
+    )
+    ranges = source.slice_ranges(1, [1], 4, 7)
+    assert ranges.shape == (1, 3, 2)
+    np.testing.assert_array_equal(ranges[..., 0], ranges[..., 1])
+    np.testing.assert_array_equal(source.finite_extrema([1, 2]), [[12, 23], [24, 35]])
+    assert recording.mmap_calls == 1
+
+
+def test_recording_tile_source_rejects_embedded_set_before_loading(tmp_path):
+    path = tmp_path / "embedded.set"
+    path.touch()
+    Embedded = type(
+        "MmapRawEEGLAB",
+        (),
+        {
+            "filenames": [path],
+            "mmap": lambda self, **kwargs: pytest.fail("embedded data was eagerly loaded"),
+        },
+    )
+    with pytest.raises(ValueError, match="external .fdt"):
+        RecordingTileSource(path, recording=Embedded())
+
+
+def test_tile_source_alignment_is_shared_across_channels(tmp_path):
+    paths = [tmp_path / name for name in ("a.set", "b.set")]
+    for path in paths:
+        path.touch()
+    a = RecordingTileSource(paths[0], recording=FakeMmapRecording())
+    b = RecordingTileSource(paths[1], recording=FakeMmapRecording(offset=10))
+    assert validate_tile_source_alignment(a, b) == 12
+
+    bad_times = np.arange(12, dtype=float) * 0.25 + 0.1
+    bad = RecordingTileSource(paths[1], recording=FakeMmapRecording(times=bad_times))
+    with pytest.raises(ValueError, match="time sample 0"):
+        validate_tile_source_alignment(a, bad)
+
+
+def test_unified_tile_coordinator_packs_channel_and_time_tiles(tmp_path):
+    paths = [tmp_path / name for name in ("a.set", "b.set")]
+    for path in paths:
+        path.touch()
+    sources = tuple(
+        RecordingTileSource(path, recording=FakeMmapRecording(offset=index * 100))
+        for index, path in enumerate(paths)
+    )
+    renderer = VennTimeSeriesRenderer(
+        dataset_version="test",
+        sample_count=12,
+        time_start=0,
+        time_end=2.75,
+        sample_interval=0.25,
+        page_size=3,
+        channel_tile_size=2,
+        channel_names=["Fz", "Cz", "Pz"],
+        amplitude_scales=[1, 1, 1],
+        amplitude_offsets=[0, 1, 2],
+        channel_y_mins=[0, 1, 2],
+        channel_y_maxs=[1, 2, 3],
+        range_factors=[1],
+        range_page_counts=[4],
+        line_factors=[1],
+        line_page_counts=[4],
+    )
+    coordinator = TileCoordinator(
+        Document(), renderer, sources, ["Fz", "Cz", "Pz"], workers=1
+    )
+    seq, (range_data, range_metadata), (line_data, line_metadata) = coordinator._load(
+        4, (("venn", 1, 1, 0), ("lines", 1, 1, 1))
+    )
+    assert seq == 4
+    assert range_metadata["channel_count"].tolist() == [2]
+    assert range_metadata["core_start"].tolist() == [1]
+    assert len(range_data["minimum_a"]) == 10  # two channels, 3 core + 2 gutters
+    assert line_metadata["channel_index"].tolist() == [2]
+    assert len(line_data["time"]) == 5
+    coordinator.close()

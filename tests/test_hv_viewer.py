@@ -5,11 +5,13 @@ import numpy as np
 import pytest
 import xarray as xr
 from bokeh.document import Document
-from bokeh.models import HoverTool, Select as BkSelect
+from bokeh.models import CheckboxButtonGroup, HoverTool, Select as BkSelect
+from bokeh.models.renderers import GlyphRenderer
 from bokeh.plotting._figure import figure as BkFigure
 
 from ctapdash import webapp
 from ctapdash.config import SETTINGS
+from ctapdash.plotting.venn_ts.renderer import VennTimeSeriesRenderer
 
 
 def test_comparison_channel_geometry_modes():
@@ -31,6 +33,65 @@ def test_comparison_channel_geometry_modes():
     for item in normalized:
         mapped_span = (item["actual_max"] - item["actual_min"]) * item["scale"]
         assert mapped_span == pytest.approx(0.8)
+
+
+def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
+    from ctapdash.plotting.venn_ts.range_series import RecordingTileSource
+
+    class FakeRecording:
+        ch_names = ["Fz", "Cz"]
+
+        def __init__(self, offset):
+            self.offset = offset
+
+        def mmap(self, *, return_xarray=False):
+            times = np.arange(20, dtype=float) * 0.1
+            values = np.vstack((np.sin(times), np.cos(times))) + self.offset
+            return xr.DataArray(values, coords=(self.ch_names, times), dims=("ch", "time"))
+
+    steps = []
+    for number in (1, 2):
+        step = tmp_path / f"{number:02d}_step"
+        step.mkdir()
+        (step / "p.set").touch()
+        steps.append((number, step))
+    dataset = webapp.ObservationData(tmp_path, "p", "fake")
+    dataset.get_steps = lambda: steps
+
+    def fake_source(path):
+        offset = int(Path(path).parent.name[:2])
+        return RecordingTileSource(path, recording=FakeRecording(offset))
+
+    with (
+        patch.object(
+            webapp.ObservationData,
+            "from_bokeh_doc",
+            classmethod(lambda cls, doc: dataset),
+        ),
+        patch(
+            "ctapdash.plotting.venn_ts.range_series.RecordingTileSource",
+            side_effect=fake_source,
+        ),
+    ):
+        doc = Document()
+        webapp.venn_time_series_bokeh(doc)
+
+    figure = doc.roots[0].select_one({"type": BkFigure})
+    custom = list(figure.select({"type": VennTimeSeriesRenderer}))
+    glyphs = list(figure.select({"type": GlyphRenderer}))
+    layer_control = doc.roots[0].select_one({"type": CheckboxButtonGroup})
+    assert figure.output_backend == "webgl"
+    assert len(custom) == 1
+    assert len(glyphs) == 2
+    assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in glyphs)
+    assert layer_control.labels == ["Venn", "Lines"]
+    assert layer_control.active == [0, 1]
+    layer_control.active = [1]
+    assert custom[0].venn_visible is False
+    assert custom[0].lines_visible is True
+    layer_control.active = [0]
+    assert custom[0].venn_visible is True
+    assert custom[0].lines_visible is False
 
 
 @pytest.fixture

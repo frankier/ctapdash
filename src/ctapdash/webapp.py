@@ -463,11 +463,13 @@ def _comparison_channel_geometry(extrema, mode):
 
 
 def venn_time_series_bokeh(doc):
-    """Build a linked, multichannel viewer for comparing processing steps."""
-    import numpy as np
-    from markupsafe import escape
+    """Build one WebGL figure containing Venn and line comparison layers."""
+    from hashlib import sha256
+
     from bokeh.layouts import column, row
     from bokeh.models import (
+        CheckboxButtonGroup,
+        CustomJS,
         Div,
         FixedTicker,
         FullscreenTool,
@@ -476,15 +478,16 @@ def venn_time_series_bokeh(doc):
         Range1d,
         Select,
         Span,
-        TabPanel,
-        Tabs,
         WheelZoomTool,
     )
     from bokeh.plotting import figure
+    from markupsafe import escape
 
-    from ctapdash.plotting.venn_ts.range_series import RecordingRangeSeries
-    from ctapdash.plotting.venn_ts.renderer import PageMailbox, VennTimeSeriesRenderer
-    from ctapdash.plotting.venn_ts.venn import build_manifest
+    from ctapdash.plotting.venn_ts.range_series import (
+        RecordingTileSource,
+        validate_tile_source_alignment,
+    )
+    from ctapdash.plotting.venn_ts.renderer import TileCoordinator, VennTimeSeriesRenderer
 
     dataset = ObservationData.from_bokeh_doc(doc)
     steps = dataset.get_steps()
@@ -494,52 +497,58 @@ def venn_time_series_bokeh(doc):
 
     steps_by_number = dict(steps)
     step_values = [str(number) for number, _path in steps]
-    first_path = steps[0][1] / (dataset.participant + ".set")
-    first_recording = read_eeglab(first_path)
-    available_channels = list(first_recording.ch_names)
-    recording_cache = {first_path.resolve(): first_recording}
-
     step_a = Select(title="Step A (red)", options=step_values, value=step_values[0])
     step_b = Select(
         title="Step B (blue)",
         options=step_values,
         value=step_values[1] if len(step_values) > 1 else step_values[0],
     )
-    channel_choice = MultiChoice(
-        title="Channels",
-        options=available_channels,
-        value=available_channels,
-    )
     plotting_mode = Select(
         title="Plotting mode",
         options=["overplot", "stretch", "normalize"],
         value="overplot",
     )
-    help_text = Div(
-        text=(
-            "<small>Red: step A only &nbsp; Blue: step B only &nbsp; "
-            "Black: overlap. Step A defines each channel's nominal range.</small>"
-        ),
-        sizing_mode="stretch_width",
+    layers = CheckboxButtonGroup(labels=["Venn", "Lines"], active=[0, 1])
+    status = Div(text="", sizing_mode="stretch_width")
+    plot_holder = column(sizing_mode="stretch_width")
+    source_cache = {}
+    active_coordinator = [None]
+    active_renderer = [None]
+
+    def path_for(value):
+        return steps_by_number[int(value)] / (dataset.participant + ".set")
+
+    def get_source(value):
+        path = path_for(value).resolve()
+        if path not in source_cache:
+            source_cache[path] = RecordingTileSource(path)
+        return source_cache[path]
+
+    try:
+        initial_source = get_source(step_a.value)
+        initial_channels = list(initial_source.channels)
+    except Exception as error:
+        doc.add_root(Div(text=f"<strong>Unable to open comparison data:</strong> {escape(str(error))}"))
+        return
+
+    channel_choice = MultiChoice(
+        title="Channels",
+        options=initial_channels,
+        value=initial_channels,
     )
-    venn_panel = TabPanel(title="Venn comparison", child=Div(text="Loading…"))
-    line_panel = TabPanel(title="Line comparison", child=Div(text="Loading…"))
-    tabs = Tabs(tabs=[venn_panel, line_panel], sizing_mode="stretch_width")
-    live_mailboxes = []
 
-    def recording_path(step_widget):
-        return steps_by_number[int(step_widget.value)] / (dataset.participant + ".set")
+    def page_counts(sources, layer, factors, common):
+        counts = []
+        for factor in factors:
+            length = min(
+                *(source.level_length(layer, factor) for source in sources),
+                common // factor,
+            )
+            counts.append((length + 2047) // 2048)
+        return counts
 
-    def get_recording(path):
-        key = path.resolve()
-        if key not in recording_cache:
-            recording_cache[key] = read_eeglab(path)
-        return recording_cache[key]
-
-    def style_plot(plot, channels, geometry, mode):
-        plot.ygrid.grid_line_color = None
-        ticks = []
-        labels = {}
+    def style_axes(plot, channels, geometry, mode):
+        ticks, labels = [], {}
         for channel, item in zip(channels, geometry):
             center = item["center"]
             ticks.append(center)
@@ -551,156 +560,160 @@ def venn_time_series_bokeh(doc):
                 for value in values:
                     tick = value * item["scale"] + item["offset"]
                     ticks.append(tick)
-                    value_label = f"{value:.3g}"
-                    labels[tick] = (
-                        f"{channel} · {value_label}"
-                        if abs(tick - center) < 1e-12
-                        else value_label
-                    )
+                    label = f"{value:.3g}"
+                    labels[tick] = f"{channel} · {label}" if abs(tick - center) < 1e-12 else label
+            plot.add_layout(Span(
+                location=center - 0.4,
+                dimension="width",
+                line_color="#dddddd",
+                line_width=1,
+            ))
+            plot.add_layout(Span(
+                location=center + 0.4,
+                dimension="width",
+                line_color="#dddddd",
+                line_width=1,
+            ))
         plot.yaxis.ticker = FixedTicker(ticks=ticks)
         plot.yaxis.major_label_overrides = labels
         plot.yaxis.axis_label = "Channel"
+        plot.ygrid.grid_line_color = None
         plot.xaxis.axis_label = "Time (s)"
         plot.toolbar.logo = None
-        wheel = WheelZoomTool(dimensions="width")
-        plot.add_tools(wheel, WheelZoomTool(dimensions="height"), FullscreenTool())
-        plot.toolbar.active_scroll = wheel
-        for item in geometry:
-            plot.add_layout(Span(
-                location=item["center"] - 0.4,
-                dimension="width",
-                line_color="#dddddd",
-                line_width=1,
-            ))
-            plot.add_layout(Span(
-                location=item["center"] + 0.4,
-                dimension="width",
-                line_color="#dddddd",
-                line_width=1,
-            ))
+        xwheel = WheelZoomTool(dimensions="width")
+        plot.add_tools(xwheel, WheelZoomTool(dimensions="height"), FullscreenTool())
+        plot.toolbar.active_scroll = xwheel
 
-    def make_figure(x_range, y_range, channels):
-        return figure(
-            x_range=x_range,
-            y_range=Range1d(*y_range),
-            height=max(180, len(channels) * 100 + 60),
-            sizing_mode="stretch_width",
-            tools="pan,box_zoom,reset,save",
-            active_drag="box_zoom",
-        )
+    def set_layers(_attr, _old, _new):
+        renderer = active_renderer[0]
+        if renderer is not None:
+            renderer.venn_visible = 0 in layers.active
+            renderer.lines_visible = 1 in layers.active
 
-    def load_line_level(path, channels):
-        tree, groups = load_pyramid(path)
-        data_array = next(iter(tree[groups[-1]].ds.data_vars.values()))
-        return data_array.sel(ch=channels).load()
-
-    def build_views():
-        for mailbox in live_mailboxes:
-            mailbox.close()
-        live_mailboxes.clear()
-
-        channels = list(channel_choice.value)
-        if not channels:
-            venn_panel.child = Div(text="Select at least one channel.")
-            line_panel.child = Div(text="Select at least one channel.")
-            return
+    def rebuild(_attr, _old, _new):
+        if active_coordinator[0] is not None:
+            active_coordinator[0].close()
+            active_coordinator[0] = None
+        status.text = "<small>Opening memory maps and pyramid metadata…</small>"
         try:
-            path_a, path_b = recording_path(step_a), recording_path(step_b)
-            recording_a, recording_b = get_recording(path_a), get_recording(path_b)
-            missing = [
-                channel for channel in channels
-                if channel not in recording_a.ch_names or channel not in recording_b.ch_names
+            source_a, source_b = get_source(step_a.value), get_source(step_b.value)
+            common = validate_tile_source_alignment(source_a, source_b)
+            common_channels = [
+                channel for channel in source_a.channels if channel in source_b.channel_index
             ]
-            if missing:
-                raise ValueError(f"Channels absent from one of the steps: {', '.join(missing)}")
+            channel_choice.options = common_channels
+            channels = [channel for channel in channel_choice.value if channel in common_channels]
+            if list(channel_choice.value) != channels:
+                channel_choice.value = channels
+                return
+            if not channels:
+                active_renderer[0] = None
+                plot_holder.children = [Div(text="Select at least one channel.")]
+                status.text = ""
+                return
 
-            pairs = []
-            manifests = []
-            extrema = []
-            for channel in channels:
-                series_a = RecordingRangeSeries(path_a, channel, recording=recording_a)
-                series_b = RecordingRangeSeries(path_b, channel, recording=recording_b)
-                manifest = build_manifest(series_a, series_b)
-                pairs.append((series_a, series_b))
-                manifests.append(manifest)
-                extrema.append((
-                    *series_a.finite_extrema(manifest.sample_count),
-                    *series_b.finite_extrema(manifest.sample_count),
-                ))
+            indices_a = source_a.indices(channels)
+            indices_b = source_b.indices(channels)
+            extrema_a = source_a.finite_extrema(indices_a, common)
+            extrema_b = source_b.finite_extrema(indices_b, common)
+            extrema = [(*a, *b) for a, b in zip(extrema_a, extrema_b)]
             geometry, y_range = _comparison_channel_geometry(extrema, plotting_mode.value)
-            shared_x_range = Range1d(
-                max(manifest.time_start for manifest in manifests),
-                min(manifest.time_end for manifest in manifests),
+            scales = [item["scale"] for item in geometry]
+            offsets = [item["offset"] for item in geometry]
+            channel_y_mins = [
+                item["actual_min"] * item["scale"] + item["offset"] for item in geometry
+            ]
+            channel_y_maxs = [
+                item["actual_max"] * item["scale"] + item["offset"] for item in geometry
+            ]
+            range_factors = sorted(set(source_a.range_factors) & set(source_b.range_factors))
+            line_factors = sorted(set(source_a.line_factors) & set(source_b.line_factors))
+            version = sha256(
+                f"{source_a.dataset_version}|{source_b.dataset_version}|{channels}|{common}".encode()
+            ).hexdigest()[:20]
+            renderer = VennTimeSeriesRenderer(
+                dataset_version=version,
+                sample_count=common,
+                time_start=max(source_a.time_start, source_b.time_start),
+                time_end=min(source_a.times[common - 1], source_b.times[common - 1]),
+                sample_interval=(source_a.sample_interval + source_b.sample_interval) / 2,
+                source_factors=range_factors,
+                page_counts=page_counts((source_a, source_b), "venn", range_factors, common),
+                range_factors=range_factors,
+                range_page_counts=page_counts((source_a, source_b), "venn", range_factors, common),
+                line_factors=line_factors,
+                line_page_counts=page_counts((source_a, source_b), "line", line_factors, common),
+                channel_names=channels,
+                amplitude_scales=scales,
+                amplitude_offsets=offsets,
+                channel_y_mins=channel_y_mins,
+                channel_y_maxs=channel_y_maxs,
+                venn_visible=0 in layers.active,
+                lines_visible=1 in layers.active,
             )
-
-            venn_plot = make_figure(shared_x_range, y_range, channels)
-            venn_plot.title.text = f"Steps {step_a.value} and {step_b.value}"
-            style_plot(venn_plot, channels, geometry, plotting_mode.value)
-            for pair, manifest, item in zip(pairs, manifests, geometry):
-                renderer = VennTimeSeriesRenderer(
-                    manifest=manifest,
-                    amplitude_scale=item["scale"],
-                    amplitude_offset=item["offset"],
-                )
-                venn_plot.renderers.append(renderer)
-                live_mailboxes.append(PageMailbox(doc, renderer, pair))
-
-            line_a = load_line_level(path_a, channels)
-            line_b = load_line_level(path_b, channels)
-            line_plot = make_figure(shared_x_range, y_range, channels)
-            line_plot.title.text = f"Steps {step_a.value} and {step_b.value}"
-            style_plot(line_plot, channels, geometry, plotting_mode.value)
-            hover = HoverTool(
-                tooltips=[
-                    ("Step", "$name"),
-                    ("Time", "@time{0.000} s"),
-                    ("Amplitude", "@amplitude{0.000}"),
-                ],
+            plot = figure(
+                x_range=Range1d(renderer.time_start, renderer.time_end),
+                y_range=Range1d(*y_range),
+                height=max(180, len(channels) * 100 + 60),
+                sizing_mode="stretch_width",
+                tools="pan,box_zoom,reset,save",
+                active_drag="box_zoom",
+                output_backend="webgl",
+                title=f"Steps {step_a.value} and {step_b.value}",
+            )
+            plot.renderers.append(renderer)
+            line_a = plot.multi_line(
+                xs="xs", ys="ys", source=renderer.line_source_a,
+                line_color="red", line_width=1, line_alpha=0.9,
+                name=f"step {step_a.value}",
+            )
+            line_b = plot.multi_line(
+                xs="xs", ys="ys", source=renderer.line_source_b,
+                line_color="blue", line_width=1, line_alpha=0.9,
+                name=f"step {step_b.value}",
+            )
+            plot.add_tools(HoverTool(
+                renderers=[line_a, line_b],
+                tooltips=[("Step", "$name"), ("Channel", "@channel")],
                 mode="mouse",
+            ))
+            style_axes(plot, channels, geometry, plotting_mode.value)
+            renderer.js_on_change("error", CustomJS(
+                args={"status": status},
+                code="status.text = cb_obj.error ? `<strong>${cb_obj.error}</strong>` : ''",
+            ))
+            coordinator = TileCoordinator(doc, renderer, (source_a, source_b), channels)
+            active_renderer[0] = renderer
+            active_coordinator[0] = coordinator
+            plot_holder.children = [plot]
+            status.text = (
+                "<small>Venn and line tiles load adaptively from memory-mapped data. "
+                "Red: step A; blue: step B; black: Venn overlap.</small>"
             )
-            line_plot.add_tools(hover)
-            for channel, item in zip(channels, geometry):
-                for label, color, data_array in (
-                    (f"step {step_a.value}", "red", line_a),
-                    (f"step {step_b.value}", "blue", line_b),
-                ):
-                    channel_data = data_array.sel(ch=channel)
-                    amplitudes = np.asarray(channel_data.values)
-                    line_plot.line(
-                        "time",
-                        "plot_amplitude",
-                        source={
-                            "time": np.asarray(channel_data["time"].values),
-                            "amplitude": amplitudes,
-                            "plot_amplitude": amplitudes * item["scale"] + item["offset"],
-                        },
-                        name=label,
-                        color=color,
-                        line_width=1,
-                        alpha=0.75,
-                    )
-            venn_panel.child = venn_plot
-            line_panel.child = line_plot
         except Exception as error:
-            text = f"<strong>Unable to build comparison:</strong> {escape(str(error))}"
-            venn_panel.child = Div(text=text)
-            line_panel.child = Div(text=text)
+            active_renderer[0] = None
+            plot_holder.children = [Div(text=f"<strong>Unable to build comparison:</strong> {escape(str(error))}")]
+            status.text = ""
 
+    layers.on_change("active", set_layers)
     for widget in (step_a, step_b, channel_choice, plotting_mode):
-        widget.on_change("value", lambda attr, old, new: build_views())
+        widget.on_change("value", rebuild)
 
-    build_views()
+    rebuild(None, None, None)
     doc.add_root(column(
-        row(step_a, step_b, plotting_mode, sizing_mode="stretch_width"),
+        row(step_a, step_b, plotting_mode, layers, sizing_mode="stretch_width"),
         channel_choice,
-        help_text,
-        tabs,
+        status,
+        plot_holder,
         sizing_mode="stretch_width",
     ))
     doc.title = "Processing-step time series comparison"
-    doc.on_session_destroyed(
-        lambda _context: [mailbox.close() for mailbox in list(live_mailboxes)]
-    )
+
+    def close_session(_context):
+        if active_coordinator[0] is not None:
+            active_coordinator[0].close()
+
+    doc.on_session_destroyed(close_session)
 
 
 def hv_viewer_bokeh(doc):

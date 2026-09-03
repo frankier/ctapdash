@@ -1,22 +1,24 @@
 """Run with: bokeh serve --show exp/venn_bokeh.py --args --series A.set Cz --series B.set Cz
 
-Add ``--output-backend webgl`` to render directly into Bokeh's shared WebGL
-canvas.  The default canvas backend uses GPU rendering followed by CPU
-readback so that Bokeh retains ownership of its 2D canvas.
+The experiment requires Bokeh's shared WebGL canvas, matching the dashboard.
 """
 
 from __future__ import annotations
 
 import argparse
+from hashlib import sha256
 import sys
 
 from bokeh.document import Document
 from bokeh.models import Range1d
 from bokeh.plotting import figure
 
-from ctapdash.plotting.venn_ts.venn import build_manifest, parse_series_args
-from ctapdash.plotting.venn_ts.range_series import RecordingRangeSeries
-from ctapdash.plotting.venn_ts.renderer import PageMailbox, VennTimeSeriesRenderer
+from ctapdash.plotting.venn_ts.venn import VennManifest, parse_series_args
+from ctapdash.plotting.venn_ts.range_series import (
+    RecordingTileSource,
+    validate_tile_source_alignment,
+)
+from ctapdash.plotting.venn_ts.renderer import TileCoordinator, VennTimeSeriesRenderer
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -29,12 +31,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         required=True,
         help="recording path and channel name or zero-based index (exactly twice)",
     )
-    parser.add_argument(
-        "--output-backend",
-        choices=("canvas", "webgl"),
-        default="canvas",
-        help="Bokeh backend; selects Venn readback or shared-WebGL composition",
-    )
     args = parser.parse_args(argv)
     try:
         args.series = parse_series_args(args.series)
@@ -46,26 +42,78 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def build_document(document: Document, argv: list[str]) -> None:
     args = parse_args(argv)
     selections = args.series
-    series = tuple(
-        RecordingRangeSeries(selection.path, selection.channel)
-        for selection in selections
+    sources = tuple(RecordingTileSource(selection.path) for selection in selections)
+    # Keep the command-line experiment's ability to compare differently named
+    # channels while using the same multichannel tile path as the web app.
+    common = validate_tile_source_alignment(*sources)
+    source_channels = ([selections[0].channel], [selections[1].channel])
+    extrema = [
+        source.finite_extrema(source.indices(channels), common)[0]
+        for source, channels in zip(sources, source_channels)
+    ]
+    y_start = min(value[0] for value in extrema)
+    y_end = max(value[1] for value in extrema)
+    if y_start == y_end:
+        padding = abs(y_start) * 0.05 or 1.0
+        y_start -= padding
+        y_end += padding
+    factors = tuple(sorted(set(sources[0].range_factors) & set(sources[1].range_factors)))
+    page_size = 2048
+    manifest = VennManifest(
+        dataset_version=sha256("|".join(source.dataset_version for source in sources).encode()).hexdigest()[:20],
+        sample_count=common,
+        time_start=sources[0].time_start,
+        time_end=sources[0].times[common - 1],
+        sample_interval=(sources[0].sample_interval + sources[1].sample_interval) / 2,
+        source_factors=factors,
+        page_size=page_size,
+        page_counts=tuple(
+            (min(source.level_length("venn", factor) for source in sources) + page_size - 1) // page_size
+            for factor in factors
+        ),
+        initial_y_start=y_start,
+        initial_y_end=y_end,
     )
-    manifest = build_manifest(series[0], series[1])
-    renderer = VennTimeSeriesRenderer(manifest=manifest)
+    renderer = VennTimeSeriesRenderer(
+        dataset_version=manifest.dataset_version,
+        sample_count=manifest.sample_count,
+        time_start=manifest.time_start,
+        time_end=manifest.time_end,
+        sample_interval=manifest.sample_interval,
+        source_factors=list(manifest.source_factors),
+        page_counts=list(manifest.page_counts),
+        range_factors=list(manifest.source_factors),
+        range_page_counts=list(manifest.page_counts),
+        channel_names=[f"{selections[0].channel} / {selections[1].channel}"],
+        amplitude_scales=[1.0],
+        amplitude_offsets=[0.0],
+        channel_y_mins=[manifest.initial_y_start],
+        channel_y_maxs=[manifest.initial_y_end],
+        lines_visible=False,
+    )
     plot = figure(
         x_range=Range1d(manifest.time_start, manifest.time_end),
         y_range=Range1d(manifest.initial_y_start, manifest.initial_y_end),
         tools="pan,xwheel_zoom,ywheel_zoom,box_zoom,reset,save",
         active_scroll="xwheel_zoom",
-        output_backend=args.output_backend,
+        output_backend="webgl",
         sizing_mode="stretch_both",
-        title=f"{series[0].channel_identity} / {series[1].channel_identity}",
+        title=f"{selections[0].path}:{selections[0].channel} / {selections[1].path}:{selections[1].channel}",
     )
     plot.renderers.append(renderer)
     document.add_root(plot)
     document.title = "Venn time series"
-    mailbox = PageMailbox(document, renderer, series)
-    document.on_session_destroyed(lambda _context, mailbox=mailbox: mailbox.close())
+    mailbox = TileCoordinator(
+        document,
+        renderer,
+        sources,
+        renderer.channel_names,
+        source_channels=source_channels,
+    )
+    def close_session(_context):
+        mailbox.close()
+
+    document.on_session_destroyed(close_session)
 
 
 from bokeh.io import curdoc
