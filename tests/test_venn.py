@@ -2,17 +2,16 @@ import numpy as np
 import pytest
 from bokeh.document import Document
 
-from ctapdash.venn import (
-    ArrayRangeSeries,
+from ctapdash.plotting.venn_ts.range_series import ArrayRangeSeries, resolve_channel
+from ctapdash.plotting.venn_ts.renderer import PageMailbox, VennTimeSeriesRenderer
+from ctapdash.plotting.venn_ts.venn import (
     build_manifest,
     load_page,
     pack_pages,
     parse_series_args,
     reference_raster,
-    resolve_channel,
     validate_alignment,
 )
-from ctapdash.vennrender import PageMailbox, VennTimeSeriesRenderer
 
 
 def series(values, times=None, *, name="recording:channel", levels=None):

@@ -14,8 +14,9 @@ from bokeh.document import Document
 from bokeh.models import Range1d
 from bokeh.plotting import figure
 
-from ctapdash.venn import RecordingRangeSeries, build_manifest, parse_series_args
-from ctapdash.vennrender import PageMailbox, VennTimeSeriesRenderer
+from ctapdash.plotting.venn_ts.venn import build_manifest, parse_series_args
+from ctapdash.plotting.venn_ts.range_series import RecordingRangeSeries
+from ctapdash.plotting.venn_ts.renderer import PageMailbox, VennTimeSeriesRenderer
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
