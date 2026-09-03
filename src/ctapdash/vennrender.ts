@@ -18,6 +18,29 @@ type Page = {
   used: number
 }
 
+type BokehGLResources = {
+  gl: WebGLRenderingContext
+  program: WebGLProgram
+  buffer: WebGLBuffer
+  textures: WebGLTexture[]
+}
+
+type InternalReglWrapper = {
+  _regl?: {
+    _refresh?: () => void
+  }
+}
+
+type ViewportArrays = {
+  start: number
+  count: number
+  a: Float32Array
+  b: Float32Array
+  valid_a: Uint8Array
+  valid_b: Uint8Array
+  complete: boolean
+}
+
 const vertex_source = `#version 300 es
 precision highp float;
 const vec2 positions[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
@@ -68,13 +91,13 @@ void main() {
   for (int index = 0; index < 128; index++) {
     if (first + index >= last) break;
     ivec2 position = texel_position(first + index);
-    if (texelFetch(u_valid_a, position, 0).r > 0.5) {
+    if (texelFetch(u_valid_a, position, 0).r > 0.0) {
       vec2 range_a = texelFetch(u_ranges_a, position, 0).rg;
       amin = min(amin, range_a.x);
       amax = max(amax, range_a.y);
       has_a = true;
     }
-    if (texelFetch(u_valid_b, position, 0).r > 0.5) {
+    if (texelFetch(u_valid_b, position, 0).r > 0.0) {
       vec2 range_b = texelFetch(u_ranges_b, position, 0).rg;
       bmin = min(bmin, range_b.x);
       bmax = max(bmax, range_b.y);
@@ -88,6 +111,83 @@ void main() {
   else if (inside_a) out_color = u_color_a;
   else if (inside_b) out_color = u_color_b;
   else out_color = vec4(0.0);
+}
+`
+
+const bokeh_vertex_source = `
+attribute vec2 a_position;
+void main() { gl_Position = vec4(a_position, 0.0, 1.0); }
+`
+
+const bokeh_fragment_source = `
+precision highp float;
+uniform sampler2D u_min_a;
+uniform sampler2D u_max_a;
+uniform sampler2D u_min_b;
+uniform sampler2D u_max_b;
+uniform sampler2D u_valid_a;
+uniform sampler2D u_valid_b;
+uniform float u_texture_width;
+uniform vec2 u_texture_size;
+uniform float u_entry_count;
+uniform int u_max_aggregation;
+uniform float u_source_time_start;
+uniform float u_source_time_step;
+uniform float u_x_start;
+uniform float u_x_end;
+uniform float u_y_start;
+uniform float u_y_end;
+uniform vec2 u_frame_origin;
+uniform vec2 u_size;
+uniform vec4 u_color_a;
+uniform vec4 u_color_b;
+uniform vec4 u_color_overlap;
+
+vec2 texel_position(float index) {
+  float x = mod(index, u_texture_width);
+  float y = floor(index / u_texture_width);
+  return (vec2(x, y) + 0.5) / u_texture_size;
+}
+
+void main() {
+  float local_x = gl_FragCoord.x - u_frame_origin.x;
+  float x0 = u_x_start + (local_x - 0.5) / u_size.x * (u_x_end - u_x_start);
+  float x1 = u_x_start + (local_x + 0.5) / u_size.x * (u_x_end - u_x_start);
+  float first = floor((min(x0, x1) - u_source_time_start) / u_source_time_step);
+  float next_entry = floor((max(x0, x1) - u_source_time_start) / u_source_time_step);
+  float last = next_entry == first ? first + 1.0 : next_entry;
+  first = clamp(first, 0.0, u_entry_count);
+  last = clamp(last, first, min(u_entry_count, first + float(u_max_aggregation)));
+
+  float amin = 3.402823466e38;
+  float amax = -3.402823466e38;
+  float bmin = 3.402823466e38;
+  float bmax = -3.402823466e38;
+  bool has_a = false;
+  bool has_b = false;
+  for (int offset = 0; offset < 128; offset++) {
+    float index = first + float(offset);
+    if (index >= last) break;
+    vec2 position = texel_position(index);
+    if (texture2D(u_valid_a, position).r > 0.0) {
+      amin = min(amin, texture2D(u_min_a, position).r);
+      amax = max(amax, texture2D(u_max_a, position).r);
+      has_a = true;
+    }
+    if (texture2D(u_valid_b, position).r > 0.0) {
+      bmin = min(bmin, texture2D(u_min_b, position).r);
+      bmax = max(bmax, texture2D(u_max_b, position).r);
+      has_b = true;
+    }
+  }
+  float local_y = gl_FragCoord.y - u_frame_origin.y;
+  float value = u_y_start + local_y / u_size.y * (u_y_end - u_y_start);
+  bool inside_a = has_a && amin <= value && value <= amax;
+  bool inside_b = has_b && bmin <= value && value <= bmax;
+  if (inside_a && inside_b) gl_FragColor = u_color_overlap;
+  else if (inside_a) gl_FragColor = u_color_a;
+  else if (inside_b) gl_FragColor = u_color_b;
+  else gl_FragColor = vec4(0.0);
 }
 `
 
@@ -132,9 +232,12 @@ export class VennTimeSeriesRendererView extends RendererView {
   private use_counter = 0
   private selected_factor = 1
   private last_samples_per_pixel = 0
+  private staging_canvas = document.createElement("canvas")
+  private bokeh_resources: BokehGLResources | null = null
 
   override initialize(): void {
     super.initialize()
+    if (this.has_webgl) return
     this.gl_canvas.addEventListener("webglcontextlost", this.on_context_lost)
     this.gl_canvas.addEventListener("webglcontextrestored", this.on_context_restored)
     const gl = this.gl_canvas.getContext("webgl2", {
@@ -162,6 +265,10 @@ export class VennTimeSeriesRendererView extends RendererView {
     this.schedule_viewport()
   }
 
+  override get has_webgl(): boolean {
+    return this.canvas.webgl != null
+  }
+
   private compile_shader(type: number, source: string): WebGLShader {
     const gl = this.gl!
     const shader = gl.createShader(type)
@@ -174,6 +281,65 @@ export class VennTimeSeriesRendererView extends RendererView {
       throw new Error(message)
     }
     return shader
+  }
+
+  private compile_bokeh_shader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader {
+    const shader = gl.createShader(type)
+    if (shader == null) throw new Error("Bokeh WebGL could not allocate a shader")
+    gl.shaderSource(shader, source)
+    gl.compileShader(shader)
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const message = gl.getShaderInfoLog(shader) ?? "unknown Bokeh WebGL shader compilation failure"
+      gl.deleteShader(shader)
+      throw new Error(message)
+    }
+    return shader
+  }
+
+  private get_bokeh_resources(): BokehGLResources {
+    const state = this.canvas.webgl
+    if (state == null)
+      throw new Error("Bokeh did not initialize its WebGL canvas")
+    const gl = state.canvas.getContext("webgl")
+    if (gl == null)
+      throw new Error("Bokeh's WebGL context is unavailable")
+    if (this.bokeh_resources?.gl == gl && gl.isProgram(this.bokeh_resources.program) && gl.isBuffer(this.bokeh_resources.buffer))
+      return this.bokeh_resources
+    this.delete_bokeh_resources()
+    if (gl.getExtension("OES_texture_float") == null)
+      throw new Error("Bokeh's WebGL context does not support floating-point data textures")
+    const vertex = this.compile_bokeh_shader(gl, gl.VERTEX_SHADER, bokeh_vertex_source)
+    const fragment = this.compile_bokeh_shader(gl, gl.FRAGMENT_SHADER, bokeh_fragment_source)
+    const program = gl.createProgram()
+    if (program == null) throw new Error("Bokeh WebGL could not allocate a shader program")
+    gl.attachShader(program, vertex)
+    gl.attachShader(program, fragment)
+    gl.linkProgram(program)
+    gl.deleteShader(vertex)
+    gl.deleteShader(fragment)
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const message = gl.getProgramInfoLog(program) ?? "unknown Bokeh WebGL shader link failure"
+      gl.deleteProgram(program)
+      throw new Error(message)
+    }
+    const buffer = gl.createBuffer()
+    if (buffer == null) {
+      gl.deleteProgram(program)
+      throw new Error("Bokeh WebGL could not allocate quad geometry")
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW)
+    this.bokeh_resources = {gl, program, buffer, textures: []}
+    return this.bokeh_resources
+  }
+
+  private delete_bokeh_resources(): void {
+    const resources = this.bokeh_resources
+    if (resources == null) return
+    for (const texture of resources.textures) resources.gl.deleteTexture(texture)
+    resources.gl.deleteBuffer(resources.buffer)
+    resources.gl.deleteProgram(resources.program)
+    this.bokeh_resources = null
   }
 
   private initialize_gl(): void {
@@ -357,10 +523,7 @@ export class VennTimeSeriesRendererView extends RendererView {
     return null
   }
 
-  private build_viewport_arrays(factor: number): {
-    start: number, count: number, a: Float32Array, b: Float32Array,
-    valid_a: Uint8Array, valid_b: Uint8Array, complete: boolean,
-  } | null {
+  private build_viewport_arrays(factor: number): ViewportArrays | null {
     const visible = this.visible_pages(factor)
     if (visible.length == 0) return null
     const start = visible[0]*this.model.page_size
@@ -411,21 +574,140 @@ export class VennTimeSeriesRendererView extends RendererView {
     this.model.gpu_cache_bytes = 0
   }
 
+  private make_bokeh_texture(
+    resources: BokehGLResources,
+    width: number,
+    height: number,
+    type: number,
+    data: ArrayBufferView,
+  ): WebGLTexture {
+    const {gl} = resources
+    const texture = gl.createTexture()
+    if (texture == null) throw new Error("Bokeh WebGL could not allocate a data texture")
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, width, height, 0, gl.LUMINANCE, type, data)
+    resources.textures.push(texture)
+    return texture
+  }
+
+  private paint_bokeh_webgl(factor: number, arrays: ViewportArrays): void {
+    const resources = this.get_bokeh_resources()
+    const {gl, program, buffer} = resources
+    for (const texture of resources.textures) gl.deleteTexture(texture)
+    resources.textures = []
+    const canvas = this.canvas.webgl!.canvas
+    const bbox = this.plot_view.frame.bbox
+    const ratio = this.canvas.pixel_ratio
+    const width = Math.max(1, Math.round(bbox.width*ratio))
+    const height = Math.max(1, Math.round(bbox.height*ratio))
+    const origin_x = Math.round(bbox.x*ratio)
+    const origin_y = Math.round(canvas.height - (bbox.y + bbox.height)*ratio)
+    const max_width = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
+    const texture_width = Math.min(max_width, arrays.count)
+    const texture_height = Math.ceil(arrays.count/texture_width)
+    const entries = texture_width*texture_height
+    const split = (input: Float32Array, component: number): Float32Array => {
+      const output = new Float32Array(entries)
+      for (let index = 0; index < arrays.count; index++)
+        output[index] = input[index*2 + component]
+      return output
+    }
+    const pad_valid = (input: Uint8Array): Uint8Array => {
+      const output = new Uint8Array(entries)
+      output.set(input)
+      return output
+    }
+    const textures = [
+      this.make_bokeh_texture(resources, texture_width, texture_height, gl.FLOAT, split(arrays.a, 0)),
+      this.make_bokeh_texture(resources, texture_width, texture_height, gl.FLOAT, split(arrays.a, 1)),
+      this.make_bokeh_texture(resources, texture_width, texture_height, gl.FLOAT, split(arrays.b, 0)),
+      this.make_bokeh_texture(resources, texture_width, texture_height, gl.FLOAT, split(arrays.b, 1)),
+      this.make_bokeh_texture(resources, texture_width, texture_height, gl.UNSIGNED_BYTE, pad_valid(arrays.valid_a)),
+      this.make_bokeh_texture(resources, texture_width, texture_height, gl.UNSIGNED_BYTE, pad_valid(arrays.valid_b)),
+    ]
+
+    gl.viewport(0, 0, canvas.width, canvas.height)
+    gl.enable(gl.SCISSOR_TEST)
+    gl.scissor(origin_x, origin_y, width, height)
+    gl.disable(gl.BLEND)
+    gl.disable(gl.DEPTH_TEST)
+    gl.useProgram(program)
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+    const position = gl.getAttribLocation(program, "a_position")
+    gl.enableVertexAttribArray(position)
+    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0)
+    const uniform1i = (name: string, value: number) => gl.uniform1i(gl.getUniformLocation(program, name), value)
+    const uniform1f = (name: string, value: number) => gl.uniform1f(gl.getUniformLocation(program, name), value)
+    for (let unit = 0; unit < textures.length; unit++) {
+      gl.activeTexture(gl.TEXTURE0 + unit)
+      gl.bindTexture(gl.TEXTURE_2D, textures[unit])
+    }
+    uniform1i("u_min_a", 0); uniform1i("u_max_a", 1); uniform1i("u_min_b", 2); uniform1i("u_max_b", 3)
+    uniform1i("u_valid_a", 4); uniform1i("u_valid_b", 5)
+    uniform1f("u_texture_width", texture_width)
+    gl.uniform2f(gl.getUniformLocation(program, "u_texture_size"), texture_width, texture_height)
+    uniform1f("u_entry_count", arrays.count)
+    uniform1i("u_max_aggregation", Math.min(128, Math.max(1, this.model.max_ranges_per_pixel)))
+    uniform1f("u_source_time_start", this.model.time_start + arrays.start*factor*this.model.sample_interval)
+    uniform1f("u_source_time_step", factor*this.model.sample_interval)
+    uniform1f("u_x_start", this.coordinates.x_source.start); uniform1f("u_x_end", this.coordinates.x_source.end)
+    uniform1f("u_y_start", this.coordinates.y_source.start); uniform1f("u_y_end", this.coordinates.y_source.end)
+    gl.uniform2f(gl.getUniformLocation(program, "u_frame_origin"), origin_x, origin_y)
+    gl.uniform2f(gl.getUniformLocation(program, "u_size"), width, height)
+    gl.uniform4fv(gl.getUniformLocation(program, "u_color_a"), css_color(this.model.color_a))
+    gl.uniform4fv(gl.getUniformLocation(program, "u_color_b"), css_color(this.model.color_b))
+    gl.uniform4fv(gl.getUniformLocation(program, "u_color_overlap"), css_color(this.model.color_overlap))
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    gl.disableVertexAttribArray(position)
+    const error = gl.getError()
+    if (error != gl.NO_ERROR)
+      throw new Error(`Bokeh WebGL draw failed with error code ${error}`)
+    // This draw deliberately uses Bokeh's shared GL context. Its regl wrapper
+    // caches state, so synchronize that cache before the next Bokeh glyph runs.
+    const wrapper = this.canvas.webgl!.regl_wrapper as unknown as InternalReglWrapper
+    const refresh = wrapper._regl?._refresh
+    if (refresh == null)
+      throw new Error("Bokeh's regl state refresh hook is unavailable")
+    refresh()
+    this.model.gpu_cache_bytes = entries*18
+    this.model.composition_mode = "bokeh_webgl"
+    if (factor == this.selected_factor && arrays.complete) this.model.ready = true
+  }
+
   protected override _paint(ctx: Context2d): void {
-    if (this.context_lost || this.gl == null || this.program == null) return
     const bbox = this.plot_view.frame.bbox, ratio = this.canvas.pixel_ratio
     const width = Math.max(1, Math.round(bbox.width*ratio)), height = Math.max(1, Math.round(bbox.height*ratio))
+    const factor = this.best_factor()
+    const arrays = factor == null ? null : this.build_viewport_arrays(factor)
+    if (this.has_webgl) {
+      this.model.composition_mode = "bokeh_webgl"
+      if (factor != null && arrays != null && arrays.count > 0) {
+        try {
+          this.paint_bokeh_webgl(factor, arrays)
+        } catch (error) {
+          this.model.error = `Venn Bokeh WebGL composition failed: ${error}`
+        }
+      }
+      return
+    }
+    if (this.context_lost || this.gl == null || this.program == null) return
+    this.model.composition_mode = "readback"
     if (this.gl_canvas.width != width || this.gl_canvas.height != height) {
       this.gl_canvas.width = width; this.gl_canvas.height = height
+    }
+    if (this.staging_canvas.width != width || this.staging_canvas.height != height) {
+      this.staging_canvas.width = width; this.staging_canvas.height = height
     }
     const gl = this.gl
     gl.viewport(0, 0, width, height)
     gl.clearColor(0, 0, 0, 0)
     gl.clear(gl.COLOR_BUFFER_BIT)
-    const factor = this.best_factor()
-    if (factor != null) {
-      const arrays = this.build_viewport_arrays(factor)
-      if (arrays != null && arrays.count > 0) {
+    if (factor != null && arrays != null && arrays.count > 0) {
         this.clear_textures()
         const max_width = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
         const texture_width = Math.min(max_width, arrays.count), texture_height = Math.ceil(arrays.count/texture_width)
@@ -463,12 +745,23 @@ export class VennTimeSeriesRendererView extends RendererView {
         gl.uniform4fv(gl.getUniformLocation(this.program, "u_color_b"), css_color(this.model.color_b))
         gl.uniform4fv(gl.getUniformLocation(this.program, "u_color_overlap"), css_color(this.model.color_overlap))
         gl.drawArrays(gl.TRIANGLES, 0, 3)
+        const source = new Uint8Array(width*height*4)
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, source)
+        const target = new Uint8ClampedArray(source.length)
+        const row_bytes = width*4
+        for (let row = 0; row < height; row++) {
+          const source_start = (height - row - 1)*row_bytes
+          target.set(source.subarray(source_start, source_start + row_bytes), row*row_bytes)
+        }
+        const staging = this.staging_canvas.getContext("2d")
+        if (staging == null)
+          throw new Error("Venn renderer could not create its readback canvas")
+        staging.putImageData(new ImageData(target, width, height), 0, 0)
         if (factor == this.selected_factor && arrays.complete) this.model.ready = true
-      }
     }
     const smoothing = ctx.imageSmoothingEnabled
     ctx.imageSmoothingEnabled = false
-    ctx.drawImage(this.gl_canvas, bbox.x, bbox.y, bbox.width, bbox.height)
+    ctx.drawImage(this.staging_canvas, bbox.x, bbox.y, bbox.width, bbox.height)
     ctx.imageSmoothingEnabled = smoothing
   }
 
@@ -477,6 +770,7 @@ export class VennTimeSeriesRendererView extends RendererView {
     this.frame_request = null
     this.gl_canvas.removeEventListener("webglcontextlost", this.on_context_lost)
     this.gl_canvas.removeEventListener("webglcontextrestored", this.on_context_restored)
+    this.delete_bokeh_resources()
     this.clear_textures()
     if (this.gl != null && !this.context_lost) {
       if (this.vao != null) this.gl.deleteVertexArray(this.vao)
@@ -501,6 +795,7 @@ export namespace VennTimeSeriesRenderer {
     prefetch_pages: p.Property<number>; lod_hysteresis: p.Property<number>
     rendered_cache_bytes: p.Property<number>; data_cache_bytes: p.Property<number>
     ready: p.Property<boolean>; error: p.Property<string>; current_lod: p.Property<number>
+    composition_mode: p.Property<string>
     cpu_cache_bytes: p.Property<number>; gpu_cache_bytes: p.Property<number>
     cache_hits: p.Property<number>; cache_misses: p.Property<number>
   }
@@ -522,7 +817,7 @@ export class VennTimeSeriesRenderer extends Renderer {
       shader_schema_version: [Int, 1], color_a: [Color, "red"], color_b: [Color, "blue"], color_overlap: [Color, "black"],
       max_ranges_per_pixel: [Int, 32], prefetch_pages: [Int, 1], lod_hysteresis: [Float, 0.2],
       rendered_cache_bytes: [Int, 64*1024*1024], data_cache_bytes: [Int, 64*1024*1024],
-      ready: [Bool, false], error: [Str, ""], current_lod: [Int, 1], cpu_cache_bytes: [Int, 0],
+      ready: [Bool, false], error: [Str, ""], composition_mode: [Str, "pending"], current_lod: [Int, 1], cpu_cache_bytes: [Int, 0],
       gpu_cache_bytes: [Int, 0], cache_hits: [Int, 0], cache_misses: [Int, 0],
     }))
   }

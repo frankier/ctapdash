@@ -1,4 +1,9 @@
-"""Run with: bokeh serve --show exp/venn_bokeh.py --args --series A.set Cz --series B.set Cz"""
+"""Run with: bokeh serve --show exp/venn_bokeh.py --args --series A.set Cz --series B.set Cz
+
+Add ``--output-backend webgl`` to render directly into Bokeh's shared WebGL
+canvas.  The default canvas backend uses GPU rendering followed by CPU
+readback so that Bokeh retains ownership of its 2D canvas.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +28,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         required=True,
         help="recording path and channel name or zero-based index (exactly twice)",
     )
+    parser.add_argument(
+        "--output-backend",
+        choices=("canvas", "webgl"),
+        default="canvas",
+        help="Bokeh backend; selects Venn readback or shared-WebGL composition",
+    )
     args = parser.parse_args(argv)
     try:
         args.series = parse_series_args(args.series)
@@ -45,7 +56,7 @@ def build_document(document: Document, argv: list[str]) -> None:
         y_range=Range1d(manifest.initial_y_start, manifest.initial_y_end),
         tools="pan,wheel_zoom,box_zoom,reset,save",
         active_scroll="wheel_zoom",
-        output_backend="canvas",
+        output_backend=args.output_backend,
         sizing_mode="stretch_both",
         title=f"{series[0].channel_identity} / {series[1].channel_identity}",
     )

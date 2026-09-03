@@ -142,6 +142,7 @@ def test_bokeh_model_manifest_and_mailbox_protocol():
     manifest = build_manifest(a, b, page_size=3)
     renderer = VennTimeSeriesRenderer(manifest=manifest)
     assert renderer.level == "image"
+    assert renderer.composition_mode == "pending"
     assert renderer.page_counts == [3]
     assert renderer.page_source.column_names == ["minimum", "maximum", "valid"]
 

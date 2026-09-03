@@ -65,6 +65,10 @@ class VennTimeSeriesRenderer(Renderer):
     data_cache_bytes = Int(default=64 * 1024 * 1024)
     ready = Bool(default=False, help="All exact visible pages have been painted")
     error = String(default="", help="Actionable renderer or protocol failure")
+    composition_mode = String(
+        default="pending",
+        help="Active client composition path: bokeh_webgl or readback",
+    )
     current_lod = Int(default=1)
     cpu_cache_bytes = Int(default=0)
     gpu_cache_bytes = Int(default=0)
