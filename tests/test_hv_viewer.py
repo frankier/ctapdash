@@ -12,6 +12,27 @@ from ctapdash import webapp
 from ctapdash.config import SETTINGS
 
 
+def test_comparison_channel_geometry_modes():
+    extrema = [(-1, 1, -3, 2), (-2, 2, -1, 1)]
+
+    overplot, overplot_range = webapp._comparison_channel_geometry(extrema, "overplot")
+    assert overplot_range == (0.0, 2.0)
+    assert overplot[0]["outside"] is True
+    assert overplot[0]["actual_min"] * overplot[0]["scale"] + overplot[0]["offset"] < 1.1
+
+    stretch, stretch_range = webapp._comparison_channel_geometry(extrema, "stretch")
+    assert stretch_range[1] > overplot_range[1]
+    first_low = stretch[0]["actual_min"] * stretch[0]["scale"] + stretch[0]["offset"]
+    second_high = stretch[1]["actual_max"] * stretch[1]["scale"] + stretch[1]["offset"]
+    assert first_low > second_high
+
+    normalized, normalized_range = webapp._comparison_channel_geometry(extrema, "normalize")
+    assert normalized_range == overplot_range
+    for item in normalized:
+        mapped_span = (item["actual_max"] - item["actual_min"]) * item["scale"]
+        assert mapped_span == pytest.approx(0.8)
+
+
 @pytest.fixture
 def pyramid_source(tmp_path):
     """A fake source directory holding one step with a 2-level pyramid."""

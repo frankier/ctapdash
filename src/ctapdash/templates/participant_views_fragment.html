@@ -39,6 +39,19 @@
         </a>
     </div>
     <div class="text-nowrap px-4 py-2
+        {% if view == 'venn_time_series' %}bg-slate-300{% endif %}
+    ">
+        <a
+            href="{{ url_for("venn_time_series") }}{{ source_participant_qs }}"
+            hx-get="{{ url_for("venn_time_series") }}"
+            hx-push-url="true"
+            hx-include="#source-select, #participant-select"
+            hx-target="#viewer"
+            hx-swap="outerHTML">
+            Compare steps
+        </a>
+    </div>
+    <div class="text-nowrap px-4 py-2
         {% if view == 'hv_viewer' %}bg-slate-300{% endif %}
     ">
         <a

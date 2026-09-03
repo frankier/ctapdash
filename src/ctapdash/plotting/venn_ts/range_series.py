@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -138,12 +138,13 @@ class ArrayRangeSeries:
 class RecordingRangeSeries:
     """Lazy RangeSeries adapter for one channel of an EEGLAB recording."""
 
-    def __init__(self, path: Path, requested_channel: str) -> None:
+    def __init__(self, path: Path, requested_channel: str, *, recording=None) -> None:
         from ctapdash.io import read_eeglab
         from ctapdash.pyramid import load_pyramid
 
         self.path = Path(path).resolve()
-        recording = read_eeglab(self.path)
+        if recording is None:
+            recording = read_eeglab(self.path)
         if not hasattr(recording, "mmap"):
             raise ValueError(f"{self.path} cannot provide memory-mapped raw samples")
         if recording.__class__.__name__.lower().find("epoch") >= 0:
@@ -159,6 +160,7 @@ class RecordingRangeSeries:
         self.time_start = float(self._times[0])
         self.sample_interval = _sample_interval(self._times, self.channel_identity)
         self.dtype = np.dtype(self._raw.dtype)
+        self._extrema_cache: dict[int, tuple[float, float]] = {}
         stat = self.path.stat()
         self.dataset_version = f"{self.path}:{stat.st_size}:{stat.st_mtime_ns}:{channel_name}"
         self._levels: dict[int, object] = {}
@@ -203,6 +205,8 @@ class RecordingRangeSeries:
 
     def finite_extrema(self, stop: int | None = None) -> tuple[float, float]:
         stop = self.sample_count if stop is None else min(stop, self.sample_count)
+        if stop in self._extrema_cache:
+            return self._extrema_cache[stop]
         minimum, maximum = np.inf, -np.inf
         for start in range(0, stop, 1_000_000):
             block = np.asarray(
@@ -214,4 +218,6 @@ class RecordingRangeSeries:
                 maximum = max(maximum, float(finite.max()))
         if not np.isfinite(minimum):
             raise ValueError(f"{self.channel_identity} contains no finite samples")
-        return minimum, maximum
+        result = (minimum, maximum)
+        self._extrema_cache[stop] = result
+        return result

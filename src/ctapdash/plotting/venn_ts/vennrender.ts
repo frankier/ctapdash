@@ -63,6 +63,8 @@ uniform float u_x_start;
 uniform float u_x_end;
 uniform float u_y_start;
 uniform float u_y_end;
+uniform float u_amplitude_scale;
+uniform float u_amplitude_offset;
 uniform vec2 u_size;
 uniform vec4 u_color_a;
 uniform vec4 u_color_b;
@@ -104,7 +106,8 @@ void main() {
       has_b = true;
     }
   }
-  float value = u_y_start + gl_FragCoord.y / u_size.y * (u_y_end - u_y_start);
+  float plot_y = u_y_start + gl_FragCoord.y / u_size.y * (u_y_end - u_y_start);
+  float value = (plot_y - u_amplitude_offset) / u_amplitude_scale;
   bool inside_a = has_a && amin <= value && value <= amax;
   bool inside_b = has_b && bmin <= value && value <= bmax;
   if (inside_a && inside_b) out_color = u_color_overlap;
@@ -137,6 +140,8 @@ uniform float u_x_start;
 uniform float u_x_end;
 uniform float u_y_start;
 uniform float u_y_end;
+uniform float u_amplitude_scale;
+uniform float u_amplitude_offset;
 uniform vec2 u_frame_origin;
 uniform vec2 u_size;
 uniform vec4 u_color_a;
@@ -181,7 +186,8 @@ void main() {
     }
   }
   float local_y = gl_FragCoord.y - u_frame_origin.y;
-  float value = u_y_start + local_y / u_size.y * (u_y_end - u_y_start);
+  float plot_y = u_y_start + local_y / u_size.y * (u_y_end - u_y_start);
+  float value = (plot_y - u_amplitude_offset) / u_amplitude_scale;
   bool inside_a = has_a && amin <= value && value <= amax;
   bool inside_b = has_b && bmin <= value && value <= bmax;
   if (inside_a && inside_b) gl_FragColor = u_color_overlap;
@@ -260,7 +266,8 @@ export class VennTimeSeriesRendererView extends RendererView {
     this.connect(this.model.properties.response_seq.change, () => this.consume_response())
     for (const property of [this.model.properties.color_a, this.model.properties.color_b,
       this.model.properties.color_overlap, this.model.properties.max_ranges_per_pixel,
-      this.model.properties.data_cache_bytes])
+      this.model.properties.data_cache_bytes, this.model.properties.amplitude_scale,
+      this.model.properties.amplitude_offset])
       this.connect(property.change, () => this.schedule_viewport())
     this.schedule_viewport()
   }
@@ -657,6 +664,7 @@ export class VennTimeSeriesRendererView extends RendererView {
     uniform1f("u_source_time_step", factor*this.model.sample_interval)
     uniform1f("u_x_start", this.coordinates.x_source.start); uniform1f("u_x_end", this.coordinates.x_source.end)
     uniform1f("u_y_start", this.coordinates.y_source.start); uniform1f("u_y_end", this.coordinates.y_source.end)
+    uniform1f("u_amplitude_scale", this.model.amplitude_scale); uniform1f("u_amplitude_offset", this.model.amplitude_offset)
     gl.uniform2f(gl.getUniformLocation(program, "u_frame_origin"), origin_x, origin_y)
     gl.uniform2f(gl.getUniformLocation(program, "u_size"), width, height)
     gl.uniform4fv(gl.getUniformLocation(program, "u_color_a"), css_color(this.model.color_a))
@@ -740,6 +748,7 @@ export class VennTimeSeriesRendererView extends RendererView {
         uniform1f("u_source_time_step", factor*this.model.sample_interval)
         uniform1f("u_x_start", this.coordinates.x_source.start); uniform1f("u_x_end", this.coordinates.x_source.end)
         uniform1f("u_y_start", this.coordinates.y_source.start); uniform1f("u_y_end", this.coordinates.y_source.end)
+        uniform1f("u_amplitude_scale", this.model.amplitude_scale); uniform1f("u_amplitude_offset", this.model.amplitude_offset)
         gl.uniform2f(gl.getUniformLocation(this.program, "u_size"), width, height)
         gl.uniform4fv(gl.getUniformLocation(this.program, "u_color_a"), css_color(this.model.color_a))
         gl.uniform4fv(gl.getUniformLocation(this.program, "u_color_b"), css_color(this.model.color_b))
@@ -792,6 +801,7 @@ export namespace VennTimeSeriesRenderer {
     source_factors: p.Property<number[]>; page_size: p.Property<number>; page_counts: p.Property<number[]>
     shader_schema_version: p.Property<number>; color_a: p.Property<Color>; color_b: p.Property<Color>
     color_overlap: p.Property<Color>; max_ranges_per_pixel: p.Property<number>
+    amplitude_scale: p.Property<number>; amplitude_offset: p.Property<number>
     prefetch_pages: p.Property<number>; lod_hysteresis: p.Property<number>
     rendered_cache_bytes: p.Property<number>; data_cache_bytes: p.Property<number>
     ready: p.Property<boolean>; error: p.Property<string>; current_lod: p.Property<number>
@@ -815,6 +825,7 @@ export class VennTimeSeriesRenderer extends Renderer {
       dataset_version: [Str, ""], sample_count: [Int, 0], time_start: [Float, 0], time_end: [Float, 0],
       sample_interval: [Float, 1], source_factors: [List(Int), []], page_size: [Int, 2048], page_counts: [List(Int), []],
       shader_schema_version: [Int, 1], color_a: [Color, "red"], color_b: [Color, "blue"], color_overlap: [Color, "black"],
+      amplitude_scale: [Float, 1], amplitude_offset: [Float, 0],
       max_ranges_per_pixel: [Int, 32], prefetch_pages: [Int, 1], lod_hysteresis: [Float, 0.2],
       rendered_cache_bytes: [Int, 64*1024*1024], data_cache_bytes: [Int, 64*1024*1024],
       ready: [Bool, false], error: [Str, ""], composition_mode: [Str, "pending"], current_lod: [Int, 1], cpu_cache_bytes: [Int, 0],

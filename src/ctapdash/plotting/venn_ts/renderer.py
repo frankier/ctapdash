@@ -39,7 +39,7 @@ EMPTY_METADATA = {
 class VennTimeSeriesRenderer(Renderer):
     """Pixel Venn renderer whose bulk data is supplied through a page mailbox."""
 
-    __implementation__ = "renderer.ts"
+    __implementation__ = "vennrender.ts"
 
     request_seq = Int(default=0, help="Monotonic client page-request sequence")
     requested_pages = List(Tuple(Int, Int), default=[], help="(factor, page) requests")
@@ -59,6 +59,14 @@ class VennTimeSeriesRenderer(Renderer):
     color_a = Color(default="red")
     color_b = Color(default="blue")
     color_overlap = Color(default="black")
+    amplitude_scale = Float(
+        default=1.0,
+        help="Scale mapping source amplitudes into the plot's y coordinates",
+    )
+    amplitude_offset = Float(
+        default=0.0,
+        help="Offset mapping source amplitudes into the plot's y coordinates",
+    )
     max_ranges_per_pixel = Int(default=32)
     prefetch_pages = Int(default=1)
     lod_hysteresis = Float(default=0.2)
