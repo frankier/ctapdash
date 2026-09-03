@@ -53,7 +53,7 @@ def build_document(document: Document, argv: list[str]) -> None:
     document.add_root(plot)
     document.title = "Venn time series"
     mailbox = PageMailbox(document, renderer, series)
-    document.on_session_destroyed(lambda _context: mailbox.close())
+    document.on_session_destroyed(lambda _context, mailbox=mailbox: mailbox.close())
 
 
 from bokeh.io import curdoc

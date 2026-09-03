@@ -511,7 +511,6 @@ export interface VennTimeSeriesRenderer extends VennTimeSeriesRenderer.Attrs {}
 export class VennTimeSeriesRenderer extends Renderer {
   declare properties: VennTimeSeriesRenderer.Props
   declare __view_type__: VennTimeSeriesRendererView
-  static override __module__ = "ctapdash.vennrender"
   static {
     this.prototype.default_view = VennTimeSeriesRendererView
     this.define<VennTimeSeriesRenderer.Props>(({Bool, Color, Float, Int, List, Ref, Str, Tuple}) => ({
