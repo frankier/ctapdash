@@ -186,9 +186,9 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
     with (
         patch("ctapdash.webapp.collect_logs", return_value=[]),
         patch("ctapdash.webapp.collect_qc", return_value=[]),
-        patch("ctapdash.webapp.get_steps_for_participant", return_value=steps),
+        patch("ctapdash.io.get_steps_for_participant", return_value=steps),
         patch("ctapdash.webapp._participant_step_rows", return_value=step_rows),
-        patch("ctapdash.webapp.describe_mne") as describe_mne,
+        patch("ctapdash.stats.describe_mne") as describe_mne,
         patch(
             "ctapdash.webapp.run_in_threadpool",
             side_effect=lambda function, *args: function(*args),

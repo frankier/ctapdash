@@ -394,7 +394,7 @@ def hv_viewer_bokeh(doc):
     dataset = ObservationData.from_bokeh_doc(doc)
     steps = dataset.get_steps()
 
-    groups, ts_dt = load_pyramid(steps[0][-1] / (dataset.participant + ".set")
+    groups, ts_dt = load_pyramid(steps[0][-1] / (dataset.participant + ".set"))
     finest_level, coarsest_level = groups[0], groups[-1]
 
     channels = [str(ch) for ch in ts_dt[coarsest_level].ds["ch"].values]
