@@ -54,8 +54,8 @@ def build_document(document: Document, argv: list[str]) -> None:
     plot = figure(
         x_range=Range1d(manifest.time_start, manifest.time_end),
         y_range=Range1d(manifest.initial_y_start, manifest.initial_y_end),
-        tools="pan,wheel_zoom,box_zoom,reset,save",
-        active_scroll="wheel_zoom",
+        tools="pan,xwheel_zoom,ywheel_zoom,box_zoom,reset,save",
+        active_scroll="xwheel_zoom",
         output_backend=args.output_backend,
         sizing_mode="stretch_both",
         title=f"{series[0].channel_identity} / {series[1].channel_identity}",
