@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from bokeh.document import Document
 
 from ctapdash.venn import (
     ArrayRangeSeries,
@@ -11,6 +12,7 @@ from ctapdash.venn import (
     resolve_channel,
     validate_alignment,
 )
+from ctapdash.vennrender import PageMailbox, VennTimeSeriesRenderer
 
 
 def series(values, times=None, *, name="recording:channel", levels=None):
@@ -132,3 +134,21 @@ def test_reference_raster_supports_reversed_y_ranges():
     reversed_ = reference_raster(ranges, ranges, width=1, height=4, y_start=2, y_end=0)
     np.testing.assert_array_equal(normal[:, 0, 3], [0, 0, 255, 255])
     np.testing.assert_array_equal(reversed_[:, 0, 3], [255, 255, 255, 0])
+
+
+def test_bokeh_model_manifest_and_mailbox_protocol():
+    a = series(np.arange(8), name="a:Cz")
+    b = series(np.arange(8) + 10, name="b:Cz")
+    manifest = build_manifest(a, b, page_size=3)
+    renderer = VennTimeSeriesRenderer(manifest=manifest)
+    assert renderer.level == "image"
+    assert renderer.page_counts == [3]
+    assert renderer.page_source.column_names == ["minimum", "maximum", "valid"]
+
+    mailbox = PageMailbox(Document(), renderer, (a, b), workers=1)
+    seq, (data, metadata) = mailbox._load(7, ((1, 1),))
+    assert seq == 7
+    assert len(metadata["series_id"]) == 2
+    assert len(data["minimum"]) == 10
+    np.testing.assert_array_equal(metadata["series_id"], [0, 1])
+    mailbox.close()
