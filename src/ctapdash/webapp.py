@@ -202,7 +202,6 @@ def maybe_int(value):
 
 def time_series_bokeh(doc):
     import numpy as np
-    import xarray as xr
     from bokeh.layouts import column
     from bokeh.events import RangesUpdate
     from bokeh.models import (
@@ -218,23 +217,26 @@ def time_series_bokeh(doc):
     dataset = ObservationData.from_bokeh_doc(doc)
     steps = dataset.get_steps()
 
-    pyramid_path = steps[0][-1] / (dataset.participant + ".set.pyramid")
-    ts_dt = xr.open_datatree(pyramid_path, engine="zarr")
+    pyramid_base = steps[0][-1] / (dataset.participant + ".set")
+    ts_dt, groups = load_pyramid(pyramid_base)
 
     X_PADDING = 0.2  # buffer x-range to reduce update latency with pans and zoom-outs
 
     def extract_ds(ts_dt, level, channels=None):
-        """Extract a dataset at a specific level"""
+        """Extract a dataset at a specific level."""
         ds = ts_dt[str(level)].ds
         return ds if channels is None else ds.sel(ch=channels)
 
-    groups = tuple(
-        sorted(
-            (group for group in ts_dt.groups if "time" in ts_dt[group].ds),
-            key=lambda group: ts_dt[group].ds["time"].size,
-            reverse=True,
-        )
-    )
+    def extract_data(ts_dt, level, channels=None):
+        """Extract the sole data array without relying on its optional name."""
+        ds = extract_ds(ts_dt, level, channels)
+        if len(ds.data_vars) != 1:
+            raise ValueError(
+                f"Expected one data array in pyramid level {level!r}, "
+                f"found {list(ds.data_vars)!r}"
+            )
+        return next(iter(ds.data_vars.values()))
+
     num_levels = len(groups)
     coarsest_level = groups[-1]
     time_da = extract_ds(ts_dt, coarsest_level)["time"]
@@ -326,15 +328,15 @@ def time_series_bokeh(doc):
             f"[Time Samples: {size}]  [Plot Size WxH: {width}x{height}]"
         )
 
-        ds = (
-            extract_ds(ts_dt, groups[pyramid_level], channels)
+        data = (
+            extract_data(ts_dt, groups[pyramid_level], channels)
             .sel(time=time_slice)
             .load()
         )
-        for channel in ds["ch"].values.tolist():
+        for channel in data["ch"].values.tolist():
             channel_name = str(channel)
-            channel_data = ds.sel(ch=channel)
-            amplitudes = np.asarray(channel_data["data"].values)
+            channel_data = data.sel(ch=channel)
+            amplitudes = np.asarray(channel_data.values)
             sources[channel_name].data = {
                 "time": np.asarray(channel_data["time"].values),
                 "amplitude": amplitudes,

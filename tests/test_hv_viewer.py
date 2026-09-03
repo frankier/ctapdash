@@ -45,6 +45,39 @@ def test_pyramid_groups_finest_to_coarsest(pyramid_source):
     assert _pyramid_groups(ts_dt) == ("/factor_1", "/factor_10")
 
 
+def test_time_series_bokeh_accepts_unnamed_data_array(tmp_path):
+    """Generated pyramids contain an unnamed DataArray, not a ``data`` variable."""
+    step = tmp_path / "01_test"
+    step.mkdir()
+    (step / "p.set").write_text("")
+
+    times = np.linspace(0, 1, 100)
+    channels = ["Fp1", "Fp2"]
+    values = np.arange(200, dtype=float).reshape(2, 100)
+    for factor in (1, 10):
+        xr.DataArray(
+            values[:, ::factor],
+            coords=(channels, times[::factor]),
+            dims=("ch", "time"),
+        ).to_zarr(step / "p.set.pyramid", group=f"factor_{factor}", mode="a")
+
+    with patch.object(
+        webapp.ObservationData,
+        "from_bokeh_doc",
+        classmethod(lambda cls, doc: webapp.ObservationData(tmp_path, "p", "fake")),
+    ):
+        doc = Document()
+        webapp.time_series_bokeh(doc)
+
+    fig = doc.roots[0].select_one({"type": BkFigure})
+    assert len(fig.renderers) == 2
+    assert {len(renderer.data_source.data["time"]) for renderer in fig.renderers} == {10}
+    assert all(
+        renderer.data_source.data["amplitude"].ndim == 1
+        for renderer in fig.renderers
+    )
+
+
 def test_hv_viewer_bokeh_webgl(pyramid_source):
     with patch.object(
         webapp.ObservationData,
