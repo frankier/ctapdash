@@ -285,11 +285,16 @@ export class VennTimeSeriesRendererView extends RendererView {
         }
     }
     this.model.cache_hits = hits; this.model.cache_misses = misses
-    const x_center = (this.coordinates.x_source.start + this.coordinates.x_source.end)/2
     candidates.sort((a, b) => {
-      const ac = (a[2] + 0.5)*this.model.page_size*a[1]*this.model.sample_interval + this.model.time_start
-      const bc = (b[2] + 0.5)*this.model.page_size*b[1]*this.model.sample_interval + this.model.time_start
-      return Math.abs(ac - x_center) - Math.abs(bc - x_center)
+      // Fill one channel from left to right before proceeding downwards.
+      // Pair the two layers at each x page so the line and Venn views become
+      // useful together instead of one layer monopolizing early batches.
+      const channel_order = a[3] - b[3]
+      if (channel_order != 0) return channel_order
+      const x_order = a[2] - b[2]
+      if (x_order != 0) return x_order
+      const layer_order = (a[0] == "venn" ? 0 : 1) - (b[0] == "venn" ? 0 : 1)
+      return layer_order
     })
     if (this.in_flight.size >= 16) return
     const batch = candidates.slice(0, Math.min(8, 16 - this.in_flight.size))
@@ -645,7 +650,7 @@ export class VennTimeSeriesRenderer extends Renderer {
       source_factors: [List(Int), []], page_size: [Int, 2048], page_counts: [List(Int), []],
       range_factors: [List(Int), []], range_page_counts: [List(Int), []], line_factors: [List(Int), []], line_page_counts: [List(Int), []],
       channel_names: [List(Str), []], amplitude_scales: [List(Float), []], amplitude_offsets: [List(Float), []],
-      channel_y_mins: [List(Float), []], channel_y_maxs: [List(Float), []], channel_tile_size: [Int, 8],
+      channel_y_mins: [List(Float), []], channel_y_maxs: [List(Float), []], channel_tile_size: [Int, 1],
       shader_schema_version: [Int, 1], color_a: [Color, "red"], color_b: [Color, "blue"], color_overlap: [Color, "black"],
       amplitude_scale: [Float, 1], amplitude_offset: [Float, 0], max_ranges_per_pixel: [Int, 32], prefetch_pages: [Int, 1], lod_hysteresis: [Float, 0.2],
       rendered_cache_bytes: [Int, 64*1024*1024], data_cache_bytes: [Int, 64*1024*1024], ready: [Bool, false], error: [Str, ""],

@@ -127,7 +127,7 @@ class VennTimeSeriesRenderer(Renderer):
     range_page_counts = List(Int, default=[])
     line_factors = List(Int, default=[])
     line_page_counts = List(Int, default=[])
-    channel_tile_size = Int(default=8)
+    channel_tile_size = Int(default=1)
     venn_visible = Bool(default=True)
     lines_visible = Bool(default=True)
     shader_compilations = Int(default=0)

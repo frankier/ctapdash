@@ -82,6 +82,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     layer_control = doc.roots[0].select_one({"type": CheckboxButtonGroup})
     assert figure.output_backend == "webgl"
     assert len(custom) == 1
+    assert custom[0].channel_tile_size == 1
     assert len(glyphs) == 2
     assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in glyphs)
     assert layer_control.labels == ["Venn", "Lines"]
