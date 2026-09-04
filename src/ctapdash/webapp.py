@@ -21,7 +21,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.config import SETTINGS
 from ctapdash.io import read_eeglab, ObservationData
-from ctapdash.plotting.mne import set_onionskin_eeg, OnionskinMNEBrowseFigure
+from ctapdash.plotting.mne import set_onionskin_eeg
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
 
@@ -119,33 +119,25 @@ async def participant_steps_fragment(request):
             raise HTTPException(status_code=404, detail="Step not found")
         has_prev = (step - 1) in steps_dict
         context["has_prev"] = has_prev
-        onionskin = has_prev and request.query_params.get("onionskin") == "onionskin"
-        context["onionskin"] = onionskin
         step_full = steps_dict[step]
         path = step_full / (participant + ".set")
         if not path.exists():
             raise HTTPException(status_code=404, detail="Path not found")
-        eeg = read_eeglab(path)
-        if onionskin:
-            path = steps_dict[step - 1] / (participant + ".set")
-            if not path.exists():
-                raise HTTPException(status_code=404, detail="Path not found")
-            prev_eeg = read_eeglab(path)
-            set_onionskin_eeg(prev_eeg)
+        eeg = read_eeglab(path, mmap=False, use_cache=False)
         if yaxis == "normalize":
             scalings = "auto"
         else:
             scalings = None
         context["yaxis_options"].extend(["overdraw", "normalize"])
         if isinstance(eeg, BaseEpochs):
-            fig = eeg.plot(show=False, scalings=scalings, figure_class=OnionskinMNEBrowseFigure)
+            fig = eeg.plot(show=False, scalings=scalings)
         else:
             context["yaxis_options"].append("clamp")
             if yaxis == "clip":
                 clipping = "clamp"
             else:
                 clipping = None
-            fig = eeg.plot(show=False, scalings=scalings, clipping=clipping, figure_class=OnionskinMNEBrowseFigure)
+            fig = eeg.plot(show=False, scalings=scalings, clipping=clipping)
         context["eeg_fig"] = safe_html.figure_html(fig, on_close="msg_discrete", prevent_default_navigation=True)
         context["current_step"] = step
     return templates.TemplateResponse(
