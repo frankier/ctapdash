@@ -163,6 +163,7 @@ export class VennTimeSeriesRendererView extends RendererView {
   private selected_line_factor = 1
   private context_canvas: HTMLCanvasElement | null = null
   private requested_at = new Map<string, number>()
+  private failure_counts = new Map<string, number>()
 
   override initialize(): void {
     super.initialize()
@@ -278,7 +279,8 @@ export class VennTimeSeriesRendererView extends RendererView {
           if (this.has_tile(layer, factor, x_page, channel_page)) hits += 1
           else {
             misses += 1
-            if (!this.in_flight.has(key)) candidates.push([layer, factor, x_page, channel_page])
+            if (!this.in_flight.has(key) && (this.failure_counts.get(key) ?? 0) < 3)
+              candidates.push([layer, factor, x_page, channel_page])
           }
         }
     }
@@ -292,7 +294,7 @@ export class VennTimeSeriesRendererView extends RendererView {
     if (this.in_flight.size >= 16) return
     const batch = candidates.slice(0, Math.min(8, 16 - this.in_flight.size))
     if (batch.length == 0) {
-      this.model.ready = this.in_flight.size == 0
+      this.model.ready = this.in_flight.size == 0 && misses == 0
       return
     }
     for (const [layer, factor, x_page, channel_page] of batch) {
@@ -305,13 +307,31 @@ export class VennTimeSeriesRendererView extends RendererView {
   }
 
   private consume_response(): void {
+    const response_tiles = this.model.response_tiles
+    const failed = this.model.response_error != ""
     try {
-      this.consume_ranges()
-      this.consume_lines()
-      this.evict_cpu_cache()
-      this.schedule()
+      if (failed) this.model.error = this.model.response_error
+      else {
+        this.consume_ranges()
+        this.consume_lines()
+        this.evict_cpu_cache()
+        this.model.error = ""
+      }
     } catch (error) {
       this.model.error = `Venn tile protocol error: ${error}`
+    } finally {
+      for (const [layer, factor, x_page, channel_page] of response_tiles) {
+        const key = this.tile_key(layer, factor, x_page, channel_page)
+        const succeeded = !failed && this.has_tile(layer, factor, x_page, channel_page)
+        if (succeeded) this.failure_counts.delete(key)
+        else this.failure_counts.set(key, (this.failure_counts.get(key) ?? 0) + 1)
+        const requested = this.requested_at.get(key)
+        if (requested != null) this.model.last_tile_latency_ms = performance.now() - requested
+        this.requested_at.delete(key)
+        this.in_flight.delete(key)
+      }
+      this.model.response_ack = this.model.response_seq
+      this.schedule()
     }
   }
 
@@ -343,10 +363,6 @@ export class VennTimeSeriesRendererView extends RendererView {
         time_start: tstarts[row], time_step: tsteps[row], ranges, valid,
         bytes: ranges.byteLength + valid.byteLength, used: ++this.use_counter,
       })
-      const requested = this.requested_at.get(key)
-      if (requested != null) this.model.last_tile_latency_ms = performance.now() - requested
-      this.requested_at.delete(key)
-      this.in_flight.delete(key)
     }
   }
 
@@ -356,7 +372,6 @@ export class VennTimeSeriesRendererView extends RendererView {
     const factors = numeric_column(metadata, "factor"), xpages = numeric_column(metadata, "x_page")
     const cpages = numeric_column(metadata, "channel_page"), channels = numeric_column(metadata, "channel_index")
     const offsets = numeric_column(metadata, "offset"), lengths = numeric_column(metadata, "length")
-    const completed = new Set<string>()
     for (let row = 0; row < factors.length; row++) {
       const offset = offsets[row], length = lengths[row]
       const times = new Float64Array(length), av = new Float32Array(length), bv = new Float32Array(length)
@@ -369,12 +384,6 @@ export class VennTimeSeriesRendererView extends RendererView {
         time: times, a: av, b: bv, bytes: times.byteLength + av.byteLength + bv.byteLength,
         used: ++this.use_counter,
       })
-      completed.add(page_key)
-    }
-    for (const key of completed) {
-      const requested = this.requested_at.get(key)
-      if (requested != null) this.model.last_tile_latency_ms = performance.now() - requested
-      this.requested_at.delete(key); this.in_flight.delete(key)
     }
   }
 
@@ -562,7 +571,7 @@ export class VennTimeSeriesRendererView extends RendererView {
       gl.disableVertexAttribArray(position); gl.disable(gl.SCISSOR_TEST)
       const refresh = (this.canvas.webgl!.regl_wrapper as unknown as InternalReglWrapper)._regl?._refresh
       if (refresh == null) throw new Error("Bokeh's regl refresh hook is unavailable")
-      refresh(); this.model.composition_mode = "bokeh_webgl"; this.model.error = ""
+      refresh(); this.model.composition_mode = "bokeh_webgl"
       this.model.last_paint_ms = performance.now() - paint_started
     } catch (error) {
       this.model.error = `Venn rendering requires Bokeh WebGL with float textures: ${error}`
@@ -591,7 +600,8 @@ export namespace VennTimeSeriesRenderer {
   export type Props = Renderer.Props & {
     request_seq: p.Property<number>; requested_pages: p.Property<[number, number][]>
     requested_tiles: p.Property<[string, number, number, number][]>
-    response_seq: p.Property<number>; response_generation: p.Property<number>
+    response_seq: p.Property<number>; response_ack: p.Property<number>; response_generation: p.Property<number>
+    response_tiles: p.Property<[string, number, number, number][]>; response_error: p.Property<string>
     page_source: p.Property<ColumnDataSource>; page_metadata_source: p.Property<ColumnDataSource>
     range_tile_source: p.Property<ColumnDataSource>; range_tile_metadata_source: p.Property<ColumnDataSource>
     line_tile_source: p.Property<ColumnDataSource>; line_tile_metadata_source: p.Property<ColumnDataSource>
@@ -624,7 +634,9 @@ export class VennTimeSeriesRenderer extends Renderer {
     this.prototype.default_view = VennTimeSeriesRendererView
     this.define<VennTimeSeriesRenderer.Props>(({Bool, Color, Float, Int, List, Ref, Str, Tuple}) => ({
       request_seq: [Int, 0], requested_pages: [List(Tuple(Int, Int)), []],
-      requested_tiles: [List(Tuple(Str, Int, Int, Int)), []], response_seq: [Int, 0], response_generation: [Int, 0],
+      requested_tiles: [List(Tuple(Str, Int, Int, Int)), []],
+      response_seq: [Int, 0], response_ack: [Int, 0], response_generation: [Int, 0],
+      response_tiles: [List(Tuple(Str, Int, Int, Int)), []], response_error: [Str, ""],
       page_source: [Ref(ColumnDataSource)], page_metadata_source: [Ref(ColumnDataSource)],
       range_tile_source: [Ref(ColumnDataSource)], range_tile_metadata_source: [Ref(ColumnDataSource)],
       line_tile_source: [Ref(ColumnDataSource)], line_tile_metadata_source: [Ref(ColumnDataSource)],

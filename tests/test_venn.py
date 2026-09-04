@@ -1,3 +1,5 @@
+from concurrent.futures import Future
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -267,4 +269,82 @@ def test_unified_tile_coordinator_packs_channel_and_time_tiles(tmp_path):
     assert len(range_data["minimum_a"]) == 10  # two channels, 3 core + 2 gutters
     assert line_metadata["channel_index"].tolist() == [2]
     assert len(line_data["time"]) == 5
+    coordinator.close()
+
+
+def test_tile_coordinator_queues_responses_until_the_browser_acknowledges(tmp_path):
+    class ImmediateDocument:
+        def add_next_tick_callback(self, callback):
+            callback()
+
+    paths = [tmp_path / name for name in ("a.set", "b.set")]
+    for path in paths:
+        path.touch()
+    sources = tuple(
+        RecordingTileSource(path, recording=FakeMmapRecording(offset=index * 100))
+        for index, path in enumerate(paths)
+    )
+    renderer = VennTimeSeriesRenderer(
+        dataset_version="response-queue-test",
+        sample_count=12,
+        time_start=0,
+        time_end=2.75,
+        sample_interval=0.25,
+        page_size=3,
+        channel_tile_size=2,
+        channel_names=["Fz", "Cz", "Pz"],
+        amplitude_scales=[1, 1, 1],
+        amplitude_offsets=[0, 1, 2],
+        channel_y_mins=[0, 1, 2],
+        channel_y_maxs=[1, 2, 3],
+        range_factors=[1],
+        range_page_counts=[4],
+        line_factors=[1],
+        line_page_counts=[4],
+    )
+    coordinator = TileCoordinator(
+        ImmediateDocument(), renderer, sources, ["Fz", "Cz", "Pz"], workers=1
+    )
+    first_request = (("venn", 1, 0, 0),)
+    second_request = (("venn", 1, 1, 0),)
+    first, second = Future(), Future()
+    first.set_result(coordinator._load(1, first_request))
+    second.set_result(coordinator._load(2, second_request))
+
+    # Completing the second worker first must not overwrite or skip response 1.
+    coordinator._loaded(second, 2, second_request)
+    assert renderer.response_seq == 0
+    coordinator._loaded(first, 1, first_request)
+    assert renderer.response_seq == 1
+    assert renderer.response_tiles == list(first_request)
+
+    renderer.response_ack = 1
+    assert renderer.response_seq == 2
+    assert renderer.response_tiles == list(second_request)
+    coordinator.close()
+
+
+def test_tile_coordinator_publishes_failed_tile_keys_for_acknowledgement(tmp_path):
+    class ImmediateDocument:
+        def add_next_tick_callback(self, callback):
+            callback()
+
+    paths = [tmp_path / name for name in ("a.set", "b.set")]
+    for path in paths:
+        path.touch()
+    sources = tuple(
+        RecordingTileSource(path, recording=FakeMmapRecording()) for path in paths
+    )
+    renderer = VennTimeSeriesRenderer(dataset_version="failed-response-test")
+    coordinator = TileCoordinator(
+        ImmediateDocument(), renderer, sources, ["Fz"], workers=1
+    )
+    request = (("lines", 1, 0, 0),)
+    failed = Future()
+    failed.set_exception(RuntimeError("broken tile"))
+    coordinator._loaded(failed, 1, request)
+
+    assert renderer.response_seq == 1
+    assert renderer.response_tiles == list(request)
+    assert "broken tile" in renderer.response_error
     coordinator.close()

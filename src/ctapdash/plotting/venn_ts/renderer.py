@@ -61,7 +61,14 @@ class VennTimeSeriesRenderer(Renderer):
     request_seq = Int(default=0, help="Monotonic client page-request sequence")
     requested_pages = List(Tuple(Int, Int), default=[], help="(factor, page) requests")
     response_seq = Int(default=0, help="Sequence whose response is currently published")
+    response_ack = Int(default=0, help="Last response consumed by the browser")
     response_generation = Int(default=0, help="Viewport generation of published pages")
+    response_tiles = List(
+        Tuple(String, Int, Int, Int),
+        default=[],
+        help="Tile keys covered by the current response, including failed tiles",
+    )
+    response_error = String(default="", help="Failure associated with the current response")
     page_source = Instance(ColumnDataSource)
     page_metadata_source = Instance(ColumnDataSource)
     dataset_version = String(default="")
@@ -279,13 +286,20 @@ class TileCoordinator:
         self._executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="venn-tiles")
         self._closed = False
         self._lock = Lock()
+        self._pending_responses = {}
+        self._publishing_response = None
+        self._next_response_seq = renderer.request_seq + 1
         renderer.on_change("request_seq", self._request)
+        renderer.on_change("response_ack", self._acknowledge)
 
     def _request(self, _attr: str, _old: int, seq: int) -> None:
         requests = tuple(tuple(item) for item in self.renderer.requested_tiles)
         self.renderer.tile_requests += len(requests)
         future = self._executor.submit(self._load, seq, requests)
-        future.add_done_callback(self._loaded)
+        future.add_done_callback(
+            lambda completed, request_seq=seq, requested=requests:
+                self._loaded(completed, request_seq, requested)
+        )
 
     def _channel_slice(self, channel_page: int) -> tuple[int, int]:
         start = channel_page * self.renderer.channel_tile_size
@@ -440,27 +454,53 @@ class TileCoordinator:
                 raise ValueError(f"Unknown tile layer {layer!r}")
         return seq, self._pack_ranges(ranges), self._pack_lines(lines)
 
-    def _loaded(self, future: Future) -> None:
+    def _loaded(self, future: Future, seq: int, requests) -> None:
         try:
-            seq, (range_data, range_metadata), (line_data, line_metadata) = future.result()
+            loaded_seq, (range_data, range_metadata), (line_data, line_metadata) = future.result()
+            if loaded_seq != seq:
+                raise ValueError(f"tile response {loaded_seq} does not match request {seq}")
+            error_message = ""
         except Exception as error:
-            message = f"tile request failed: {error}"
-            def publish_error() -> None:
-                if not self._closed:
-                    self.renderer.error = message
-            self.document.add_next_tick_callback(publish_error)
-            return
+            range_data = {name: [] for name in EMPTY_RANGE_TILE_DATA}
+            range_metadata = {name: [] for name in EMPTY_RANGE_TILE_METADATA}
+            line_data = {name: [] for name in EMPTY_LINE_TILE_DATA}
+            line_metadata = {name: [] for name in EMPTY_LINE_TILE_METADATA}
+            error_message = f"tile request failed: {error}"
 
-        def publish() -> None:
+        def enqueue() -> None:
             if self._closed:
                 return
-            self.renderer.range_tile_source.data = range_data
-            self.renderer.range_tile_metadata_source.data = range_metadata
-            self.renderer.line_tile_source.data = line_data
-            self.renderer.line_tile_metadata_source.data = line_metadata
-            self.renderer.response_generation = seq
-            self.renderer.response_seq = seq
-        self.document.add_next_tick_callback(publish)
+            self._pending_responses[seq] = (
+                tuple(requests), range_data, range_metadata,
+                line_data, line_metadata, error_message,
+            )
+            self._publish_next_response()
+        self.document.add_next_tick_callback(enqueue)
+
+    def _publish_next_response(self) -> None:
+        if self._closed or self._publishing_response is not None:
+            return
+        response = self._pending_responses.pop(self._next_response_seq, None)
+        if response is None:
+            return
+        requests, range_data, range_metadata, line_data, line_metadata, error = response
+        seq = self._next_response_seq
+        self._publishing_response = seq
+        self.renderer.range_tile_source.data = range_data
+        self.renderer.range_tile_metadata_source.data = range_metadata
+        self.renderer.line_tile_source.data = line_data
+        self.renderer.line_tile_metadata_source.data = line_metadata
+        self.renderer.response_tiles = list(requests)
+        self.renderer.response_error = error
+        self.renderer.response_generation = seq
+        self.renderer.response_seq = seq
+
+    def _acknowledge(self, _attr: str, _old: int, seq: int) -> None:
+        if seq != self._publishing_response:
+            return
+        self._publishing_response = None
+        self._next_response_seq = seq + 1
+        self._publish_next_response()
 
     def close(self) -> None:
         with self._lock:
@@ -468,4 +508,5 @@ class TileCoordinator:
                 return
             self._closed = True
         self.renderer.remove_on_change("request_seq", self._request)
+        self.renderer.remove_on_change("response_ack", self._acknowledge)
         self._executor.shutdown(wait=False, cancel_futures=True)
