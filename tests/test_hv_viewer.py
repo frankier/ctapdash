@@ -5,7 +5,17 @@ import numpy as np
 import pytest
 import xarray as xr
 from bokeh.document import Document
-from bokeh.models import CheckboxButtonGroup, HoverTool, PanTool, RangeSlider, Select as BkSelect
+from bokeh.models import (
+    CheckboxButtonGroup,
+    CustomAction,
+    Dialog,
+    HoverTool,
+    MultiChoice,
+    PanTool,
+    RangeSlider,
+    Select as BkSelect,
+    Toggle,
+)
 from bokeh.models.renderers import GlyphRenderer
 from bokeh.plotting._figure import figure as BkFigure
 
@@ -82,6 +92,9 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     custom = list(figure.select({"type": VennTimeSeriesRenderer}))
     glyphs = list(figure.select({"type": GlyphRenderer}))
     layer_control = doc.roots[0].select_one({"type": CheckboxButtonGroup})
+    channel_choice = doc.select_one({"type": MultiChoice})
+    channel_toggle = doc.get_model_by_name("channel-dialog-toggle")
+    channel_dialog = doc.select_one({"type": Dialog})
     scrollbars = list(doc.roots[0].select({"type": RangeSlider}))
     scrollbars_by_orientation = {
         scrollbar.orientation: scrollbar for scrollbar in scrollbars
@@ -95,6 +108,14 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in glyphs)
     assert layer_control.labels == ["Venn", "Lines"]
     assert layer_control.active == [0, 1]
+    assert channel_dialog.visible is False
+    assert channel_dialog.close_action == "hide"
+    assert channel_toggle.label == "Show channels"
+    channel_toggle.active = True
+    assert channel_dialog.visible is True
+    assert channel_toggle.label == "Hide channels"
+    channel_dialog.visible = False
+    assert channel_toggle.active is False
     assert {scrollbar.orientation for scrollbar in scrollbars} == {"horizontal", "vertical"}
     assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.9))
     assert scrollbars_by_orientation["vertical"].value == (2, 8)
@@ -106,6 +127,65 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     layer_control.active = [0]
     assert custom[0].venn_visible is True
     assert custom[0].lines_visible is False
+
+    actions = list(figure.select({"type": CustomAction}))
+    assert {action.description for action in actions} == {
+        "+1 channel", "-1 channel", "Fullscreen",
+    }
+    channel_actions = [action for action in actions if "channel" in action.description]
+    assert all(
+        action.icon.startswith("data:image/svg+xml;base64,")
+        for action in channel_actions
+    )
+    assert figure.toolbar.stylesheets == []
+    toolbar_resizer = doc.get_model_by_name("toolbar-button-resizer")
+    assert toolbar_resizer.args["toolbar"] is figure.toolbar
+    assert 'setProperty("--button-width", "40px", "important")' in toolbar_resizer.code
+    assert 'setProperty("width", "40px", "important")' in toolbar_resizer.code
+    vertical_css = "\n".join(
+        stylesheet.css
+        for stylesheet in scrollbars_by_orientation["vertical"].stylesheets
+    )
+    assert "padding: 7px 0 !important" in vertical_css
+    assert "height: 100% !important" in vertical_css
+    assert "top: auto !important" in vertical_css
+    assert "bottom: var(--handle-right) !important" in vertical_css
+    fullscreen = next(action for action in actions if action.description == "Fullscreen")
+    fullscreen_frame = fullscreen.callback.args["viewer_frame"]
+    assert len(list(fullscreen_frame.select({"type": RangeSlider}))) == 2
+    sidebar_toggle = doc.get_model_by_name("sidebar-toggle")
+    normal_sidebar_open = doc.get_model_by_name("normal-sidebar-open")
+    fullscreen_sidebar_open = doc.get_model_by_name("fullscreen-sidebar-open")
+    assert sidebar_toggle.active is True
+    assert sidebar_toggle.label == "Hide controls"
+    assert normal_sidebar_open.active is True
+    assert fullscreen_sidebar_open.active is False
+    assert fullscreen.callback.args["controls_sidebar"].visible is True
+
+    figure.x_range.start, figure.x_range.end = 0.4, 1.2
+    figure.y_range.start, figure.y_range.end = 3.0, 7.0
+    plotting_mode = next(
+        select for select in doc.roots[0].select({"type": BkSelect})
+        if select.title == "Plotting mode"
+    )
+    plotting_mode.value = "normalize"
+    rebuilt = doc.roots[0].select_one({"type": BkFigure})
+    assert (rebuilt.x_range.start, rebuilt.x_range.end) == pytest.approx((0.4, 1.2))
+    assert (rebuilt.y_range.start, rebuilt.y_range.end) == pytest.approx((3.0, 7.0))
+
+    step_a = next(
+        select for select in doc.roots[0].select({"type": BkSelect})
+        if select.title == "Step A (red)"
+    )
+    step_a.value = "2"
+    rebuilt = doc.roots[0].select_one({"type": BkFigure})
+    assert (rebuilt.x_range.start, rebuilt.x_range.end) == pytest.approx((0.4, 1.2))
+    assert (rebuilt.y_range.start, rebuilt.y_range.end) == pytest.approx((3.0, 7.0))
+
+    channel_choice.value = channel_choice.value[:-1]
+    rebuilt = doc.roots[0].select_one({"type": BkFigure})
+    assert (rebuilt.x_range.start, rebuilt.x_range.end) == pytest.approx((0.4, 1.2))
+    assert rebuilt.y_range.end - rebuilt.y_range.start == pytest.approx(4.0)
 
 
 @pytest.fixture

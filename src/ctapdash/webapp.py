@@ -21,7 +21,6 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.config import SETTINGS
 from ctapdash.io import read_eeglab, ObservationData
-from ctapdash.plotting.mne import set_onionskin_eeg
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
 
@@ -456,15 +455,17 @@ def _comparison_channel_geometry(extrema, mode):
 
 def venn_time_series_bokeh(doc):
     """Build one WebGL figure containing Venn and line comparison layers."""
+    from base64 import b64encode
     from hashlib import sha256
 
     from bokeh.layouts import column, row
     from bokeh.models import (
         CheckboxButtonGroup,
+        CustomAction,
         CustomJS,
+        Dialog,
         Div,
         FixedTicker,
-        FullscreenTool,
         HoverTool,
         InlineStyleSheet,
         MultiChoice,
@@ -472,6 +473,7 @@ def venn_time_series_bokeh(doc):
         RangeSlider,
         Select,
         Span,
+        Toggle,
         WheelZoomTool,
     )
     from bokeh.plotting import figure
@@ -508,6 +510,8 @@ def venn_time_series_bokeh(doc):
     source_cache = {}
     active_coordinator = [None]
     active_renderer = [None]
+    active_plot = [None]
+    viewport = {"x": None, "y": None}
 
     def path_for(value):
         return steps_by_number[int(value)] / (dataset.participant + ".set")
@@ -530,6 +534,77 @@ def venn_time_series_bokeh(doc):
         options=initial_channels,
         value=initial_channels,
     )
+    channel_toggle = Toggle(
+        label="Show channels", active=False, name="channel-dialog-toggle",
+    )
+    channel_dialog = Dialog(
+        title="Channels",
+        content=channel_choice,
+        visible=False,
+        closable=True,
+        close_action="hide",
+        movable="both",
+    )
+
+    def toggle_channels(_attr, _old, visible):
+        channel_dialog.visible = visible
+        channel_toggle.label = "Hide channels" if visible else "Show channels"
+
+    def sync_channel_toggle(_attr, _old, visible):
+        if channel_toggle.active != visible:
+            channel_toggle.active = visible
+
+    channel_toggle.on_change("active", toggle_channels)
+    channel_dialog.on_change("visible", sync_channel_toggle)
+
+    normal_sidebar_open = Toggle(active=True, visible=False, name="normal-sidebar-open")
+    fullscreen_sidebar_open = Toggle(active=False, visible=False, name="fullscreen-sidebar-open")
+    sidebar_toggle = Toggle(
+        label="« Hide controls", active=True, width=110, name="sidebar-toggle",
+    )
+    controls_sidebar = column(
+        step_a,
+        step_b,
+        plotting_mode,
+        layers,
+        channel_toggle,
+        width=220,
+    )
+    sidebar_shell = column(sidebar_toggle, controls_sidebar, width=220)
+    plot_panel = column(status, plot_holder, sizing_mode="stretch_width")
+    viewer_frame = column(
+        row(sidebar_shell, plot_panel, sizing_mode="stretch_width"),
+        sizing_mode="stretch_width",
+        stylesheets=[InlineStyleSheet(css="""
+            :host {
+                background: white;
+            }
+            :host(:fullscreen) {
+                width: 100vw !important;
+                height: 100vh !important;
+                overflow: auto;
+                padding: 8px;
+            }
+        """)],
+    )
+    sidebar_toggle.js_on_change("active", CustomJS(
+        args={
+            "controls_sidebar": controls_sidebar,
+            "sidebar_shell": sidebar_shell,
+            "viewer_frame": viewer_frame,
+            "normal_state": normal_sidebar_open,
+            "fullscreen_state": fullscreen_sidebar_open,
+        },
+        code="""
+            const frame_view = Bokeh.index.find_one(viewer_frame)
+            const fullscreen = document.fullscreenElement === frame_view?.el
+            const state = fullscreen ? fullscreen_state : normal_state
+            state.active = cb_obj.active
+            controls_sidebar.visible = cb_obj.active
+            sidebar_shell.width = cb_obj.active ? 160 : 30
+            cb_obj.label = cb_obj.active ? "« Hide controls" : "»"
+        """,
+    ))
 
     def page_counts(sources, layer, factors, common):
         counts = []
@@ -575,19 +650,121 @@ def venn_time_series_bokeh(doc):
         plot.xaxis.axis_label = "Time (s)"
         plot.toolbar.logo = None
         xwheel = WheelZoomTool(dimensions="width")
-        plot.add_tools(xwheel, WheelZoomTool(dimensions="height"), FullscreenTool())
+        plot.add_tools(xwheel, WheelZoomTool(dimensions="height"))
         plot.toolbar.active_scroll = xwheel
+
+    def install_toolbar_sizing(plot):
+        resize = CustomJS(
+            name="toolbar-button-resizer",
+            args={"toolbar": plot.toolbar},
+            code="""
+                const apply_size = (attempt = 0) => {
+                    const toolbar_view = Bokeh.index.find_one(toolbar)
+                    if (toolbar_view == null) {
+                        if (attempt == 0)
+                            requestAnimationFrame(() => apply_size(1))
+                        return
+                    }
+                    if (toolbar_view._ctap_buttons_sized)
+                        return
+                    toolbar_view._ctap_buttons_sized = true
+                    for (const button_view of toolbar_view.tool_button_views) {
+                        const style = button_view.el.style
+                        style.setProperty("--button-width", "40px", "important")
+                        style.setProperty("--button-height", "40px", "important")
+                        style.setProperty("width", "40px", "important")
+                        style.setProperty("height", "40px", "important")
+                    }
+                }
+                apply_size()
+            """,
+        )
+        # This fires once as each initial or rebuilt plot completes layout.
+        # The callback guard prevents later responsive layouts from reapplying it.
+        plot.js_on_change("inner_width", resize)
+
+    def preserved_range(saved, bounds, fallback):
+        """Fit a previous viewport into new bounds without resetting its span."""
+        if saved is None:
+            return fallback
+        bound_start, bound_end = bounds
+        start, end = saved
+        span = end - start
+        bound_span = bound_end - bound_start
+        if span <= 0 or span >= bound_span:
+            return bounds
+        if start < bound_start:
+            start, end = bound_start, bound_start + span
+        if end > bound_end:
+            start, end = bound_end - span, bound_end
+        return start, end
+
+    def channel_count_action(plot_range, bounds, channel_count, delta):
+        label = f"{delta:+d} channel"
+        sign_path = "M3 12h7M6.5 8.5v7" if delta > 0 else "M3 12h7"
+        svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <g fill="none" stroke="#747679" stroke-width="2.5"
+               stroke-linecap="round" stroke-linejoin="round">
+                <path d="{sign_path}"/>
+                <path d="M14 9l3-3v13M14 19h6"/>
+            </g>
+        </svg>"""
+        icon = "data:image/svg+xml;base64," + b64encode(svg.encode()).decode()
+        return CustomAction(
+            description=label,
+            icon=icon,
+            callback=CustomJS(
+                args={"plot_range": plot_range},
+                code=f"""
+                    const lower = {bounds[0]}
+                    const upper = {bounds[1]}
+                    const channel_size = (upper - lower) / {channel_count}
+                    const current_span = plot_range.end - plot_range.start
+                    const target_span = Math.max(
+                        channel_size,
+                        Math.min(upper - lower, current_span + ({delta}) * channel_size),
+                    )
+                    let start = (plot_range.start + plot_range.end - target_span) / 2
+                    let end = start + target_span
+                    if (start < lower) {{
+                        start = lower
+                        end = lower + target_span
+                    }}
+                    if (end > upper) {{
+                        end = upper
+                        start = upper - target_span
+                    }}
+                    plot_range.start = start
+                    plot_range.end = end
+                """,
+            ),
+        )
 
     def range_scrollbar(plot_range, *, start, end, value, orientation, **kwargs):
         stylesheets = []
         if orientation == "vertical" and kwargs.get("height") is not None:
-            # Bokeh's vertical RangeSlider host receives its requested height,
-            # but its shadow-DOM input group otherwise collapses to 2 px when
-            # placed beside a plot in a row.
-            slider_height = max(10, kwargs["height"] - 20)
+            # Reserve half a handle at each end of the track. Without this,
+            # noUiSlider positions the end handles outside the visible box.
             stylesheets.append(InlineStyleSheet(css=f"""
-                .bk-input-group, .noUi-vertical {{
-                    height: {slider_height}px !important;
+                :host {{
+                    overflow: visible !important;
+                }}
+                .bk-input-group {{
+                    box-sizing: border-box !important;
+                    height: {kwargs["height"]}px !important;
+                    padding: 7px 0 !important;
+                    overflow: visible !important;
+                }}
+                .noUi-target.noUi-vertical {{
+                    flex: 1 1 auto !important;
+                    height: 100% !important;
+                    min-height: 0 !important;
+                    margin-top: 0 !important;
+                    margin-bottom: 0 !important;
+                }}
+                .noUi-vertical .noUi-handle {{
+                    top: auto !important;
+                    bottom: var(--handle-right) !important;
                 }}
             """))
         scrollbar = RangeSlider(
@@ -630,6 +807,10 @@ def venn_time_series_bokeh(doc):
             renderer.lines_visible = 1 in layers.active
 
     def rebuild(_attr, _old, _new):
+        previous_plot = active_plot[0]
+        if previous_plot is not None:
+            viewport["x"] = (previous_plot.x_range.start, previous_plot.x_range.end)
+            viewport["y"] = (previous_plot.y_range.start, previous_plot.y_range.end)
         if active_coordinator[0] is not None:
             active_coordinator[0].close()
             active_coordinator[0] = None
@@ -647,6 +828,7 @@ def venn_time_series_bokeh(doc):
                 return
             if not channels:
                 active_renderer[0] = None
+                active_plot[0] = None
                 plot_holder.children = [Div(text="Select at least one channel.")]
                 status.text = ""
                 return
@@ -703,11 +885,13 @@ def venn_time_series_bokeh(doc):
                     y_range[1],
                 )
             plot_height = max(180, visible_channel_count * 100 + 60)
+            x_bounds = (renderer.time_start, renderer.time_end)
+            initial_x_range = preserved_range(viewport["x"], x_bounds, x_bounds)
+            initial_y_range = preserved_range(viewport["y"], y_range, initial_y_range)
             plot = figure(
                 x_range=Range1d(
-                    renderer.time_start,
-                    renderer.time_end,
-                    bounds=(renderer.time_start, renderer.time_end),
+                    *initial_x_range,
+                    bounds=x_bounds,
                 ),
                 y_range=Range1d(*initial_y_range, bounds=y_range),
                 height=plot_height,
@@ -733,6 +917,10 @@ def venn_time_series_bokeh(doc):
                 mode="mouse",
             ))
             style_axes(plot, channels, geometry, plotting_mode.value)
+            plot.add_tools(
+                channel_count_action(plot.y_range, y_range, len(channels), 1),
+                channel_count_action(plot.y_range, y_range, len(channels), -1),
+            )
             renderer.js_on_change("error", CustomJS(
                 args={"status": status},
                 code="status.text = cb_obj.error ? `<strong>${cb_obj.error}</strong>` : ''",
@@ -756,15 +944,52 @@ def venn_time_series_bokeh(doc):
                 width=45,
                 height=plot_height,
             )
-            active_renderer[0] = renderer
-            active_coordinator[0] = coordinator
-            plot_holder.children = [
+            plot_frame = column(
                 row(plot, vertical_scrollbar, sizing_mode="stretch_width"),
                 horizontal_scrollbar,
-            ]
+                sizing_mode="stretch_width",
+            )
+            plot.add_tools(CustomAction(
+                description="Fullscreen",
+                icon="fullscreen",
+                callback=CustomJS(args={
+                    "viewer_frame": viewer_frame,
+                    "controls_sidebar": controls_sidebar,
+                    "sidebar_shell": sidebar_shell,
+                    "sidebar_toggle": sidebar_toggle,
+                    "normal_state": normal_sidebar_open,
+                    "fullscreen_state": fullscreen_sidebar_open,
+                }, code="""
+                    const view = Bokeh.index.find_one(viewer_frame)
+                    const element = view?.el
+                    if (element == null) return
+                    const sync_sidebar = () => {
+                        const fullscreen = document.fullscreenElement === element
+                        const state = fullscreen ? fullscreen_state : normal_state
+                        controls_sidebar.visible = state.active
+                        sidebar_shell.width = state.active ? 160 : 30
+                        sidebar_toggle.active = state.active
+                        sidebar_toggle.label = state.active ? "« Hide controls" : "»"
+                    }
+                    if (element._ctap_sidebar_fullscreen_listener == null) {
+                        element._ctap_sidebar_fullscreen_listener = sync_sidebar
+                        document.addEventListener("fullscreenchange", sync_sidebar)
+                    }
+                    if (document.fullscreenElement === element)
+                        void document.exitFullscreen()
+                    else if (document.fullscreenElement == null)
+                        void element.requestFullscreen()
+                """),
+            ))
+            install_toolbar_sizing(plot)
+            active_renderer[0] = renderer
+            active_coordinator[0] = coordinator
+            active_plot[0] = plot
+            plot_holder.children = [plot_frame]
             status.text = ""
         except Exception as error:
             active_renderer[0] = None
+            active_plot[0] = None
             plot_holder.children = [Div(text=f"<strong>Unable to build comparison:</strong> {escape(str(error))}")]
             status.text = ""
 
@@ -773,13 +998,8 @@ def venn_time_series_bokeh(doc):
         widget.on_change("value", rebuild)
 
     rebuild(None, None, None)
-    doc.add_root(column(
-        row(step_a, step_b, plotting_mode, layers, sizing_mode="stretch_width"),
-        channel_choice,
-        status,
-        plot_holder,
-        sizing_mode="stretch_width",
-    ))
+    doc.add_root(viewer_frame)
+    doc.add_root(channel_dialog)
     doc.title = "Processing-step time series comparison"
 
     def close_session(_context):
