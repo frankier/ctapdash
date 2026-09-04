@@ -641,7 +641,7 @@ def venn_time_series_bokeh(doc):
         if active_coordinator[0] is not None:
             active_coordinator[0].close()
             active_coordinator[0] = None
-        status.text = "<small>Opening memory maps and pyramid metadata…</small>"
+        status.text = "Loading..."
         try:
             source_a, source_b = get_source(step_a.value), get_source(step_b.value)
             common = validate_tile_source_alignment(source_a, source_b)
@@ -723,7 +723,6 @@ def venn_time_series_bokeh(doc):
                 tools="box_zoom,reset,save",
                 active_drag="box_zoom",
                 output_backend="webgl",
-                title=f"Steps {step_a.value} and {step_b.value}",
             )
             plot.renderers.append(renderer)
             line_a = plot.multi_line(
@@ -771,10 +770,7 @@ def venn_time_series_bokeh(doc):
                 row(plot, vertical_scrollbar, sizing_mode="stretch_width"),
                 horizontal_scrollbar,
             ]
-            status.text = (
-                "<small>Venn and line tiles load adaptively from memory-mapped data. "
-                "Red: step A; blue: step B; black: Venn overlap.</small>"
-            )
+            status.text = ""
         except Exception as error:
             active_renderer[0] = None
             plot_holder.children = [Div(text=f"<strong>Unable to build comparison:</strong> {escape(str(error))}")]
