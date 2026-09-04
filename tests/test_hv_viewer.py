@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import xarray as xr
 from bokeh.document import Document
-from bokeh.models import CheckboxButtonGroup, HoverTool, Select as BkSelect
+from bokeh.models import CheckboxButtonGroup, HoverTool, PanTool, RangeSlider, Select as BkSelect
 from bokeh.models.renderers import GlyphRenderer
 from bokeh.plotting._figure import figure as BkFigure
 
@@ -39,14 +39,16 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     from ctapdash.plotting.venn_ts.range_series import RecordingTileSource
 
     class FakeRecording:
-        ch_names = ["Fz", "Cz"]
+        ch_names = [f"Ch{index}" for index in range(8)]
 
         def __init__(self, offset):
             self.offset = offset
 
         def mmap(self, *, return_xarray=False):
             times = np.arange(20, dtype=float) * 0.1
-            values = np.vstack((np.sin(times), np.cos(times))) + self.offset
+            values = np.vstack(
+                [np.sin(times + index / 10) for index in range(len(self.ch_names))]
+            ) + self.offset
             return xr.DataArray(values, coords=(self.ch_names, times), dims=("ch", "time"))
 
     steps = []
@@ -80,13 +82,24 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     custom = list(figure.select({"type": VennTimeSeriesRenderer}))
     glyphs = list(figure.select({"type": GlyphRenderer}))
     layer_control = doc.roots[0].select_one({"type": CheckboxButtonGroup})
+    scrollbars = list(doc.roots[0].select({"type": RangeSlider}))
+    scrollbars_by_orientation = {
+        scrollbar.orientation: scrollbar for scrollbar in scrollbars
+    }
     assert figure.output_backend == "webgl"
+    assert figure.height == 660
+    assert (figure.y_range.start, figure.y_range.end) == (2, 8)
     assert len(custom) == 1
     assert custom[0].channel_tile_size == 1
     assert len(glyphs) == 2
     assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in glyphs)
     assert layer_control.labels == ["Venn", "Lines"]
     assert layer_control.active == [0, 1]
+    assert {scrollbar.orientation for scrollbar in scrollbars} == {"horizontal", "vertical"}
+    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.9))
+    assert scrollbars_by_orientation["vertical"].value == (2, 8)
+    assert scrollbars_by_orientation["vertical"].direction == "rtl"
+    assert not list(figure.select({"type": PanTool}))
     layer_control.active = [1]
     assert custom[0].venn_visible is False
     assert custom[0].lines_visible is True

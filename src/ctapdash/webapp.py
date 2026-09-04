@@ -474,8 +474,10 @@ def venn_time_series_bokeh(doc):
         FixedTicker,
         FullscreenTool,
         HoverTool,
+        InlineStyleSheet,
         MultiChoice,
         Range1d,
+        RangeSlider,
         Select,
         Span,
         WheelZoomTool,
@@ -584,6 +586,51 @@ def venn_time_series_bokeh(doc):
         plot.add_tools(xwheel, WheelZoomTool(dimensions="height"), FullscreenTool())
         plot.toolbar.active_scroll = xwheel
 
+    def range_scrollbar(plot_range, *, start, end, value, orientation, **kwargs):
+        stylesheets = []
+        if orientation == "vertical" and kwargs.get("height") is not None:
+            # Bokeh's vertical RangeSlider host receives its requested height,
+            # but its shadow-DOM input group otherwise collapses to 2 px when
+            # placed beside a plot in a row.
+            slider_height = max(10, kwargs["height"] - 20)
+            stylesheets.append(InlineStyleSheet(css=f"""
+                .bk-input-group, .noUi-vertical {{
+                    height: {slider_height}px !important;
+                }}
+            """))
+        scrollbar = RangeSlider(
+            start=start,
+            end=end,
+            value=value,
+            step=max((end - start) / 10_000, 1e-12),
+            orientation=orientation,
+            direction="rtl" if orientation == "vertical" else "ltr",
+            show_value=False,
+            tooltips=False,
+            bar_color="#d1d5db",
+            stylesheets=stylesheets,
+            **kwargs,
+        )
+        scrollbar.js_on_change("value", CustomJS(
+            args={"plot_range": plot_range},
+            code="""
+                const [start, end] = cb_obj.value
+                if (plot_range.start !== start) plot_range.start = start
+                if (plot_range.end !== end) plot_range.end = end
+            """,
+        ))
+        sync_scrollbar = CustomJS(
+            args={"scrollbar": scrollbar, "plot_range": plot_range},
+            code="""
+                const [old_start, old_end] = scrollbar.value
+                if (old_start !== plot_range.start || old_end !== plot_range.end)
+                    scrollbar.value = [plot_range.start, plot_range.end]
+            """,
+        )
+        plot_range.js_on_change("start", sync_scrollbar)
+        plot_range.js_on_change("end", sync_scrollbar)
+        return scrollbar
+
     def set_layers(_attr, _old, _new):
         renderer = active_renderer[0]
         if renderer is not None:
@@ -651,12 +698,29 @@ def venn_time_series_bokeh(doc):
                 venn_visible=0 in layers.active,
                 lines_visible=1 in layers.active,
             )
+            visible_channel_count = min(6, len(channels))
+            if visible_channel_count == len(channels):
+                initial_y_range = y_range
+            else:
+                # Channel order is top-to-bottom, while Bokeh y coordinates
+                # increase bottom-to-top. Put the first selected channels in
+                # the initial fixed-height viewport.
+                initial_y_range = (
+                    (geometry[visible_channel_count - 1]["center"]
+                     + geometry[visible_channel_count]["center"]) / 2,
+                    y_range[1],
+                )
+            plot_height = max(180, visible_channel_count * 100 + 60)
             plot = figure(
-                x_range=Range1d(renderer.time_start, renderer.time_end),
-                y_range=Range1d(*y_range),
-                height=max(180, len(channels) * 100 + 60),
+                x_range=Range1d(
+                    renderer.time_start,
+                    renderer.time_end,
+                    bounds=(renderer.time_start, renderer.time_end),
+                ),
+                y_range=Range1d(*initial_y_range, bounds=y_range),
+                height=plot_height,
                 sizing_mode="stretch_width",
-                tools="pan,box_zoom,reset,save",
+                tools="box_zoom,reset,save",
                 active_drag="box_zoom",
                 output_backend="webgl",
                 title=f"Steps {step_a.value} and {step_b.value}",
@@ -683,9 +747,30 @@ def venn_time_series_bokeh(doc):
                 code="status.text = cb_obj.error ? `<strong>${cb_obj.error}</strong>` : ''",
             ))
             coordinator = TileCoordinator(doc, renderer, (source_a, source_b), channels)
+            horizontal_scrollbar = range_scrollbar(
+                plot.x_range,
+                start=renderer.time_start,
+                end=renderer.time_end,
+                value=(plot.x_range.start, plot.x_range.end),
+                orientation="horizontal",
+                height=35,
+                sizing_mode="stretch_width",
+            )
+            vertical_scrollbar = range_scrollbar(
+                plot.y_range,
+                start=y_range[0],
+                end=y_range[1],
+                value=(plot.y_range.start, plot.y_range.end),
+                orientation="vertical",
+                width=45,
+                height=plot_height,
+            )
             active_renderer[0] = renderer
             active_coordinator[0] = coordinator
-            plot_holder.children = [plot]
+            plot_holder.children = [
+                row(plot, vertical_scrollbar, sizing_mode="stretch_width"),
+                horizontal_scrollbar,
+            ]
             status.text = (
                 "<small>Venn and line tiles load adaptively from memory-mapped data. "
                 "Red: step A; blue: step B; black: Venn overlap.</small>"
