@@ -14,13 +14,13 @@ def visit(page, dashboard_url, path):
 
 def test_home_dataset_and_participant_selection(page, dashboard_url):
     visit(page, dashboard_url, "/")
-    page.get_by_label("Dataset", exact=True).select_option("dummy")
-    expect(page.get_by_role("heading", name="Dataset overview")).to_be_visible()
-    expect(page.get_by_role("table")).to_contain_text("3_fine_clean")
-    page.get_by_role("link", name="Participants", exact=True).click()
-    expect(page.get_by_role("heading", name="Participants")).to_be_visible()
-    page.get_by_label("Participant", exact=True).select_option(PARTICIPANT)
+    page.locator("#source-select").select_option("dummy")
+    expect(page.get_by_role("heading", name="Dataset Overview")).to_be_visible()
+    page.get_by_role("link", name="Participant", exact=True).click()
+    expect(page.locator("#participant-select")).to_be_visible()
+    page.locator("#participant-select").select_option(PARTICIPANT)
     expect(page.get_by_role("columnheader", name="Observations")).to_be_visible()
+    expect(page.get_by_role("cell", name="3_fine_clean", exact=True)).to_be_visible()
     expect(page.locator("#channel-statistics-table table")).to_be_visible(timeout=30000)
     page.locator("#statistics-step").select_option("2")
     expect(page.locator("#channel-statistics-table").get_by_role("columnheader", name="Step", exact=True)).to_have_count(0)
@@ -51,7 +51,7 @@ def test_classic_eeg(page, dashboard_url, participant, step):
 
 def test_venndiff_eeg(page, dashboard_url):
     visit(page, dashboard_url, "/participant/overview" + QUERY)
-    page.get_by_role("link", name="Venndiff EEG viewer").click()
+    page.locator("#viewer").get_by_role("link", name="Venndiff EEG viewer").click()
     expect(page.locator(".bokeh-host canvas").first).to_be_visible(timeout=60000)
     expect(page.get_by_text("Step A (red)", exact=True)).to_be_visible()
     expect(page.get_by_text("Step B (blue)", exact=True)).to_be_visible()
