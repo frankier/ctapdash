@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+    {% include "_dataset_select.html" %}
+    <div class="bg-slate-400 flex flex-wrap w-full">
+        <div class="text-nowrap px-4 py-2
+            {% if view == 'dataset-overview' %}bg-slate-300{% endif %}
+        ">
+            <a href="{{ url_for("dataset_overview") }}{{ source_qs }}">
+                Overview
+            </a>
+        </div>
+        <div class="text-nowrap px-4 py-2
+            {% if view == 'venn_time_series' %}bg-slate-300{% endif %}
+        ">
+            <a href="{{ url_for("venn_time_series") }}{{ source_qs }}">
+                Venndiff EEG viewer
+            </a>
+        </div>
+        <div class="text-nowrap px-4 py-2
+            {% if view == 'participant-select' or participant is defined %}bg-slate-300{% endif %}
+        ">
+            <a href="{{ url_for("participant_select") }}{{ source_qs }}">
+                Participant
+            </a>
+        </div>
+    </div>
+    {% block dataset_content %}{% endblock %}
+{% endblock %}

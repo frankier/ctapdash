@@ -1,0 +1,7 @@
+{% extends "dataset_base.html" %}
+
+{% block dataset_content %}
+    {% with target=url_for('participant_overview') %}
+        {% include "_participant_select.html" %}
+    {% endwith %}
+{% endblock %}
