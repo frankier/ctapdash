@@ -927,7 +927,7 @@ async def participant_peeks_fragment(request):
             context.update({
                 "qc_type": "image",
                 "path": str(path),
-                "encoded_string": encode_qc(source_path, path),
+                "encoded_string": encode_qc(dataset.source_path, path),
             })
         elif "set" in request.query_params and "bit" in request.query_params:
             raise HTTPException(status_code=404)

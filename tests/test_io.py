@@ -2,46 +2,9 @@ import pickle
 
 import numpy as np
 import pytest
-from scipy.io import savemat
+from tests.dummy_data import write_eeglab
 
 from ctapdash.io import MmapEpochEEGLAB, MmapRawEEGLAB, mmap_eeglab
-
-
-def _write_eeglab(tmp_path, n_epochs):
-    n_channels, n_times = 2, 4
-    data = np.arange(
-        n_epochs * n_channels * n_times, dtype=np.float32
-    ).reshape(n_epochs, n_channels, n_times)
-    stem = "epochs" if n_epochs > 1 else "raw"
-    fdt_path = tmp_path / f"{stem}.fdt"
-    data.transpose(1, 2, 0).ravel(order="F").tofile(fdt_path)
-
-    chanlocs = np.rec.fromarrays([["A", "B"]], names=["labels"])
-    eeg = {
-        "trials": n_epochs,
-        "srate": 100.0,
-        "nbchan": n_channels,
-        "data": fdt_path.name,
-        "chanlocs": chanlocs,
-        "pnts": n_times,
-        "xmin": -0.01 if n_epochs > 1 else 0.0,
-        "xmax": 0.02 if n_epochs > 1 else 0.03,
-    }
-    if n_epochs > 1:
-        eeg["event"] = np.rec.fromarrays(
-            [np.arange(n_epochs) * n_times + 1.0, ["event"] * n_epochs],
-            names=["latency", "type"],
-        )
-        eeg["epoch"] = np.rec.fromarrays(
-            [["event"] * n_epochs], names=["eventtype"]
-        )
-    else:
-        eeg["event"] = np.empty(0)
-        eeg["epoch"] = np.empty(0)
-
-    set_path = tmp_path / f"{stem}.set"
-    savemat(set_path, {"EEG": eeg}, appendmat=False, oned_as="row")
-    return set_path
 
 
 @pytest.mark.parametrize("n_epochs", [1, 2])
@@ -49,7 +12,7 @@ def test_mmap_eeglab_matches_mne(tmp_path, n_epochs):
     import mne
     from mne.io.eeglab.eeglab import CAL
 
-    set_path = _write_eeglab(tmp_path, n_epochs)
+    set_path = write_eeglab(tmp_path, n_epochs)
     if n_epochs == 1:
         eeg = mne.io.read_raw_eeglab(set_path, preload=False, verbose="error")
     else:
@@ -69,7 +32,7 @@ def test_mmap_eeglab_xarray(tmp_path):
     import mne
 
     eeg = mne.io.read_raw_eeglab(
-        _write_eeglab(tmp_path, 1), preload=False, verbose="error"
+        write_eeglab(tmp_path, 1), preload=False, verbose="error"
     )
 
     data = mmap_eeglab(eeg, return_xarray=True)
@@ -85,7 +48,7 @@ def test_mmap_eeglab_epochs_xarray(tmp_path):
     from mne.io.eeglab.eeglab import CAL
 
     eeg = mne.read_epochs_eeglab(
-        _write_eeglab(tmp_path, 2), verbose="error"
+        write_eeglab(tmp_path, 2), verbose="error"
     )
 
     data = mmap_eeglab(eeg, return_xarray=True)
@@ -98,7 +61,7 @@ def test_mmap_eeglab_epochs_xarray(tmp_path):
 
 def test_mmap_raw_eeglab(tmp_path):
     eeg = MmapRawEEGLAB(
-        _write_eeglab(tmp_path, 1), preload=False, verbose="error"
+        write_eeglab(tmp_path, 1), preload=False, verbose="error"
     )
 
     data = eeg.mmap()
@@ -108,7 +71,7 @@ def test_mmap_raw_eeglab(tmp_path):
 
 
 def test_mmap_epoch_eeglab(tmp_path, monkeypatch):
-    set_path = _write_eeglab(tmp_path, 2)
+    set_path = write_eeglab(tmp_path, 2)
 
     def fail_fromfile(*args, **kwargs):
         raise AssertionError("the .fdt file was loaded during construction")
@@ -139,7 +102,7 @@ def test_mmap_epoch_eeglab(tmp_path, monkeypatch):
 def test_mmap_eeglab_pickle_is_metadata_only(
     tmp_path, monkeypatch, n_epochs, eeglab_class
 ):
-    eeg = eeglab_class(_write_eeglab(tmp_path, n_epochs), verbose="error")
+    eeg = eeglab_class(write_eeglab(tmp_path, n_epochs), verbose="error")
     reduction = eeg.__reduce__()
     payload = pickle.dumps(eeg)
 

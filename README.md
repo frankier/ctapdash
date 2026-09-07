@@ -83,3 +83,27 @@ so you can compare the two directly when something breaks only in the bundle.
 
 CI builds all four targets on every push and attaches them to a GitHub
 Release on tags matching `v*`.
+
+### Tests and dummy data
+
+```bash
+uv sync --group test
+uv run playwright install chromium
+uv run pytest
+```
+
+The Playwright tests in `tests/e2e` launch the real dashboard with a temporary
+TOML configuration and synthetic CTAP output. They cover every page, including
+loaded EEG plots, channel statistics, QC images, and logs. Run just the browser
+checks with `uv run pytest tests/e2e` (add `--headed` to watch them).
+
+To generate the same small dataset for manual use:
+
+```bash
+uv run python -m tests.dummy_data /tmp/ctap-dummy
+uv run ctapdash --config /tmp/ctap-dummy/conf.toml
+```
+
+No reference participant files are required or copied. The generated `TAPPED`
+directory mirrors the numbered processing steps, logs, and quality-control
+layout of CTAP output.

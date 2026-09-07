@@ -45,6 +45,7 @@ build = [
 ]
 test = [
     "pytest>=8",
+    "pytest-playwright>=0.7",
 ]
 
 [build-system]
