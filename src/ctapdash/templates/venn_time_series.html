@@ -1,8 +1,4 @@
-{% if request.state['htmx'] %}
-    {% extends "participant_fragment_base.html" %}
-{% else %}
-    {% extends "participant_base.html" %}
-{% endif %}
+{% extends "participant_base.html" %}
 
 {% block participant_view_content %}
 <style>

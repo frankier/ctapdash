@@ -2,39 +2,21 @@
     <div class="text-nowrap px-4 py-2
         {% if view == 'overview' %}bg-slate-300{% endif %}
     ">
-        <a
-            href="{{ url_for("participant_overview") }}{{ source_participant_qs }}"
-            hx-get="{{ url_for("participant_overview") }}"
-            hx-push-url="true"
-            hx-include="#source-select, #participant-select"
-            hx-target="#viewer"
-            hx-swap="outerHTML">
+        <a href="{{ url_for("participant_overview") }}{{ source_participant_qs }}">
             Overview
         </a>
     </div>
     <div class="text-nowrap px-4 py-2
         {% if view == 'steps' %}bg-slate-300{% endif %}
     ">
-        <a
-            href="{{ url_for("participant_steps") }}{{ source_participant_qs }}"
-            hx-get="{{ url_for("participant_steps") }}"
-            hx-push-url="true"
-            hx-include="#source-select, #participant-select"
-            hx-target="#viewer"
-            hx-swap="outerHTML">
+        <a href="{{ url_for("participant_steps") }}{{ source_participant_qs }}">
             Classic EEG viewer
         </a>
     </div>
     <div class="text-nowrap px-4 py-2
         {% if view == 'venn_time_series' %}bg-slate-300{% endif %}
     ">
-        <a
-            href="{{ url_for("venn_time_series") }}{{ source_participant_qs }}"
-            hx-get="{{ url_for("venn_time_series") }}"
-            hx-push-url="true"
-            hx-include="#source-select, #participant-select"
-            hx-target="#viewer"
-            hx-swap="outerHTML">
+        <a href="{{ url_for("venn_time_series") }}{{ source_participant_qs }}">
             Compare steps
         </a>
     </div>
@@ -42,28 +24,15 @@
         text-nowrap px-4 py-2
         {% if view == 'peeks' %}bg-slate-300{% endif %}
     ">
-        <a
-            href="{{ url_for("participant_peeks") }}{{ source_participant_qs }}"
-            hx-get="{{ url_for("participant_peeks") }}"
-            hx-push-url="true"
-            hx-include="#source-select, #participant-select"
-            hx-target="#viewer"
-            hx-swap="outerHTML">
+        <a href="{{ url_for("participant_peeks") }}{{ source_participant_qs }}">
             Quality control (peeks)
         </a>
     </div>
-    <div
-        class="
-            text-nowrap px-4 py-2
-            {% if view == 'logs' %}bg-slate-300{% endif %}
-        ">
-        <a
-            href="{{ url_for("participant_log") }}{{ source_participant_qs }}"
-            hx-get="{{ url_for("participant_log") }}"
-            hx-push-url="true"
-            hx-include="#source-select, #participant-select"
-            hx-target="#viewer"
-            hx-swap="outerHTML">
+    <div class="
+        text-nowrap px-4 py-2
+        {% if view == 'logs' %}bg-slate-300{% endif %}
+    ">
+        <a href="{{ url_for("participant_log") }}{{ source_participant_qs }}">
             Logs
         </a>
     </div>

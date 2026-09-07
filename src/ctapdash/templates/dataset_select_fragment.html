@@ -1,22 +1,21 @@
 <div class="text-nowrap mx-4">
-    Dataset: 
-    <select
-        name="source"
-        id="source-select"
-        hx-get="{{ url_for('index') }}"
-        hx-ext="push-url-w-params"
-        data-push-url="{{ url_for('index') }}"
-        hx-target="#content"
-        class="mx-4 my-2 rounded-md border border-black p-1 bg-white">
-        <option
-            value=""
-            {% if not source %}selected{% endif %}
-        >--- Please choose an option ---</option>
-        {% for some_source, directory in sources.items() %}
+    Dataset:
+    <form method="get" action="{{ url_for('index') }}" class="inline-block">
+        <select
+            name="source"
+            id="source-select"
+            onchange="this.form.requestSubmit()"
+            class="mx-4 my-2 rounded-md border border-black p-1 bg-white">
             <option
-                value="{{ some_source }}"
-                {% if some_source == source %}selected{% endif %}
-            >{{ directory }}</option>
-        {% endfor %}
-    </select>
+                value=""
+                {% if not source %}selected{% endif %}
+            >--- Please choose an option ---</option>
+            {% for some_source, directory in sources.items() %}
+                <option
+                    value="{{ some_source }}"
+                    {% if some_source == source %}selected{% endif %}
+                >{{ directory }}</option>
+            {% endfor %}
+        </select>
+    </form>
 </div>
