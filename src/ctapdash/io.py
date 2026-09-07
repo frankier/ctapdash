@@ -542,11 +542,13 @@ class ObservationData:
         return cls(source_path, participant, source)
 
     @classmethod
-    def from_request(cls, request):
+    def from_request(cls, request, default_participant=None):
         source = request.query_params.get("source")
         if source is None:
             raise ValueError("Source must be specified in the request.")
         participant = request.query_params.get("participant")
+        if participant is None:
+            participant = default_participant
         return cls.from_source(source, participant)
 
     @classmethod

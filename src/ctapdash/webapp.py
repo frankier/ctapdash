@@ -44,6 +44,8 @@ def sources_context(request):
     participant = request.query_params.get("participant")
     if participant is not None:
         ctx["participant"] = participant
+    if source:
+        ctx["source_qs"] = f"?source={source}"
     if source and participant:
         ctx["source_participant_qs"] = f"?source={source}&participant={participant}"
     return ctx
@@ -86,14 +88,38 @@ async def index(request):
     )
 
 
-def participant_context(request):
-    dataset = ObservationData.from_request(request)
-    steps = dataset.get_steps()
-    return {
+def participant_context(request, default_participant=None):
+    dataset = ObservationData.from_request(request, default_participant=default_participant)
+    result = {
         "source": dataset.source,
-        "participant": dataset.participant,
-        "steps": steps,
     }
+    if dataset.participant is not None:
+        steps = dataset.get_steps()
+        result.update({
+            "participant": dataset.participant,
+            "steps": steps,
+        })
+    return result
+
+
+async def dataset_overview(request):
+    context = participant_context(request)
+    context["view"] = "dataset-overview"
+    return templates.TemplateResponse(
+        request,
+        'dataset_overview.html',
+        context=context,
+    )
+
+
+async def participant_select(request):
+    context = participant_context(request)
+    context["view"] = "participant-select"
+    return templates.TemplateResponse(
+        request,
+        'participant_select.html',
+        context=context,
+    )
 
 
 async def participant_steps_fragment(request):
@@ -156,7 +182,12 @@ def bokeh_document(request, path, *args, **kwargs):
 
 async def venn_time_series(request):
     """Serve the multichannel processing-step comparison viewer."""
-    context = participant_context(request)
+    # If there's not participant, just pick the first one
+    default_participant = None
+    if not request.query_params.get("participant"):
+        dataset = ObservationData.from_request(request)
+        default_participant = dataset.get_all_steps().get("participants", [[None]])[0][0]
+    context = participant_context(request, default_participant=default_participant)
     context["view"] = "venn_time_series"
     context["venn_time_series"] = bokeh_document(
         request,
@@ -1004,6 +1035,8 @@ def create_app(debug=False):
         routes=[
             Route('/', index, name="index"),
             Mount('/static', app=StaticFiles(directory=STATIC_DIR), name="static"),
+            Route('/overview', dataset_overview, name="dataset_overview"),
+            Route('/participant', participant_select, name="participant_select"),
             Route('/participant/overview', participant_overview_fragment, name="participant_overview"),
             Route('/participant/statistics', participant_statistics_fragment, name="participant_statistics"),
             Route('/participant/steps', participant_steps_fragment, name="participant_steps"),
