@@ -1,0 +1,24 @@
+<div class="p-2 bg-slate-100 flex flex-wrap w-full">
+    <div class="text-nowrap mx-4" id="participant-select-container">
+        Participant:
+        <form method="get" action="{{ target }}" class="inline-block">
+            <input type="hidden" name="source" value="{{ source }}">
+            <select
+                name="participant"
+                id="participant-select"
+                onchange="this.form.requestSubmit()"
+                class="mx-4 my-2 rounded-md border border-black p-1 bg-white">
+                <option
+                    value=""
+                    {% if not participant %}selected{% endif %}
+                >--- Please choose an option ---</option>
+                {% for some_participant, count in participants %}
+                    <option
+                        value="{{ some_participant }}"
+                        {% if participant == some_participant %}selected{% endif %}
+                    >{{ some_participant }} [{{ count }}]</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+</div>
