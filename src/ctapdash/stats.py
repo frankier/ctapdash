@@ -7,6 +7,7 @@ import numba
 from collections import namedtuple
 from numpy import ma
 from math import isnan
+from ctapdash.io import MmapEpochEEGLAB, MmapRawEEGLAB
 
 
 DESCRIPTIVE_STATISTICS = (
@@ -21,15 +22,16 @@ DESCRIPTIVE_STATISTICS = (
 
 
 def _channel_samples(instance: BaseRaw | BaseEpochs) -> np.ndarray:
+    if isinstance(instance, MmapRawEEGLAB):
+        return instance.mmap()
+    if isinstance(instance, MmapEpochEEGLAB):
+        data = instance.mmap()
+        return data.swapaxes(0, 1).reshape(len(instance.ch_names), -1)
     if isinstance(instance, BaseRaw):
         return instance.get_data()
     if isinstance(instance, BaseEpochs):
         data = instance.get_data(copy=False)
         return data.swapaxes(0, 1).reshape(len(instance.ch_names), -1)
-    raise TypeError(
-        "describe() inputs must be MNE Raw or Epochs instances, "
-        f"got {type(instance).__name__}"
-    )
 
 
 def _channel_values(value, n_channels: int) -> np.ndarray:

@@ -1,25 +1,18 @@
-{% if request.state['htmx'] %}
-    {% extends "participant_fragment_base.html" %}
-{% else %}
-    {% extends "participant_base.html" %}
-{% endif %}
+{% extends "participant_base.html" %}
 
 {% block participant_view_content %}
     <form id="steps-form"
-          class="p-2 bg-slate-100 flex items-center flex-wrap w-full"
-          hx-get="{{ url_for('participant_steps') }}"
-          hx-ext="push-url-w-params"
-          data-push-url="{{ url_for('participant_steps') }}"
-          hx-target="#viewer"
-          hx-trigger="change"
-          hx-include="#source-select, #participant-select"
-          hx-swap="outerHTML"
-          hx-indicator="#spinner">
+          method="get"
+          action="{{ url_for('participant_steps') }}"
+          class="p-2 bg-slate-100 flex items-center flex-wrap w-full">
+        <input type="hidden" name="source" value="{{ source }}">
+        <input type="hidden" name="participant" value="{{ participant }}">
         <div class="text-nowrap mx-4">
             Step:
             <select
                 name="step"
                 id="step-select"
+                onchange="this.form.requestSubmit()"
                 class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                 <option
                     value=""
@@ -40,6 +33,7 @@
                 <select
                     name="yaxis"
                     id="yaxis-select"
+                    onchange="this.form.requestSubmit()"
                     class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                     {% for option in yaxis_options %}
                         <option
@@ -56,6 +50,7 @@
                     id="onionskin-checkbox"
                     type="checkbox"
                     value="onionskin"
+                    onchange="this.form.requestSubmit()"
                     class="inline-block p-1"
                     {% if onionskin %}checked{% endif %}
                 >

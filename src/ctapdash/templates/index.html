@@ -1,16 +1,7 @@
-{% if request.state['htmx'] %}
-    {% extends "base_fragment.html" %}
-{% else %}
-    {% extends "base.html" %}
-{% endif %}
+{% extends "base.html" %}
 
 {% block title %}Home{% endblock %}
 
 {% block content %}
-    <div class="p-2 bg-slate-100 flex flex-wrap w-full">
-        {% include "dataset_select_fragment.html" %}
-        {% include "participant_select_fragment.html" %}
-    </div>
-    <div class="flex" id="viewer">
-    </div>
+    {% include "_dataset_select.html" %}
 {% endblock %}

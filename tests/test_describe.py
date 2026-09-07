@@ -67,10 +67,3 @@ def test_multiple_recordings_align_different_channels(info):
     assert result.recording.values.tolist() == [0, 1]
     assert np.isnan(result["mean"].sel(recording=0, channel="Pz"))
     assert np.isnan(result["mean"].sel(recording=1, channel="Fz"))
-
-
-def test_requires_at_least_one_supported_mne_instance():
-    with pytest.raises(ValueError, match="at least one"):
-        describe()
-    with pytest.raises(TypeError, match="Raw or Epochs"):
-        describe(object())

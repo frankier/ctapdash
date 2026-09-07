@@ -1,35 +1,30 @@
-{% if request.state['htmx'] %}
-    {% extends "participant_fragment_base.html" %}
-{% else %}
-    {% extends "participant_base.html" %}
-{% endif %}
+{% extends "participant_base.html" %}
 
 {% block participant_view_content %}
     <div class="p-2 bg-slate-100 flex flex-wrap w-full">
         <div class="text-nowrap mx-4">
             Log file:
-            <select
-                name="log"
-                id="log-select"
-                hx-get="{{ url_for('participant_log') }}"
-                hx-ext="push-url-w-params"
-                data-push-url="{{ url_for('participant_log') }}"
-                hx-target="#viewer"
-                hx-swap="outerHTML"
-                hx-include="#source-select, #participant-select"
-                class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
-                <option
-                    value=""
-                    {% if not current_log_file %}selected{% endif %}
-                >--- Please choose an option ---</option>
-                {% for log_file in logs %}
+            <form method="get" action="{{ url_for('participant_log') }}" class="inline-block">
+                <input type="hidden" name="source" value="{{ source }}">
+                <input type="hidden" name="participant" value="{{ participant }}">
+                <select
+                    name="log"
+                    id="log-select"
+                    onchange="this.form.requestSubmit()"
+                    class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                     <option
-                        {% if current_log_file == log_file %}selected{% endif %}
-                        value="{{ log_file|urlencode }}">
-                        {{ log_file }}
-                    </option>
-                {% endfor %}
-            </select>
+                        value=""
+                        {% if not current_log_file %}selected{% endif %}
+                    >--- Please choose an option ---</option>
+                    {% for log_file in logs %}
+                        <option
+                            {% if current_log_file == log_file %}selected{% endif %}
+                            value="{{ log_file }}">
+                            {{ log_file }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </form>
         </div>
     </div>
     <div class="flex-1 p-4" id="log-content">

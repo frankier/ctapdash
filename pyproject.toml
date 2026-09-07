@@ -22,8 +22,16 @@ dependencies = [
     # which cannot be frozen reliably, so we open the system browser instead.
     "pywebview>=6.2.1; sys_platform != 'linux'",
     "xarray>=2026.2.0",
-    "numba>=0.67.0",
     "tbb4u>=2023.1.0",
+    "bokeh==3.10",
+    "tsdownsample>=0.1.5.1",
+    "zarr>=3.3.0",
+    "holoviews==1.23.2",
+    "panel==1.10.0a4",
+    "hvplot>=0.12.2",
+    "numba>=0.67.0",
+    "datashader>=0.19.1",
+    "pymatreader",
 ]
 
 [project.scripts]
@@ -48,3 +56,4 @@ testpaths = ["tests"]
 
 [tool.uv.sources]
 mne = { git = "https://github.com/mne-tools/mne-python.git" }
+pymatreader = { git = "https://gitlab.com/frankier/pymatreader.git", branch = "fix-mcos-scipy1-18" }
