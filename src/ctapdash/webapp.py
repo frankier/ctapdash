@@ -506,7 +506,7 @@ def venn_time_series_bokeh(doc):
     )
     layers = CheckboxButtonGroup(labels=["Venn", "Lines"], active=[0, 1])
     status = Div(text="", sizing_mode="stretch_width")
-    plot_holder = column(sizing_mode="stretch_width")
+    plot_holder = column(sizing_mode="stretch_both")
     source_cache = {}
     active_coordinator = [None]
     active_renderer = [None]
@@ -570,11 +570,14 @@ def venn_time_series_bokeh(doc):
         channel_toggle,
         width=220,
     )
-    sidebar_shell = column(sidebar_toggle, controls_sidebar, width=220)
-    plot_panel = column(status, plot_holder, sizing_mode="stretch_width")
+    sidebar_shell = column(
+        sidebar_toggle, controls_sidebar, width=220, sizing_mode="stretch_height",
+    )
+    plot_panel = column(status, plot_holder, sizing_mode="stretch_both")
     viewer_frame = column(
-        row(sidebar_shell, plot_panel, sizing_mode="stretch_width"),
-        sizing_mode="stretch_width",
+        row(sidebar_shell, plot_panel, sizing_mode="stretch_both"),
+        min_height=695,
+        sizing_mode="stretch_both",
         stylesheets=[InlineStyleSheet(css="""
             :host {
                 background: white;
@@ -742,30 +745,30 @@ def venn_time_series_bokeh(doc):
 
     def range_scrollbar(plot_range, *, start, end, value, orientation, **kwargs):
         stylesheets = []
-        if orientation == "vertical" and kwargs.get("height") is not None:
+        if orientation == "vertical":
             # Reserve half a handle at each end of the track. Without this,
             # noUiSlider positions the end handles outside the visible box.
-            stylesheets.append(InlineStyleSheet(css=f"""
-                :host {{
+            stylesheets.append(InlineStyleSheet(css="""
+                :host {
                     overflow: visible !important;
-                }}
-                .bk-input-group {{
+                }
+                .bk-input-group {
                     box-sizing: border-box !important;
-                    height: {kwargs["height"]}px !important;
+                    height: 100% !important;
                     padding: 7px 0 !important;
                     overflow: visible !important;
-                }}
-                .noUi-target.noUi-vertical {{
+                }
+                .noUi-target.noUi-vertical {
                     flex: 1 1 auto !important;
                     height: 100% !important;
                     min-height: 0 !important;
                     margin-top: 0 !important;
                     margin-bottom: 0 !important;
-                }}
-                .noUi-vertical .noUi-handle {{
+                }
+                .noUi-vertical .noUi-handle {
                     top: auto !important;
                     bottom: var(--handle-right) !important;
-                }}
+                }
             """))
         scrollbar = RangeSlider(
             start=start,
@@ -895,7 +898,8 @@ def venn_time_series_bokeh(doc):
                 ),
                 y_range=Range1d(*initial_y_range, bounds=y_range),
                 height=plot_height,
-                sizing_mode="stretch_width",
+                min_height=plot_height,
+                sizing_mode="stretch_both",
                 tools="box_zoom,reset,save",
                 active_drag="box_zoom",
                 output_backend="webgl",
@@ -942,12 +946,19 @@ def venn_time_series_bokeh(doc):
                 value=(plot.y_range.start, plot.y_range.end),
                 orientation="vertical",
                 width=45,
-                height=plot_height,
+                min_height=plot_height,
+                sizing_mode="stretch_height",
             )
             plot_frame = column(
-                row(plot, vertical_scrollbar, sizing_mode="stretch_width"),
+                row(
+                    plot,
+                    vertical_scrollbar,
+                    min_height=plot_height,
+                    sizing_mode="stretch_both",
+                ),
                 horizontal_scrollbar,
-                sizing_mode="stretch_width",
+                min_height=plot_height + 35,
+                sizing_mode="stretch_both",
             )
             plot.add_tools(CustomAction(
                 description="Fullscreen",

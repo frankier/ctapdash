@@ -101,6 +101,8 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     }
     assert figure.output_backend == "webgl"
     assert figure.height == 660
+    assert figure.min_height == 660
+    assert figure.sizing_mode == "stretch_both"
     assert (figure.y_range.start, figure.y_range.end) == (2, 8)
     assert len(custom) == 1
     assert custom[0].channel_tile_size == 1
@@ -120,6 +122,8 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.9))
     assert scrollbars_by_orientation["vertical"].value == (2, 8)
     assert scrollbars_by_orientation["vertical"].direction == "rtl"
+    assert scrollbars_by_orientation["vertical"].min_height == 660
+    assert scrollbars_by_orientation["vertical"].sizing_mode == "stretch_height"
     assert not list(figure.select({"type": PanTool}))
     layer_control.active = [1]
     assert custom[0].venn_visible is False
@@ -152,12 +156,14 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     assert "bottom: var(--handle-right) !important" in vertical_css
     fullscreen = next(action for action in actions if action.description == "Fullscreen")
     fullscreen_frame = fullscreen.callback.args["viewer_frame"]
+    assert fullscreen_frame.min_height == 695
+    assert fullscreen_frame.sizing_mode == "stretch_both"
     assert len(list(fullscreen_frame.select({"type": RangeSlider}))) == 2
     sidebar_toggle = doc.get_model_by_name("sidebar-toggle")
     normal_sidebar_open = doc.get_model_by_name("normal-sidebar-open")
     fullscreen_sidebar_open = doc.get_model_by_name("fullscreen-sidebar-open")
     assert sidebar_toggle.active is True
-    assert sidebar_toggle.label == "Hide controls"
+    assert sidebar_toggle.label == "« Hide controls"
     assert normal_sidebar_open.active is True
     assert fullscreen_sidebar_open.active is False
     assert fullscreen.callback.args["controls_sidebar"].visible is True

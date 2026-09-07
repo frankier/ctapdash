@@ -5,7 +5,32 @@
 {% endif %}
 
 {% block participant_view_content %}
-<div class="bokeh-host">
+<style>
+    .bokeh-host > div,
+    .bokeh-host > div > .bk-Column {
+        height: 100%;
+    }
+</style>
+<div class="bokeh-host" style="min-height: 695px;">
     {{ venn_time_series }}
 </div>
+<script>
+(() => {
+    const host = document.currentScript.previousElementSibling
+    const resize = () => {
+        const available = window.innerHeight - host.getBoundingClientRect().top
+        host.style.height = `${Math.max(695, available)}px`
+    }
+    resize()
+    requestAnimationFrame(resize)
+    window.addEventListener("resize", resize)
+    const cleanup = event => {
+        if (event.detail.elt === host || event.detail.elt.contains(host)) {
+            window.removeEventListener("resize", resize)
+            document.body.removeEventListener("htmx:beforeCleanupElement", cleanup)
+        }
+    }
+    document.body.addEventListener("htmx:beforeCleanupElement", cleanup)
+})()
+</script>
 {% endblock %}
