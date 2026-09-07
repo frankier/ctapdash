@@ -5,7 +5,9 @@
 {% block content %}
     <div class="p-2 bg-slate-100 flex flex-wrap w-full">
         {% include "dataset_select_fragment.html" %}
-        {% include "participant_select_fragment.html" %}
+        {% with target="" %}
+            {% include "participant_select_fragment.html" %}
+        {% endwith %}
     </div>
     <div id="viewer"
         {% if view == 'peeks' and qc_type == 'eeg' %}

@@ -25,7 +25,9 @@
                 const path = e.target.getAttribute('data-push-url')
                 const params = new URLSearchParams(e.detail.parameters).toString()
                 let url;
-                if (path.indexOf("://") == -1) {
+                if (path.length === 0) {
+                    url = `${window.location.origin}${window.location.pathname}?${params}`
+                } else if (path.indexOf("://") == -1) {
                     url = `${window.location.origin}${path}?${params}`
                 } else {
                     url = `${path}?${params}`

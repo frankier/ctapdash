@@ -4,9 +4,9 @@
         <select
             name="participant"
             id="participant-select"
-            hx-get="{{ url_for('participant_overview') }}"
+            hx-get="{{ target }}"
             hx-ext="push-url-w-params"
-            data-push-url="{{ url_for('participant_overview') }}"
+            data-push-url="{{ target }}"
             hx-target="#viewer"
             hx-swap="outerHTML"
             hx-include="#source-select"
