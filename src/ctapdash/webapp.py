@@ -154,21 +154,6 @@ def bokeh_document(request, path, *args, **kwargs):
     return Markup(server_document(url, relative_urls=True, *args, **kwargs))
 
 
-async def time_series(request):
-    context = participant_context(request)
-    context["view"] = "time_series"
-    context["time_series"] = bokeh_document(request, "/time-series", arguments={
-        "source": context["source"],
-        "participant": context["participant"],
-    })
-
-    return templates.TemplateResponse(
-        request,
-        'time_series.html',
-        context=context
-    )
-
-
 async def venn_time_series(request):
     """Serve the multichannel processing-step comparison viewer."""
     context = participant_context(request)
@@ -188,207 +173,11 @@ async def venn_time_series(request):
     )
 
 
-async def hv_viewer(request):
-    context = participant_context(request)
-    context["view"] = "hv_viewer"
-    context["hv_plot"] = bokeh_document(request, "/hv-viewer", arguments={
-        "source": context["source"],
-        "participant": context["participant"],
-    })
-
-    return templates.TemplateResponse(
-        request,
-        'hv_viewer.html',
-        context=context
-    )
-
-
 def maybe_int(value):
     try:
         return int(value)
     except TypeError, ValueError:
         return None
-
-
-def time_series_bokeh(doc):
-    import numpy as np
-    from bokeh.layouts import column
-    from bokeh.events import RangesUpdate
-    from bokeh.models import (
-        ColumnDataSource,
-        FixedTicker,
-        FullscreenTool,
-        HoverTool,
-        Range1d,
-        WheelZoomTool,
-    )
-    from bokeh.plotting import figure
-
-    dataset = ObservationData.from_bokeh_doc(doc)
-    steps = dataset.get_steps()
-
-    pyramid_base = steps[0][-1] / (dataset.participant + ".set")
-    ts_dt, groups = load_pyramid(pyramid_base)
-
-    X_PADDING = 0.2  # buffer x-range to reduce update latency with pans and zoom-outs
-
-    def extract_ds(ts_dt, level, channels=None):
-        """Extract a dataset at a specific level."""
-        ds = ts_dt[str(level)].ds
-        return ds if channels is None else ds.sel(ch=channels)
-
-    def extract_data(ts_dt, level, channels=None):
-        """Extract the sole data array without relying on its optional name."""
-        ds = extract_ds(ts_dt, level, channels)
-        if len(ds.data_vars) != 1:
-            raise ValueError(
-                f"Expected one data array in pyramid level {level!r}, "
-                f"found {list(ds.data_vars)!r}"
-            )
-        return next(iter(ds.data_vars.values()))
-
-    num_levels = len(groups)
-    coarsest_level = groups[-1]
-    time_da = extract_ds(ts_dt, coarsest_level)["time"]
-    channels = ts_dt[coarsest_level].ds["ch"].values
-    num_channels = len(channels)
-    x_range = (time_da.min().item(), time_da.max().item())
-
-    plot = figure(
-        x_range=Range1d(*x_range),
-        y_range=Range1d(-2, num_channels + 1),
-        x_axis_label="Time (s)",
-        y_axis_label="Channel",
-        min_height=600,
-        sizing_mode="stretch_both",
-        tools="pan,box_zoom,reset,save",
-        active_drag="box_zoom",
-        #output_backend="webgl",
-    )
-    plot.yaxis.ticker = FixedTicker(ticks=list(range(num_channels)))
-    plot.yaxis.major_label_overrides = {
-        index: str(channel) for index, channel in enumerate(channels)
-    }
-    plot.ygrid.grid_line_color = None
-
-    wheel_zoom = WheelZoomTool(dimensions="width")
-    plot.toolbar.logo = None
-    plot.add_tools(wheel_zoom)
-    plot.add_tools(FullscreenTool())
-    plot.toolbar.active_scroll = wheel_zoom
-
-    hover = HoverTool(
-        tooltips=[
-            ("ch", "$name"),
-            ("time", "$x{0.000} s"),
-            ("amplitude", "$y{0.000} µV"),
-        ],
-        mode="mouse",
-        renderers=[],
-    )
-    plot.add_tools(hover)
-
-    sources = {}
-    amplitude_ranges = {}
-    for index, channel in enumerate(channels):
-        channel_name = str(channel)
-        source = ColumnDataSource(data={"time": [], "amplitude": []})
-        amplitude_range = Range1d(0, 1)
-        channel_plot = plot.subplot(
-            x_source=plot.x_range,
-            x_target=plot.x_range,
-            y_source=amplitude_range,
-            # Match HoloViews' subcoordinate_scale=4 around each channel.
-            y_target=Range1d(index - 2, index + 2),
-        )
-        renderer = channel_plot.line(
-            "time",
-            "amplitude",
-            source=source,
-            name=channel_name,
-            color="black",
-            line_width=1,
-        )
-        hover.renderers.append(renderer)
-        sources[channel_name] = source
-        amplitude_ranges[channel_name] = amplitude_range
-
-    def update_plot(x_range, width=None, height=None):
-        x_padding = (x_range[1] - x_range[0]) * X_PADDING
-        time_slice = slice(x_range[0] - x_padding, x_range[1] + x_padding)
-
-        # Pick the nearest level that has at least one sample per horizontal
-        # pixel. Before browser layout is known, start with the coarsest level.
-        if not width:
-            pyramid_level = num_levels - 1
-            size = time_da.size
-        else:
-            sizes = np.array(
-                [
-                    extract_ds(ts_dt, pyramid_level)["time"].sel(time=time_slice).size
-                    for pyramid_level in groups
-                ]
-            )
-            diffs = sizes - width
-            pyramid_level = np.argmin(np.where(diffs >= 0, diffs, np.inf))  # nearest higher-res
-            size = sizes[pyramid_level]
-
-        plot.title.text = (
-            f"[Pyramid Level {pyramid_level} ({x_range[0]:.2f}s - {x_range[1]:.2f}s)]   "
-            f"[Time Samples: {size}]  [Plot Size WxH: {width}x{height}]"
-        )
-
-        data = (
-            extract_data(ts_dt, groups[pyramid_level], channels)
-            .sel(time=time_slice)
-            .load()
-        )
-        for channel in data["ch"].values.tolist():
-            channel_name = str(channel)
-            channel_data = data.sel(ch=channel)
-            amplitudes = np.asarray(channel_data.values)
-            sources[channel_name].data = {
-                "time": np.asarray(channel_data["time"].values),
-                "amplitude": amplitudes,
-            }
-
-            finite = amplitudes[np.isfinite(amplitudes)]
-            if finite.size:
-                start, end = float(finite.min()), float(finite.max())
-                if start == end:
-                    padding = abs(start) * 0.1 or 1.0
-                    start, end = start - padding, end + padding
-                amplitude_ranges[channel_name].start = start
-                amplitude_ranges[channel_name].end = end
-
-    def plot_dimension(name):
-        try:
-            return getattr(plot, name) or None
-        except ValueError:  # Bokeh raises while layout dimensions are unset.
-            return None
-
-    def update_from_viewport(width=None):
-        update_plot(
-            (plot.x_range.start, plot.x_range.end),
-            width or plot_dimension("inner_width"),
-            plot_dimension("inner_height"),
-        )
-
-    def update_from_range(event):
-        update_from_viewport()
-
-    def update_from_size(attr, old, new):
-        update_from_viewport(width=new)
-
-    plot.on_event(RangesUpdate, update_from_range)
-    plot.on_change("inner_width", update_from_size)
-
-    update_plot(x_range)
-    root = column(
-        plot,
-        sizing_mode="stretch_both",
-    )
-    doc.add_root(root)
 
 
 def _comparison_channel_geometry(extrema, mode):
@@ -1020,96 +809,6 @@ def venn_time_series_bokeh(doc):
     doc.on_session_destroyed(close_session)
 
 
-def hv_viewer_bokeh(doc):
-    """EEG viewer based on hvPlot (see
-    https://hvplot.holoviz.org/user_guide/Large_Timeseries.html).
-
-    Renders channels as vertically stacked curves with ``subcoordinate_y``.
-    A Panel dropdown switches between plain WebGL rendering of a downsampled
-    pyramid level and Datashader rasterization of the full-resolution data.
-    """
-    import panel as pn
-    import xarray as xr
-    import hvplot.xarray  # noqa: F401  (registers the .hvplot accessor)
-
-    dataset = ObservationData.from_bokeh_doc(doc)
-    steps = dataset.get_steps()
-
-    ts_dt, groups = load_pyramid(steps[0][-1] / (dataset.participant + ".set"))
-    finest_level, coarsest_level = groups[0], groups[-1]
-
-    channels = [str(ch) for ch in ts_dt[coarsest_level].ds["ch"].values]
-
-    # WebGL rendering ships all selected samples to the browser, so use the
-    # finest pyramid level that stays below a sane per-channel point budget.
-    WEBGL_MAX_POINTS_PER_CHANNEL = 200_000
-    webgl_level = coarsest_level
-    for level in groups:  # finest -> coarsest
-        if ts_dt[level].ds["time"].size <= WEBGL_MAX_POINTS_PER_CHANNEL:
-            webgl_level = level
-            break
-
-    yticks = [(index, channel) for index, channel in enumerate(channels)]
-    common_opts = dict(
-        x="time",
-        y="data",
-        by="ch",
-        subcoordinate_y=True,
-        responsive=True,
-        min_height=600,
-        line_width=1,
-        yticks=yticks,
-        xlabel="Time (s)",
-        ylabel="Channel",
-        tools=["xwheel_zoom"],
-        title=dataset.participant,
-    )
-
-    def make_plot(render_mode):
-        if render_mode == "Datashader":
-            # Rasterize the full-resolution level server-side; only an image
-            # sized to the viewport is sent to the browser.
-            return (
-                ts_dt[finest_level].ds["data"]
-                .hvplot.line(
-                    rasterize=True,
-                    cmap=["black"],
-                    colorbar=False,
-                    **common_opts,
-                )
-            )
-        return (
-            ts_dt[webgl_level].ds["data"]
-            .hvplot.line(
-                color="black",
-                hover_tooltips=[
-                    ("Channel", "$label"),
-                    ("Time", "$x{0.000} s"),
-                    ("Amplitude", "$y{0.000} µV"),
-                ],
-                **common_opts,
-            )
-        )
-
-    render_mode = pn.widgets.Select(
-        options=["WebGL", "Datashader"],
-        value="WebGL",
-        name="Render mode",
-    )
-    plot_pane = pn.panel(make_plot(render_mode.value))
-    render_mode.param.watch(
-        lambda event: setattr(plot_pane, "object", make_plot(event.new)),
-        "value",
-    )
-
-    layout = pn.Column(
-        pn.Row(render_mode),
-        plot_pane,
-        sizing_mode="stretch_both",
-    )
-    doc.add_root(layout.get_root(doc))
-
-
 def trim(img):
     """Crop away the uniform border, as ImageMagick's trim() did.
 
@@ -1287,9 +986,7 @@ def create_app(debug=False):
     from ctapdash.setup_ui import RequireConfigMiddleware, setup_routes
 
     bokeh_application = BokehASGI({
-        "/time-series": time_series_bokeh,
         "/venn-time-series": venn_time_series_bokeh,
-        "/hv-viewer": hv_viewer_bokeh,
     })
 
     @asynccontextmanager
@@ -1310,9 +1007,7 @@ def create_app(debug=False):
             Route('/participant/overview', participant_overview_fragment, name="participant_overview"),
             Route('/participant/statistics', participant_statistics_fragment, name="participant_statistics"),
             Route('/participant/steps', participant_steps_fragment, name="participant_steps"),
-            Route('/participant/time-series', time_series, name="time_series"),
             Route('/participant/venn-time-series', venn_time_series, name="venn_time_series"),
-            Route('/participant/hv-viewer', hv_viewer, name="hv_viewer"),
             Route('/participant/peeks', participant_peeks_fragment, name="participant_peeks"),
             Route('/participant/log', participant_log, name="participant_log"),
             *setup_routes(),
