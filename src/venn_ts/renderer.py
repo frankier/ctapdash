@@ -20,9 +20,9 @@ from bokeh.core.properties import (
 from bokeh.document import Document
 from bokeh.models import ColumnDataSource, Renderer
 
-from ctapdash.plotting.venn_ts.venn import VennManifest, load_page, pack_pages
-from ctapdash.plotting.venn_ts.range_series import RangeSeries
-from ctapdash.plotting.venn_ts.range_series import RecordingTileSource
+from venn_ts.venn import VennManifest, load_page, pack_pages
+from venn_ts.range_series import RangeSeries
+from venn_ts.range_series import RecordingTileSource
 
 
 EMPTY_PAGE_DATA = {"minimum": [], "maximum": [], "valid": []}
@@ -55,8 +55,6 @@ EMPTY_LINE_TILE_METADATA = {
 
 class VennTimeSeriesRenderer(Renderer):
     """Pixel Venn renderer whose bulk data is supplied through a page mailbox."""
-
-    __implementation__ = "vennrender.ts"
 
     request_seq = Int(default=0, help="Monotonic client page-request sequence")
     requested_pages = List(Tuple(Int, Int), default=[], help="(factor, page) requests")

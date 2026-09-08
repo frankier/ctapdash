@@ -299,11 +299,11 @@ def venn_time_series_bokeh(doc):
     from bokeh.plotting import figure
     from markupsafe import escape
 
-    from ctapdash.plotting.venn_ts.range_series import (
+    from venn_ts.range_series import (
         RecordingTileSource,
         validate_tile_source_alignment,
     )
-    from ctapdash.plotting.venn_ts.renderer import TileCoordinator, VennTimeSeriesRenderer
+    from venn_ts.renderer import TileCoordinator, VennTimeSeriesRenderer
 
     dataset = ObservationData.from_bokeh_doc(doc)
     steps = dataset.get_steps()

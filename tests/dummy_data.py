@@ -74,7 +74,7 @@ def write_dataset(directory):
 
 
 def series(values, times=None, *, name="recording:channel", levels=None):
-    from ctapdash.plotting.venn_ts.range_series import ArrayRangeSeries
+    from venn_ts.range_series import ArrayRangeSeries
 
     values = np.asarray(values, dtype=np.float64)
     if times is None:

@@ -21,7 +21,7 @@ from bokeh.plotting._figure import figure as BkFigure
 
 from ctapdash import webapp
 from ctapdash.config import SETTINGS
-from ctapdash.plotting.venn_ts.renderer import VennTimeSeriesRenderer
+from venn_ts.renderer import VennTimeSeriesRenderer
 
 
 def test_comparison_channel_geometry_modes():
@@ -46,7 +46,7 @@ def test_comparison_channel_geometry_modes():
 
 
 def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
-    from ctapdash.plotting.venn_ts.range_series import RecordingTileSource
+    from venn_ts.range_series import RecordingTileSource
 
     class FakeRecording:
         ch_names = [f"Ch{index}" for index in range(8)]
@@ -81,7 +81,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
             classmethod(lambda cls, doc: dataset),
         ),
         patch(
-            "ctapdash.plotting.venn_ts.range_series.RecordingTileSource",
+            "venn_ts.range_series.RecordingTileSource",
             side_effect=fake_source,
         ),
     ):

@@ -311,7 +311,7 @@ requires-dist = [
     { name = "numba", specifier = ">=0.67.0" },
     { name = "panel", specifier = "==1.10.0a4" },
     { name = "pillow", specifier = ">=12.0" },
-    { name = "pymatreader", git = "https://gitlab.com/frankier/pymatreader.git?branch=fix-mcos-scipy1-18" },
+    { name = "pymatreader", specifier = ">=1.3.1" },
     { name = "pywebview", marker = "sys_platform != 'linux'", specifier = ">=6.2.1" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "starlette", specifier = ">=1.0.0" },
@@ -1266,13 +1266,17 @@ wheels = [
 
 [[package]]
 name = "pymatreader"
-version = "1.2.3.dev0"
-source = { git = "https://gitlab.com/frankier/pymatreader.git?branch=fix-mcos-scipy1-18#d770465c29f19c89fc31aa5e3ff82d889bb6b02d" }
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "h5py" },
     { name = "numpy" },
     { name = "scipy" },
     { name = "xmltodict" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b2/f8/ca2719d2b393afaff09ff14bf7a641a9556555b43aa5a5130e0b2ee0b238/pymatreader-1.3.1.tar.gz", hash = "sha256:19c38ef7e174f1e53f48a2433c92bf0342df56c35df32ec025c05552027cd039", size = 37134583, upload-time = "2026-09-02T14:00:59.473Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/d5/5cac822d674b42c13955b0093f16a742e5ed58379f5533880706b262861a/pymatreader-1.3.1-py3-none-any.whl", hash = "sha256:d2d509667f4ee5a821ae3c65b22a6f428b1de5baeea4ccafd8556875b2ded0f1", size = 10704, upload-time = "2026-09-02T14:01:01.448Z" },
 ]
 
 [[package]]

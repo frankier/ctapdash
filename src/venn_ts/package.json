@@ -1,0 +1,13 @@
+{
+  "name": "venn_ts",
+  "version": "0.0.1",
+  "description": "",
+  "license": "MIT",
+  "keywords": [],
+  "repository": {},
+  "dependencies": {
+    "@bokeh/bokehjs": "^3.10.0"
+  },
+  "devDependencies": {},
+  "main": "dist/venn_ts.js"
+}

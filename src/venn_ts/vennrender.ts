@@ -1,8 +1,8 @@
-import {Renderer, RendererView} from "models/renderers/renderer"
-import {ColumnDataSource} from "models/sources/column_data_source"
-import type {Context2d} from "core/util/canvas"
-import type {Color} from "core/types"
-import * as p from "core/properties"
+import {Renderer, RendererView} from "@bokehjs/models/renderers/renderer"
+import {ColumnDataSource} from "@bokehjs/models/sources/column_data_source"
+import type {Context2d} from "@bokehjs/core/util/canvas"
+import type {Color} from "@bokehjs/core/types"
+import * as p from "@bokehjs/core/properties"
 
 type RangeTile = {
   factor: number
@@ -633,6 +633,7 @@ export namespace VennTimeSeriesRenderer {
 export interface VennTimeSeriesRenderer extends VennTimeSeriesRenderer.Attrs {}
 
 export class VennTimeSeriesRenderer extends Renderer {
+  static __module__ = "venn_ts.renderer"
   declare properties: VennTimeSeriesRenderer.Props
   declare __view_type__: VennTimeSeriesRendererView
   static {
