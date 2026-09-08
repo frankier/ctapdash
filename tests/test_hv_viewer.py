@@ -25,20 +25,21 @@ from venn_ts.renderer import VennTimeSeriesRenderer
 
 
 def test_comparison_channel_geometry_modes():
+    from venn_ts.plot import _comparison_channel_geometry
     extrema = [(-1, 1, -3, 2), (-2, 2, -1, 1)]
 
-    overplot, overplot_range = webapp._comparison_channel_geometry(extrema, "overplot")
+    overplot, overplot_range = _comparison_channel_geometry(extrema, "overplot")
     assert overplot_range == (0.0, 2.0)
     assert overplot[0]["outside"] is True
     assert overplot[0]["actual_min"] * overplot[0]["scale"] + overplot[0]["offset"] < 1.1
 
-    stretch, stretch_range = webapp._comparison_channel_geometry(extrema, "stretch")
+    stretch, stretch_range = _comparison_channel_geometry(extrema, "stretch")
     assert stretch_range[1] > overplot_range[1]
     first_low = stretch[0]["actual_min"] * stretch[0]["scale"] + stretch[0]["offset"]
     second_high = stretch[1]["actual_max"] * stretch[1]["scale"] + stretch[1]["offset"]
     assert first_low > second_high
 
-    normalized, normalized_range = webapp._comparison_channel_geometry(extrema, "normalize")
+    normalized, normalized_range = _comparison_channel_geometry(extrema, "normalize")
     assert normalized_range == overplot_range
     for item in normalized:
         mapped_span = (item["actual_max"] - item["actual_min"]) * item["scale"]
@@ -47,6 +48,7 @@ def test_comparison_channel_geometry_modes():
 
 def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     from venn_ts.range_series import RecordingTileSource
+    from venn_ts import venn_time_series_bokeh
 
     class FakeRecording:
         ch_names = [f"Ch{index}" for index in range(8)]
@@ -86,7 +88,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
         ),
     ):
         doc = Document()
-        webapp.venn_time_series_bokeh(doc)
+        venn_time_series_bokeh(doc)
 
     figure = doc.roots[0].select_one({"type": BkFigure})
     custom = list(figure.select({"type": VennTimeSeriesRenderer}))
