@@ -15,6 +15,19 @@ from PyInstaller.utils.hooks import (
     copy_metadata,
 )
 
+# The spec runs from the project root; put the source tree on the path so it
+# can drive the extension build below.
+sys.path.insert(0, "src")
+
+# The frozen app cannot rebuild the venn_ts BokehJS extension (no node, no
+# TypeScript sources), so the bundle must be current here and shipped as
+# data. ensure_extension_built() only rebuilds when sources are newer, so
+# this is a no-op on an up-to-date tree. The runtime hook then disables the
+# same check inside the frozen app.
+from venn_ts.build import ensure_extension_built
+
+ensure_extension_built(verbose=True)
+
 IS_MACOS = sys.platform == "darwin"
 IS_LINUX = sys.platform.startswith("linux")
 
@@ -22,6 +35,12 @@ datas = []
 # templates/ and static/ live inside the package and are found through
 # importlib.resources, so they must land at ctapdash/... in the bundle.
 datas += collect_data_files("ctapdash")
+# The venn_ts extension is served from its compiled bundle; without these
+# files the browser fails with "Cannot find module './vennrender'".
+datas += collect_data_files(
+    "venn_ts",
+    includes=["bokeh.ext.json", "package.json", "dist/**"],
+)
 # mplbed reads webaggext.js through importlib.resources.
 datas += collect_data_files("mplbed")
 # mplbed serves matplotlib's backends/web_backend and mpl-data as static dirs.
@@ -93,7 +112,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
-    runtime_hooks=["rthook_mplconfig.py"],
+    runtime_hooks=["rthook_mplconfig.py", "rthook_extbuild.py"],
     excludes=excludes,
     noarchive=False,
 )
