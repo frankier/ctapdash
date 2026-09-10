@@ -49,14 +49,13 @@ def draw(arr, ranges, overall_range):
 
 
 def venn_time_series(eegs, width_px, height_px, time_range):
-    from ctapdash.pyramid import load_pyramid
     import time
     from matplotlib.image import imsave
 
     das = []
     min_size = float("inf")
     for eeg in eegs:
-        ts_dt, groups = load_pyramid(eeg, range=True)
+        ts_dt, groups = eeg.open_pyramid(range=True)
         coarsest_name = groups[-1]
         da = ts_dt[coarsest_name]["__xarray_dataarray_variable__"]
         das.append(da)

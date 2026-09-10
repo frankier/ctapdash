@@ -1,10 +1,9 @@
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import numpy as np
-import pytest
 import xarray as xr
 
 from ctapdash.config import SETTINGS
@@ -163,7 +162,7 @@ def test_step_rows_strip_dataset_root_and_include_observations():
     ]
 
     with (
-        patch("ctapdash.webapp.read_eeglab", side_effect=[object(), object()]),
+        patch("ctapdash.webapp.RecordingData.read_metadata", side_effect=[object(), object()]),
         patch("ctapdash.webapp._observation_count", side_effect=[100, 24]),
     ):
         rows = _participant_step_rows(root, steps, "sub-01")
@@ -176,6 +175,7 @@ def test_step_rows_strip_dataset_root_and_include_observations():
 
 def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
     request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=SimpleNamespace(hurry=AsyncMock()))),
         query_params={"source": "example", "participant": "sub-01"}
     )
     steps = [(1, Path("/data/1_import"))]
@@ -213,6 +213,7 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
 
 def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=SimpleNamespace(hurry=AsyncMock()))),
         query_params={
             "source": "example",
             "participant": "sub-01",
@@ -221,15 +222,18 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     )
     steps = [(1, Path("/data/1_import")), (3, Path("/data/3_filter"))]
     heatmap = {"channels": ["Cz"], "rows": []}
+    stats = object()
     rendered = object()
 
     monkeypatch.setattr(SETTINGS, "sources", {"example": "/data"})
     dataset = SimpleNamespace(
         participant="sub-01",
+        source_path=Path("/data"),
         get_steps=lambda: steps,
     )
     with (
         patch("ctapdash.webapp.ObservationData.from_request", return_value=dataset),
+        patch("ctapdash.webapp.DATASET_STATS.get", new=AsyncMock(return_value=stats)),
         patch(
             "ctapdash.plotting.stats_heatmap.participant_descriptive_heatmap",
             return_value=heatmap,
@@ -245,7 +249,7 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
         response = asyncio.run(participant_statistics_fragment(request))
 
     assert response is rendered
-    build_heatmap.assert_called_once_with([steps[1]], "sub-01")
+    build_heatmap.assert_called_once_with([steps[1]], "sub-01", stats)
     assert template_response.call_args.args[1] == "participant_statistics.html"
     assert (
         template_response.call_args.kwargs["context"]["descriptive_heatmap"] is heatmap

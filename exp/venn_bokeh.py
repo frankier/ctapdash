@@ -13,12 +13,12 @@ from bokeh.document import Document
 from bokeh.models import Range1d
 from bokeh.plotting import figure
 
-from ctapdash.plotting.venn_ts.venn import VennManifest, parse_series_args
-from ctapdash.plotting.venn_ts.range_series import (
+from venn_ts.venn import VennManifest, parse_series_args
+from venn_ts.range_series import (
     RecordingTileSource,
     validate_tile_source_alignment,
 )
-from ctapdash.plotting.venn_ts.renderer import TileCoordinator, VennTimeSeriesRenderer
+from venn_ts.renderer import TileCoordinator, VennTimeSeriesRenderer
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

@@ -4,17 +4,17 @@ import numpy as np
 import pytest
 from bokeh.document import Document
 
-from ctapdash.plotting.venn_ts.range_series import (
+from venn_ts.range_series import (
     RecordingTileSource,
     resolve_channel,
     validate_tile_source_alignment,
 )
-from ctapdash.plotting.venn_ts.renderer import (
+from venn_ts.renderer import (
     PageMailbox,
     TileCoordinator,
     VennTimeSeriesRenderer,
 )
-from ctapdash.plotting.venn_ts.venn import (
+from venn_ts.venn import (
     build_manifest,
     load_page,
     pack_pages,

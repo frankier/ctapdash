@@ -18,3 +18,6 @@ wheels/
 
 # Profiling output
 /profiles/
+
+node_modules/
+/src/venn_ts/dist/

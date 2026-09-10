@@ -55,8 +55,17 @@ next time. There is deliberately no automatic config location.
 | `--no-browser` | Don't open a browser |
 | `--debug` | Show tracebacks in the browser |
 
-`ctapdash-warm --config conf.toml` pre-converts every `.set` file to the
-faster `.fif` cache format, so the first view of each participant is quick.
+The dashboard warms metadata, transposed samples, pyramids, and statistics when
+sources are loaded or added in Setup. A bottom-right indicator shows the active
+operation and completed/total build jobs, pushed over an HTMX WebSocket. It is
+hidden while scanning, idle, failed, or disconnected; only actual build progress
+is displayed.
+
+Freshness is checked at registration using `.set` mtimes. External `.fdt` changes
+and removed recordings are not detected. Re-add an existing source in Setup to
+check it again after editing `.set` files; there is no filesystem watcher.
+
+`ctapdash-warm --config conf.toml` warms only the metadata pickle caches.
 
 ## Developing
 
@@ -67,6 +76,40 @@ uv run ctapdash --config conf.toml
 
 `uv run uvicorn ctapdash.webapp:create_app --factory` also works if you want a
 plain ASGI server.
+
+### Accessing recording caches
+
+All cache locations are defined in `ctapdash.io.paths`. Existing cache filenames
+are preserved, including metadata pickles next to their `.set` files.
+
+```python
+from ctapdash.io.paths import ObservationData
+
+observation = ObservationData.from_source("my-source", participant="participant-id")
+recording = observation.get_recording(1)  # processing step number
+set_path = recording.paths.set
+transpose_path = recording.paths.transpose
+metadata = recording.read_metadata()
+samples = recording.open_transpose(return_xarray=True)
+tree, groups = recording.open_pyramid(range=True)
+```
+
+For paths outside request context, use
+`RecordingData(DatasetPaths(dataset_root).recording(set_path))` from
+`ctapdash.io.recording` and `ctapdash.io.paths`. The dataset root is explicit,
+so nested recordings resolve correctly. Opening an unavailable artifact raises
+`FileNotFoundError`; server callers first await the corresponding
+`app.state.cache_hurrier.hurry(kind, (dataset_root, set_path))` job. Dataset stats
+are shared through `await DATASET_STATS.get(dataset_root)` from
+`ctapdash.io.stats_cache`. This waits for the registered stats job on a miss
+and retains a read-only mmap-backed xarray per dataset and server process.
+`get_cached(root)` returns an existing entry or `None`. Consumers must not
+mutate or close shared datasets; re-registration and shutdown invalidate them.
+The comparison viewer uses whole-recording min/max stats for channel geometry,
+including when recordings have different lengths. Setup does not scan recording
+or pyramid values, although missing stats still require worker sample reads
+and rendering visible tiles reads their data.
+Standalone metadata reads retain their own freshness checks.
 
 ### Building a release locally
 

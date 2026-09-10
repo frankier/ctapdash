@@ -55,6 +55,10 @@ def test_venndiff_eeg(page, dashboard_url):
     expect(page.locator(".bokeh-host canvas").first).to_be_visible(timeout=60000)
     expect(page.get_by_text("Step A (red)", exact=True)).to_be_visible()
     expect(page.get_by_text("Step B (blue)", exact=True)).to_be_visible()
+    page.wait_for_function("""() => Bokeh.documents.some(doc =>
+        [...doc.all_models].some(model =>
+            model.type === "venn_ts.renderer.VennTimeSeriesRenderer" && model.ready &&
+            model.tile_requests > 0 && model.error === ""))""", timeout=60000)
 
 
 @pytest.mark.parametrize("peek,count", [("CTAP_peek_data", 2), ("CTAP_blink2event", 1)])
@@ -75,3 +79,65 @@ def test_logs(page, dashboard_url):
     page.get_by_role("link", name="Logs", exact=True).click()
     page.locator("#log-select").select_option(f"logs/CTAP_load_data/{PARTICIPANT}.log")
     expect(page.locator("#log-content pre")).to_contain_text("Processing completed.")
+
+
+def test_cache_progress_across_navigation(page, dashboard_url):
+    from ctapdash.webapp import templates
+
+    status = {"state": "scanning", "completed": 0, "total": 0,
+              "dataset": "dummy", "operation": None, "failed": 0, "error": None}
+    template = templates.env.get_template("_cache_progress.html")
+    sockets = []
+
+    def connect(socket):
+        sockets.append(socket)
+        socket.send(template.render(status=status))
+
+    page.route_web_socket("**/cache-status", connect)
+    visit(page, dashboard_url, "/setup")
+    indicator = page.locator("#cache-progress")
+    expect(indicator).to_be_hidden()
+    # Wait for the extension's socket before pushing an update.
+    page.wait_for_function("document.querySelector('[ws-connect]') != null")
+    assert sockets
+    status.update(state="warming", completed=2, total=5, operation="transpose")
+    sockets[-1].send(template.render(status=status))
+    expect(indicator).to_be_visible()
+    expect(indicator).to_contain_text("2/5")
+    expect(page.locator("#cache-progress-bar")).to_have_attribute("value", "2")
+    visit(page, dashboard_url, "/")
+    expect(indicator).to_be_visible()
+    connections = len(sockets)
+    page.locator("#source-select").select_option("dummy")
+    expect(page.get_by_role("heading", name="Dataset Overview")).to_be_visible()
+    expect(indicator).to_have_count(1)
+    expect(indicator).to_contain_text("2/5")
+    assert len(sockets) == connections + 1  # Dataset selection is a full navigation.
+    visit(page, dashboard_url, "/participant/overview" + QUERY)
+    expect(indicator).to_be_visible()
+    expect(page.locator("#channel-statistics-table table")).to_be_visible()
+    connections = len(sockets)
+    page.locator("#statistics-step").select_option("2")
+    expect(page.locator("#channel-statistics-table").get_by_role("columnheader", name="Step", exact=True)).to_have_count(0)
+    expect(indicator).to_have_count(1)
+    assert len(sockets) == connections  # A fragment update retains the connection.
+    for state in ("failed", "idle", "scanning"):
+        status.update(state=state)
+        sockets[-1].send(template.render(status=status))
+        expect(indicator).to_be_hidden()
+    status.update(state="warming")
+    sockets[-1].send(template.render(status=status))
+    expect(indicator).to_be_visible()
+    sockets[-1].close(code=1000)
+    expect(indicator).to_be_hidden()
+
+
+def test_real_cache_websocket_snapshot(dashboard_url):
+    from websockets.sync.client import connect
+
+    url = dashboard_url.replace("http://", "ws://") + "/cache-status"
+    with connect(url, proxy=None) as connection:
+        markup = connection.recv(timeout=10)
+        assert 'id="cache-progress"' in markup
+        assert 'hx-swap-oob="true"' in markup
+        assert 'hidden' in markup or 'Warming caches:' in markup

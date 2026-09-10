@@ -19,34 +19,48 @@ from bokeh.models import (
 from bokeh.models.renderers import GlyphRenderer
 from bokeh.plotting._figure import figure as BkFigure
 
-from ctapdash import webapp
+from ctapdash.io import paths
+from ctapdash.io.xarray import load_xarray, save_xarray
 from ctapdash.config import SETTINGS
-from ctapdash.plotting.venn_ts.renderer import VennTimeSeriesRenderer
+from venn_ts.renderer import VennTimeSeriesRenderer
 
 
 def test_comparison_channel_geometry_modes():
+    from venn_ts.plot import _comparison_channel_geometry
     extrema = [(-1, 1, -3, 2), (-2, 2, -1, 1)]
 
-    overplot, overplot_range = webapp._comparison_channel_geometry(extrema, "overplot")
+    overplot, overplot_range = _comparison_channel_geometry(extrema, "overplot")
     assert overplot_range == (0.0, 2.0)
     assert overplot[0]["outside"] is True
     assert overplot[0]["actual_min"] * overplot[0]["scale"] + overplot[0]["offset"] < 1.1
 
-    stretch, stretch_range = webapp._comparison_channel_geometry(extrema, "stretch")
+    stretch, stretch_range = _comparison_channel_geometry(extrema, "stretch")
     assert stretch_range[1] > overplot_range[1]
     first_low = stretch[0]["actual_min"] * stretch[0]["scale"] + stretch[0]["offset"]
     second_high = stretch[1]["actual_max"] * stretch[1]["scale"] + stretch[1]["offset"]
     assert first_low > second_high
 
-    normalized, normalized_range = webapp._comparison_channel_geometry(extrema, "normalize")
+    normalized, normalized_range = _comparison_channel_geometry(extrema, "normalize")
     assert normalized_range == overplot_range
     for item in normalized:
         mapped_span = (item["actual_max"] - item["actual_min"]) * item["scale"]
         assert mapped_span == pytest.approx(0.8)
 
 
-def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
-    from ctapdash.plotting.venn_ts.range_series import RecordingTileSource
+def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, monkeypatch):
+    from venn_ts.range_series import RecordingTileSource
+    from venn_ts import venn_time_series_bokeh
+
+    original_isel = xr.DataArray.isel
+
+    def metadata_only_isel(array, *args, **kwargs):
+        if "ch" in array.dims and "time" in array.dims:
+            pytest.fail("Plot setup read recording or pyramid values")
+        return original_isel(array, *args, **kwargs)
+
+    monkeypatch.setattr(xr.DataArray, "isel", metadata_only_isel)
+    monkeypatch.setattr(RecordingTileSource, "finite_extrema",
+                        lambda *args: pytest.fail("Plot setup scanned extrema"))
 
     class FakeRecording:
         ch_names = [f"Ch{index}" for index in range(8)]
@@ -55,7 +69,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
             self.offset = offset
 
         def mmap(self, *, return_xarray=False):
-            times = np.arange(20, dtype=float) * 0.1
+            times = np.arange(20 + self.offset, dtype=float) * 0.1
             values = np.vstack(
                 [np.sin(times + index / 10) for index in range(len(self.ch_names))]
             ) + self.offset
@@ -67,31 +81,43 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
         step.mkdir()
         (step / "p.set").touch()
         steps.append((number, step))
-    dataset = webapp.ObservationData(tmp_path, "p", "fake")
+    dataset = paths.ObservationData(tmp_path, "p", "fake")
     dataset.get_steps = lambda: steps
 
-    def fake_source(path):
+    def fake_source(path, *, recording_data=None):
         offset = int(Path(path).parent.name[:2])
         return RecordingTileSource(path, recording=FakeRecording(offset))
 
+    stats = xr.Dataset(
+        {"min": (("recording", "channel"), np.zeros((2, 8))),
+         "max": (("recording", "channel"), np.full((2, 8), 4.0))},
+        coords={"channel": FakeRecording.ch_names,
+                "participant": ("recording", ["p", "p"]),
+                "step": ("recording", [1, 2])},
+    )
     with (
+        patch("ctapdash.io.stats_cache.DATASET_STATS.get_cached", return_value=stats),
         patch.object(
-            webapp.ObservationData,
+            paths.ObservationData,
             "from_bokeh_doc",
             classmethod(lambda cls, doc: dataset),
         ),
         patch(
-            "ctapdash.plotting.venn_ts.range_series.RecordingTileSource",
+            "venn_ts.range_series.RecordingTileSource",
             side_effect=fake_source,
         ),
     ):
         doc = Document()
-        webapp.venn_time_series_bokeh(doc)
+        venn_time_series_bokeh(doc)
 
     figure = doc.roots[0].select_one({"type": BkFigure})
     custom = list(figure.select({"type": VennTimeSeriesRenderer}))
     glyphs = list(figure.select({"type": GlyphRenderer}))
     layer_control = doc.roots[0].select_one({"type": CheckboxButtonGroup})
+    # The view starts with lines disabled; enable them so that both layers
+    # are overlaid for the rest of the test.
+    assert layer_control.active == [0]
+    layer_control.active = [0, 1]
     channel_choice = doc.select_one({"type": MultiChoice})
     channel_toggle = doc.get_model_by_name("channel-dialog-toggle")
     channel_dialog = doc.select_one({"type": Dialog})
@@ -106,8 +132,11 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     assert (figure.y_range.start, figure.y_range.end) == (2, 8)
     assert len(custom) == 1
     assert custom[0].channel_tile_size == 1
-    assert len(glyphs) == 2
-    assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in glyphs)
+    assert custom[0].amplitude_scales == pytest.approx([0.2] * 8)
+    assert custom[0].sample_count == 21
+    assert len(glyphs) == 3
+    overlay_glyphs = [glyph for glyph in glyphs if glyph.name is not None]
+    assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in overlay_glyphs)
     assert layer_control.labels == ["Venn", "Lines"]
     assert layer_control.active == [0, 1]
     assert channel_dialog.visible is False
@@ -119,7 +148,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     channel_dialog.visible = False
     assert channel_toggle.active is False
     assert {scrollbar.orientation for scrollbar in scrollbars} == {"horizontal", "vertical"}
-    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.9))
+    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 2.0))
     assert scrollbars_by_orientation["vertical"].value == (2, 8)
     assert scrollbars_by_orientation["vertical"].direction == "rtl"
     assert scrollbars_by_orientation["vertical"].min_height == 660
@@ -205,12 +234,14 @@ def pyramid_source(tmp_path):
     t = np.linspace(0, 100, 100_000)
     chs = [f"Fp{i}" for i in range(8)]
     data = rng.normal(0, 50, (8, 100_000))
+    levels = {}
     for factor in (1, 10):
         sl = slice(None, None, factor)
-        xr.Dataset(
+        levels[f"factor_{factor}"] = xr.Dataset(
             {"data": (("ch", "time"), data[:, sl])},
             coords={"ch": chs, "time": t[sl]},
-        ).to_zarr(step / "p.set.pyramid", group=f"factor_{factor}", mode="a")
+        )
+    save_xarray(xr.DataTree.from_dict(levels), step / "p.set.pyramid")
 
     SETTINGS.sources["fake"] = str(tmp_path)
     yield tmp_path
@@ -218,10 +249,6 @@ def pyramid_source(tmp_path):
 
 
 def test_pyramid_groups_finest_to_coarsest(pyramid_source):
-    from ctapdash.pyramid import _pyramid_groups
-    ts_dt = xr.open_datatree(
-        pyramid_source / "01_test" / "p.set.pyramid",
-        engine="zarr",
-        consolidated=True,
-    )
+    from ctapdash.io.pyramid import _pyramid_groups
+    ts_dt = load_xarray(pyramid_source / "01_test" / "p.set.pyramid")
     assert _pyramid_groups(ts_dt) == ("/factor_1", "/factor_10")

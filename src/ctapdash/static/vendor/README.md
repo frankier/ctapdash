@@ -14,6 +14,7 @@ a lockfile.
 | `tailwind-browser.js` | 4 | `https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4` | `6d8c473ef2f8ad63feafc0bd76502dda31501a6c135dc4c6173f6268cde595be` |
 | `htmx.min.js` | 2.0.7 | `https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.min.js` | `60231ae6ba9db3825eb15a261122d5f55921c4d53b66bf637dc18b4ee27c79f9` |
 | `htmx-ext-sse.js` | 2.2.2 | `https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.2` | `b32dacd8e5bdd41a0223b5c56374fd76e4c4377e3f3a3bfe873bb41cbc7585eb` |
+| `htmx-ext-ws.js` | 2.0.4 | `https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.4/dist/ws.js` | `dab17ec53b42135cc90ca3657a9be5e2aae6cceb3dbbf1952541aa4650fcb59e` |
 | `alpine.min.js` | 3.15.0 | `https://cdn.jsdelivr.net/npm/alpinejs@3.15.0/dist/cdn.min.js` | `e041f1b639d1e6b2fc2736d8d7638a409afcd444a6ec90446f8f4e44fa36f406` |
 
 `tailwind-browser.js` compiles utility classes in the browser on every page
