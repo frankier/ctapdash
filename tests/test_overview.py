@@ -233,8 +233,7 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     )
     with (
         patch("ctapdash.webapp.ObservationData.from_request", return_value=dataset),
-        patch("ctapdash.webapp.stats_file_path", return_value=Path(__file__)),
-        patch("ctapdash.webapp.load_xarray", return_value=stats),
+        patch("ctapdash.webapp.DATASET_STATS.get", new=AsyncMock(return_value=stats)),
         patch(
             "ctapdash.plotting.stats_heatmap.participant_descriptive_heatmap",
             return_value=heatmap,

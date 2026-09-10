@@ -55,6 +55,10 @@ def test_venndiff_eeg(page, dashboard_url):
     expect(page.locator(".bokeh-host canvas").first).to_be_visible(timeout=60000)
     expect(page.get_by_text("Step A (red)", exact=True)).to_be_visible()
     expect(page.get_by_text("Step B (blue)", exact=True)).to_be_visible()
+    page.wait_for_function("""() => Bokeh.documents.some(doc =>
+        [...doc.all_models].some(model =>
+            model.type === "venn_ts.renderer.VennTimeSeriesRenderer" && model.ready &&
+            model.tile_requests > 0 && model.error === ""))""", timeout=60000)
 
 
 @pytest.mark.parametrize("peek,count", [("CTAP_peek_data", 2), ("CTAP_blink2event", 1)])

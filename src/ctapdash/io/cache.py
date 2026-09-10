@@ -7,6 +7,7 @@ import pickle
 import anyio
 
 from ctapdash.io.paths import DatasetPaths
+from ctapdash.io.stats_cache import DATASET_STATS
 
 
 # Available to synchronous viewers in the server process. Never shared with workers.
@@ -189,6 +190,7 @@ class CacheHurrier:
                                         for key, job in self.jobs.items()):
             return
         self._send(("add_dataset", root))
+        DATASET_STATS.invalidate(root)
         REGISTERED[root] = self
         self.scanning.add(root)
         self.errors.pop(root, None)
@@ -298,6 +300,7 @@ class CacheHurrier:
         self._wake()
         for root in list(REGISTERED):
             if REGISTERED[root] is self:
+                DATASET_STATS.invalidate(root)
                 del REGISTERED[root]
         try:
             self.conn.send(("exit", None))

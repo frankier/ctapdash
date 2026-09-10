@@ -100,7 +100,15 @@ For paths outside request context, use
 so nested recordings resolve correctly. Opening an unavailable artifact raises
 `FileNotFoundError`; server callers first await the corresponding
 `app.state.cache_hurrier.hurry(kind, (dataset_root, set_path))` job. Dataset stats
-use `hurry("stats", dataset_root)` and `DatasetPaths(dataset_root).stats`.
+are shared through `await DATASET_STATS.get(dataset_root)` from
+`ctapdash.io.stats_cache`. This waits for the registered stats job on a miss
+and retains a read-only mmap-backed xarray per dataset and server process.
+`get_cached(root)` returns an existing entry or `None`. Consumers must not
+mutate or close shared datasets; re-registration and shutdown invalidate them.
+The comparison viewer uses whole-recording min/max stats for channel geometry,
+including when recordings have different lengths. Setup does not scan recording
+or pyramid values, although missing stats still require worker sample reads
+and rendering visible tiles reads their data.
 Standalone metadata reads retain their own freshness checks.
 
 ### Building a release locally

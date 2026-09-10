@@ -46,9 +46,20 @@ def test_comparison_channel_geometry_modes():
         assert mapped_span == pytest.approx(0.8)
 
 
-def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
+def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, monkeypatch):
     from venn_ts.range_series import RecordingTileSource
     from venn_ts import venn_time_series_bokeh
+
+    original_isel = xr.DataArray.isel
+
+    def metadata_only_isel(array, *args, **kwargs):
+        if "ch" in array.dims and "time" in array.dims:
+            pytest.fail("Plot setup read recording or pyramid values")
+        return original_isel(array, *args, **kwargs)
+
+    monkeypatch.setattr(xr.DataArray, "isel", metadata_only_isel)
+    monkeypatch.setattr(RecordingTileSource, "finite_extrema",
+                        lambda *args: pytest.fail("Plot setup scanned extrema"))
 
     class FakeRecording:
         ch_names = [f"Ch{index}" for index in range(8)]
@@ -57,7 +68,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
             self.offset = offset
 
         def mmap(self, *, return_xarray=False):
-            times = np.arange(20, dtype=float) * 0.1
+            times = np.arange(20 + self.offset, dtype=float) * 0.1
             values = np.vstack(
                 [np.sin(times + index / 10) for index in range(len(self.ch_names))]
             ) + self.offset
@@ -76,7 +87,15 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
         offset = int(Path(path).parent.name[:2])
         return RecordingTileSource(path, recording=FakeRecording(offset))
 
+    stats = xr.Dataset(
+        {"min": (("recording", "channel"), np.zeros((2, 8))),
+         "max": (("recording", "channel"), np.full((2, 8), 4.0))},
+        coords={"channel": FakeRecording.ch_names,
+                "participant": ("recording", ["p", "p"]),
+                "step": ("recording", [1, 2])},
+    )
     with (
+        patch("ctapdash.io.stats_cache.DATASET_STATS.get_cached", return_value=stats),
         patch.object(
             paths.ObservationData,
             "from_bokeh_doc",
@@ -108,6 +127,8 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     assert (figure.y_range.start, figure.y_range.end) == (2, 8)
     assert len(custom) == 1
     assert custom[0].channel_tile_size == 1
+    assert custom[0].amplitude_scales == pytest.approx([0.2] * 8)
+    assert custom[0].sample_count == 21
     assert len(glyphs) == 2
     assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in glyphs)
     assert layer_control.labels == ["Venn", "Lines"]
@@ -121,7 +142,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     channel_dialog.visible = False
     assert channel_toggle.active is False
     assert {scrollbar.orientation for scrollbar in scrollbars} == {"horizontal", "vertical"}
-    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.9))
+    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 2.0))
     assert scrollbars_by_orientation["vertical"].value == (2, 8)
     assert scrollbars_by_orientation["vertical"].direction == "rtl"
     assert scrollbars_by_orientation["vertical"].min_height == 660

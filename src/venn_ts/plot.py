@@ -63,7 +63,7 @@ def _comparison_channel_geometry(extrema, mode):
     return geometry, y_range
 
 
-def venn_time_series_bokeh(doc):
+def _build_comparison(doc, dataset, stats):
     """Build one WebGL figure containing Venn and line comparison layers."""
     from base64 import b64encode
     from hashlib import sha256
@@ -95,7 +95,6 @@ def venn_time_series_bokeh(doc):
     )
     from venn_ts.renderer import TileCoordinator, VennTimeSeriesRenderer
 
-    dataset = ObservationData.from_bokeh_doc(doc)
     steps = dataset.get_steps()
     if not steps:
         doc.add_root(Div(text="No processing steps are available for this participant."))
@@ -446,10 +445,8 @@ def venn_time_series_bokeh(doc):
                 status.text = ""
                 return
 
-            indices_a = source_a.indices(channels)
-            indices_b = source_b.indices(channels)
-            extrema_a = source_a.finite_extrema(indices_a, common)
-            extrema_b = source_b.finite_extrema(indices_b, common)
+            extrema_a = _stats_extrema(stats, dataset.participant, step_a.value, channels)
+            extrema_b = _stats_extrema(stats, dataset.participant, step_b.value, channels)
             extrema = [(*a, *b) for a, b in zip(extrema_a, extrema_b)]
             geometry, y_range = _comparison_channel_geometry(extrema, plotting_mode.value)
             scales = [item["scale"] for item in geometry]
@@ -628,3 +625,63 @@ def venn_time_series_bokeh(doc):
             active_coordinator[0].close()
 
     doc.on_session_destroyed(close_session)
+
+
+def _stats_extrema(stats, participant, step, channels):
+    """Select whole-recording bounds in the viewer's channel order."""
+    import numpy as np
+
+    matches = np.flatnonzero(
+        (stats["participant"].values == participant)
+        & (stats["step"].values == int(step))
+    )
+    if len(matches) != 1:
+        raise ValueError(f"Expected one stats recording for {participant}, step {step}; found {len(matches)}")
+    recording = stats.isel(recording=int(matches[0])).sel(channel=channels)
+    extrema = np.column_stack((recording["min"].values, recording["max"].values))
+    if not np.all(np.isfinite(extrema)) or np.any(extrema[:, 0] > extrema[:, 1]):
+        raise ValueError(f"Invalid min/max stats for {participant}, step {step}")
+    return extrema
+
+
+def venn_time_series_bokeh(doc):
+    """Build immediately with cached stats, or await them without blocking Bokeh."""
+    from bokeh.models import Div
+    from markupsafe import escape
+    from ctapdash.io.stats_cache import DATASET_STATS
+
+    dataset = ObservationData.from_bokeh_doc(doc)
+    if not dataset.get_steps():
+        doc.add_root(Div(text="No processing steps are available for this participant."))
+        return
+    stats = DATASET_STATS.get_cached(dataset.source_path)
+    if stats is not None:
+        _build_comparison(doc, dataset, stats)
+        return
+
+    loading = Div(text="Loading comparison statistics...")
+    doc.add_root(loading)
+    destroyed = False
+
+    def close_session(_context):
+        nonlocal destroyed
+        destroyed = True
+
+    doc.on_session_destroyed(close_session)
+
+    async def initialize():
+        if destroyed:
+            return
+        try:
+            stats = await DATASET_STATS.get(dataset.source_path)
+            if destroyed:
+                return
+            doc.remove_root(loading)
+            _build_comparison(doc, dataset, stats)
+        except Exception as error:
+            if not destroyed:
+                loading.text = f"<strong>Unable to load comparison statistics:</strong> {escape(str(error))}"
+                if loading not in doc.roots:
+                    doc.add_root(loading)
+
+    doc.add_next_tick_callback(initialize)

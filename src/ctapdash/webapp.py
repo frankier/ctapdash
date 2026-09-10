@@ -5,7 +5,7 @@ import re
 from importlib.resources import files
 from pathlib import Path
 from ctapdash.io.cache import CacheWarmer
-from ctapdash.io.paths import ObservationData, DatasetPaths, stats_file_path
+from ctapdash.io.paths import ObservationData, DatasetPaths
 from ctapdash.io.recording import RecordingData
 import panel.io.resources as panel_resources
 
@@ -23,7 +23,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.config import SETTINGS
 from ctapdash.io.eeglab import read_eeglab
-from ctapdash.io.xarray import load_xarray
+from ctapdash.io.stats_cache import DATASET_STATS
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
 
@@ -195,6 +195,7 @@ async def venn_time_series(request):
     context = participant_context(request, default_participant=default_participant)
     dataset = ObservationData.from_request(request, default_participant=default_participant)
     await _wait_metadata(request, dataset, dataset.get_steps())
+    await DATASET_STATS.get(dataset.source_path)
     context["view"] = "venn_time_series"
     context["venn_time_series"] = bokeh_document(
         request,
@@ -376,9 +377,7 @@ async def participant_statistics_fragment(request):
         if step_num not in steps_by_number:
             raise HTTPException(status_code=404, detail="Step not found")
         selected_steps = [(step_num, steps_by_number[step_num])]
-    stats_path = stats_file_path(dataset.source_path)
-    await request.app.state.cache_hurrier.hurry("stats", dataset.source_path)
-    stats = load_xarray(stats_path)
+    stats = await DATASET_STATS.get(dataset.source_path)
     descriptive_heatmap = None
     if selected_steps:
         descriptive_heatmap = await run_in_threadpool(
