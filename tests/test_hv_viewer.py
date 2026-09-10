@@ -130,7 +130,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert custom[0].channel_tile_size == 1
     assert custom[0].amplitude_scales == pytest.approx([0.2] * 8)
     assert custom[0].sample_count == 21
-    assert len(glyphs) == 2
+    assert len(glyphs) == 3
     assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in glyphs)
     assert layer_control.labels == ["Venn", "Lines"]
     assert layer_control.active == [0, 1]
