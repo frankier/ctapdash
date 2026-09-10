@@ -82,7 +82,6 @@ def _build_comparison(doc, dataset, stats):
         Range1d,
         RangeSlider,
         Select,
-        Span,
         Toggle,
         WheelZoomTool,
     )
@@ -243,18 +242,12 @@ def _build_comparison(doc, dataset, stats):
                     ticks.append(tick)
                     label = f"{value:.3g}"
                     labels[tick] = f"{channel} · {label}" if abs(tick - center) < 1e-12 else label
-            plot.add_layout(Span(
-                location=center - 0.4,
-                dimension="width",
-                line_color="#dddddd",
-                line_width=1,
-            ))
-            plot.add_layout(Span(
-                location=center + 0.4,
-                dimension="width",
-                line_color="#dddddd",
-                line_width=1,
-            ))
+        plot.hspan(
+            y=[item["center"] + offset for item in geometry for offset in (-0.4, 0.4)],
+            line_color="#dddddd",
+            line_width=1,
+            level="annotation",
+        )
         plot.yaxis.ticker = FixedTicker(ticks=ticks)
         plot.yaxis.major_label_overrides = labels
         plot.yaxis.axis_label = "Channel"
