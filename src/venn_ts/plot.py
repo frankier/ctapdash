@@ -475,7 +475,7 @@ def _build_comparison(doc, dataset, stats):
                 venn_visible=0 in layers.active,
                 lines_visible=1 in layers.active,
             )
-            visible_channel_count = min(6, len(channels))
+            visible_channel_count = min(16, len(channels))
             if visible_channel_count == len(channels):
                 initial_y_range = y_range
             else:
@@ -487,7 +487,7 @@ def _build_comparison(doc, dataset, stats):
                      + geometry[visible_channel_count]["center"]) / 2,
                     y_range[1],
                 )
-            plot_height = max(180, visible_channel_count * 100 + 60)
+            plot_height = max(180, visible_channel_count * 50 + 60)
             x_bounds = (renderer.time_start, renderer.time_end)
             initial_x_range = preserved_range(viewport["x"], x_bounds, x_bounds)
             initial_y_range = preserved_range(viewport["y"], y_range, initial_y_range)
@@ -522,8 +522,8 @@ def _build_comparison(doc, dataset, stats):
             ))
             style_axes(plot, channels, geometry, plotting_mode.value)
             plot.add_tools(
-                channel_count_action(plot.y_range, y_range, len(channels), 1),
                 channel_count_action(plot.y_range, y_range, len(channels), -1),
+                channel_count_action(plot.y_range, y_range, len(channels), 1),
             )
             renderer.js_on_change("error", CustomJS(
                 args={"status": status},
