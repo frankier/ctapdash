@@ -129,7 +129,7 @@ def venn_time_series_bokeh(doc):
     def get_source(value):
         path = path_for(value).resolve()
         if path not in source_cache:
-            source_cache[path] = RecordingTileSource(path)
+            source_cache[path] = RecordingTileSource(path, recording_data=dataset.get_recording(value))
         return source_cache[path]
 
     try:

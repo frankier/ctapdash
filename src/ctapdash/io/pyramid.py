@@ -18,6 +18,9 @@ def convert_to_xarray(eeg):
 
 
 def help_downsample(data, time, n_out):
+    if n_out < 3:
+        # LTTB needs at least three outputs. Small final levels use endpoints.
+        return data[np.linspace(0, len(data) - 1, n_out, dtype=int)]
     indices = MinMaxLTTBDownsampler().downsample(time, data, n_out=n_out)
     return data[indices]
 
@@ -138,13 +141,15 @@ def _pyramid_groups(ts_dt):
 
 
 def load_pyramid(base, range=False):
-    ext = "rangepyramid" if range else "pyramid"
-    if not isinstance(base, (str, Path)):
-        base = base.filenames[0]
-        if base.suffix == ".fdt":
-            base = base.with_suffix(".set")
-        if base.suffix != ".set":
-            raise ValueError(f"Expected .set file, got {base}")
-    pyramid_path = f"{base}.{ext}"
-    dt = xr.open_datatree(pyramid_path, engine="zarr", consolidated=False)
+    """Open an explicit artifact path or RecordingPaths/RecordingData handle."""
+    from ctapdash.io.paths import RecordingPaths
+
+    if hasattr(base, "paths"):
+        base = base.paths
+    if isinstance(base, RecordingPaths):
+        base = base.rangepyramid if range else base.pyramid
+    path = Path(base)
+    if path.suffix not in (".pyramid", ".rangepyramid"):
+        raise ValueError("Pass a RecordingPaths handle or an explicit pyramid artifact path")
+    dt = xr.open_datatree(path, engine="zarr", consolidated=False)
     return dt, _pyramid_groups(dt)

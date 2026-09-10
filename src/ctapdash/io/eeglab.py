@@ -1,6 +1,5 @@
 import os
 import warnings
-import re
 import xarray as xr
 
 
@@ -21,8 +20,7 @@ import pickle
 
 
 
-SCALP_REGEX = re.compile("(?P<stem>[^-]+)-badChan-scalp.png")
-CH_REGEX = re.compile("(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
+from ctapdash.io.paths import CH_REGEX, SCALP_REGEX, metadata_file_path
 
 
 def is_epoched(path):
@@ -363,7 +361,7 @@ def _restore_mmap_eeglab(eeglab_class):
 
 
 def cached_path(path):
-    return path.parent / ("." + path.stem + ".pkl")
+    return metadata_file_path(path)
 
 
 def pickle_load(path):
@@ -397,8 +395,13 @@ def _try_cache(load_func, path, base_stat, warm=False, force_cache=False):
     return None
 
 
-def read_eeglab(path, use_cache=True, warm=False, force_cache=False, mmap=True):
-    base_stat = os.stat(path)
+def read_eeglab(path, use_cache=True, warm=False, force_cache=False, mmap=True, *, validated=False):
+    # Registered callers have already checked freshness and awaited readiness.
+    if validated:
+        if not mmap or not use_cache:
+            raise ValueError("validated loading requires the metadata cache")
+        return pickle_load(cached_path(path))
+    base_stat = os.stat(path) if use_cache or force_cache else None
     cache_path = cached_path(path)
     if not mmap and (use_cache or force_cache or warm):
         raise ValueError("Cache is not implemented for mmap=False")
@@ -416,8 +419,10 @@ def read_eeglab(path, use_cache=True, warm=False, force_cache=False, mmap=True):
                 eeg = MmapRawEEGLAB(path)
             if not use_cache:
                 return eeg
-            with open(cached_path(path), "wb") as f:
-                pickle.dump(eeg, f)
+            from ctapdash.io.utils import atomic_write
+            with atomic_write(cached_path(path), overwrite=True) as staging:
+                with staging.open("wb") as f:
+                    pickle.dump(eeg, f)
             if warm:
                 return True
             return eeg

@@ -7,8 +7,9 @@ import xarray as xr
 import numba
 from collections import namedtuple
 from math import isnan
-from ctapdash.io.eeglab import MmapEpochEEGLAB, MmapRawEEGLAB, read_eeglab
-from ctapdash.io.transpose import transpose_file_path
+from ctapdash.io.eeglab import MmapEpochEEGLAB, MmapRawEEGLAB
+from ctapdash.io.paths import DatasetPaths, stats_file_path
+from ctapdash.io.recording import RecordingData
 from ctapdash.io.xarray import save_xarray
 
 
@@ -65,7 +66,7 @@ def describe_mne(instance: BaseRaw | BaseEpochs, samples=None) -> xr.Dataset:
     )
 
 
-def describe_dataset(dataset_dir: Path) -> xr.Dataset:
+def describe_dataset(dataset_dir: Path, *, recordings=None, metadata_validated=False) -> xr.Dataset:
     """Return SciPy descriptive statistics for each MNE channel.
 
     Raw observations are time samples. Epochs observations combine every epoch
@@ -73,62 +74,64 @@ def describe_dataset(dataset_dir: Path) -> xr.Dataset:
     xarray aligns their channel-name union and fills absent channels with NaN.
     """
     summaries = []
-    recordings = []
-    for step in dataset_dir.iterdir():
-        if not step.name[0].isnumeric():
-            continue
-        step_num = int(step.name.split("_", 1)[0])
-        for path in step.iterdir():
-            if path.suffix != ".set":
-                continue
-            instance = read_eeglab(path, mmap=True)
-            samples = instance.mmap(data_fname=transpose_file_path(dataset_dir, path), ctapdash_order=True)
-            if samples.ndim == 3:
-                samples = samples.reshape(len(instance.ch_names), -1)
-            result = describe(samples, axis=-1)
-            values = (
-                result.nobs,
-                result.minmax[0],
-                result.minmax[1],
-                result.mean,
-                result.variance,
-                result.skewness,
-                result.kurtosis,
+    recording_ids = []
+    paths = DatasetPaths(dataset_dir)
+    if recordings is None:
+        recordings = [p for p in paths.root.glob("*/*.set")
+                      if p.parent.name[0].isnumeric()]
+    for path in recordings:
+        recording = RecordingData(paths.recording(path), metadata_validated)
+        path = recording.paths.set
+        step_num = int(path.parent.name.split("_", 1)[0])
+        instance = recording.read_metadata()
+        samples = recording.open_transpose()
+        if samples.ndim == 3:
+            samples = samples.reshape(len(instance.ch_names), -1)
+        result = describe(samples, axis=-1)
+        values = (
+            result.nobs,
+            result.minmax[0],
+            result.minmax[1],
+            result.mean,
+            result.variance,
+            result.skewness,
+            result.kurtosis,
+        )
+        summaries.append(
+            xr.Dataset(
+                {
+                    name: ("channel", _channel_values(value, len(instance.ch_names)))
+                    for name, value in zip(DESCRIPTIVE_STATISTICS, values, strict=True)
+                },
+                coords={"channel": instance.ch_names},
             )
-            summaries.append(
-                xr.Dataset(
-                    {
-                        name: ("channel", _channel_values(value, len(instance.ch_names)))
-                        for name, value in zip(DESCRIPTIVE_STATISTICS, values, strict=True)
-                    },
-                    coords={"channel": instance.ch_names},
-                )
-            )
-            recordings.append((step_num, path.stem))
+        )
+        recording_ids.append((step_num, path.stem))
 
+    if not summaries:
+        return xr.Dataset(coords={"recording": [], "step": ("recording", []),
+                                  "participant": ("recording", [])})
     return xr.concat(
         summaries,
         dim=xr.IndexVariable("recording", np.arange(len(summaries))),
         join="outer",
     ).assign_coords(
-        step=("recording", [step_num for step_num, _ in recordings]),
-        participant=("recording", [participant for _, participant in recordings]),
+        step=("recording", [step_num for step_num, _ in recording_ids]),
+        participant=("recording", [participant for _, participant in recording_ids]),
     )
 
 
-def stats_file_path(dataset_dir):
-    from ctapdash.io.paths import cache_path
-    return cache_path(dataset_dir) / "stats.xm"
+def precompute_descriptive_statistics(dataset_dir, *, recordings=None, metadata_validated=False):
+    from ctapdash.io.utils import atomic_write
 
-
-def precompute_descriptive_statistics(dataset_dir):
     dest = stats_file_path(dataset_dir)
-    # TODO: Find newest mtime of all .set files in a single pass in _cache_builder_loop and use the newest
-    if dest.exists():
-        return
-    dataset_dir = Path(dataset_dir)
-    stats = describe_dataset(dataset_dir)
-    save_xarray(stats, dest)
+    stats = describe_dataset(dataset_dir, recordings=recordings,
+                             metadata_validated=metadata_validated)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with atomic_write(dest, dir=True, overwrite=True) as staging:
+        # save_xarray creates its own destination.
+        staging.rmdir()
+        save_xarray(stats, staging)
 
 
 @numba.njit

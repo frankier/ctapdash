@@ -22,7 +22,7 @@ from ctapdash.config import SETTINGS
 # 127.0.0.1. Mutating routes therefore require a token only our own pages know.
 TOKEN = secrets.token_urlsafe(32)
 
-_EXEMPT_PREFIXES = ("/setup", "/static", "/webagg")
+_EXEMPT_PREFIXES = ("/setup", "/static", "/webagg", "/cache-status")
 
 
 class RequireConfigMiddleware:
@@ -70,7 +70,7 @@ def _render(request, **extra):
 
 def _add_source(directory, name=None):
     """Add a directory, deriving a unique name from it if none is given."""
-    directory = Path(directory).expanduser()
+    directory = Path(directory).expanduser().resolve()
     if not directory.is_dir():
         raise ValueError(f"Not a directory: {directory}")
     name = (name or directory.name or str(directory)).strip()
@@ -90,7 +90,8 @@ async def setup_page(request):
 async def setup_add(request):
     form = await _read_form(request)
     try:
-        _add_source(form.get("path", ""), form.get("name") or None)
+        name = _add_source(form.get("path", ""), form.get("name") or None)
+        request.app.state.cache_hurrier.add_dataset(SETTINGS.sources[name])
     except ValueError as err:
         return _render(request, error=str(err))
     return _render(request)
@@ -109,7 +110,8 @@ async def setup_pick(request):
         window.create_file_dialog, webview.FOLDER_DIALOG, allow_multiple=True
     )
     for directory in chosen or ():
-        _add_source(directory)
+        name = _add_source(directory)
+        request.app.state.cache_hurrier.add_dataset(SETTINGS.sources[name])
     return _render(request)
 
 

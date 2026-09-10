@@ -10,7 +10,7 @@ from ctapdash.io.eeglab import read_eeglab, cached_path
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="ctapdash-warm",
-        description="Pre-convert EEGLAB .set files to the faster .fif cache format.",
+        description="Pre-cache EEGLAB .set metadata for faster loading.",
     )
     parser.add_argument("--config", type=Path, metavar="PATH", help="TOML configuration file")
     parser.add_argument("--clean", action="store_true", help="Discard existing caches first")
@@ -30,8 +30,7 @@ def main(argv=None):
                 if path.suffix != ".set":
                     continue
                 if args.clean:
-                    cached_path(path, raw=True).unlink(missing_ok=True)
-                    cached_path(path, raw=False).unlink(missing_ok=True)
+                    cached_path(path).unlink(missing_ok=True)
                 if read_eeglab(path, warm=True):
                     print("Caching:", path)
                 else:

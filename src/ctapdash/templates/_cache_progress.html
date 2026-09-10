@@ -1,0 +1,9 @@
+{% set active = status is defined and status.state == 'warming' and status.operation and status.total > status.completed %}
+<aside id="cache-progress" hx-swap-oob="true" {% if not active %}hidden{% endif %}
+       role="status" aria-live="polite"
+       class="fixed bottom-4 right-4 z-40 rounded bg-white p-3 shadow-lg border max-w-sm text-sm">
+    {% if active %}
+    <div id="cache-progress-label">Warming caches: {{ status.completed }}/{{ status.total }} · {{ status.dataset }} · {{ status.operation }}</div>
+    <progress id="cache-progress-bar" class="w-full" max="{{ status.total }}" value="{{ status.completed }}"></progress>
+    {% endif %}
+</aside>

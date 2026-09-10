@@ -72,7 +72,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
     dataset = paths.ObservationData(tmp_path, "p", "fake")
     dataset.get_steps = lambda: steps
 
-    def fake_source(path):
+    def fake_source(path, *, recording_data=None):
         offset = int(Path(path).parent.name[:2])
         return RecordingTileSource(path, recording=FakeRecording(offset))
 

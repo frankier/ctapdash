@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import numpy as np
 import xarray as xr
@@ -162,7 +162,7 @@ def test_step_rows_strip_dataset_root_and_include_observations():
     ]
 
     with (
-        patch("ctapdash.webapp.read_eeglab", side_effect=[object(), object()]),
+        patch("ctapdash.webapp.RecordingData.read_metadata", side_effect=[object(), object()]),
         patch("ctapdash.webapp._observation_count", side_effect=[100, 24]),
     ):
         rows = _participant_step_rows(root, steps, "sub-01")
@@ -175,6 +175,7 @@ def test_step_rows_strip_dataset_root_and_include_observations():
 
 def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
     request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=SimpleNamespace(hurry=AsyncMock()))),
         query_params={"source": "example", "participant": "sub-01"}
     )
     steps = [(1, Path("/data/1_import"))]
@@ -212,6 +213,7 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
 
 def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=SimpleNamespace(hurry=AsyncMock()))),
         query_params={
             "source": "example",
             "participant": "sub-01",

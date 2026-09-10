@@ -5,8 +5,8 @@ import re
 from importlib.resources import files
 from pathlib import Path
 from ctapdash.io.cache import CacheWarmer
-from ctapdash.io.paths import ObservationData
-from ctapdash.io.pyramid import load_pyramid
+from ctapdash.io.paths import ObservationData, DatasetPaths, stats_file_path
+from ctapdash.io.recording import RecordingData
 import panel.io.resources as panel_resources
 
 from mne import BaseEpochs
@@ -18,7 +18,7 @@ from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
-from starlette.routing import Route, Mount
+from starlette.routing import Route, Mount, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.config import SETTINGS
@@ -27,7 +27,8 @@ from ctapdash.io.xarray import load_xarray
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
 
-from ctapdash.stats import stats_file_path
+from starlette.websockets import WebSocketDisconnect
+import anyio
 
 
 # importlib.resources works both from a normal install and from inside a
@@ -71,8 +72,7 @@ def _participant_step_rows(root_path, steps, participant):
     rows = []
     for step_num, step_path in steps:
         path = step_path / (participant + ".set")
-        instance = read_eeglab(path)
-        print(path, instance)
+        instance = RecordingData(DatasetPaths(root_path).recording(path)).read_metadata()
         rows.append(
             {
                 "number": step_num,
@@ -193,6 +193,8 @@ async def venn_time_series(request):
         dataset = ObservationData.from_request(request)
         default_participant = dataset.get_all_steps().get("participants", [[None]])[0][0]
     context = participant_context(request, default_participant=default_participant)
+    dataset = ObservationData.from_request(request, default_participant=default_participant)
+    await _wait_metadata(request, dataset, dataset.get_steps())
     context["view"] = "venn_time_series"
     context["venn_time_series"] = bokeh_document(
         request,
@@ -307,11 +309,42 @@ async def participant_peeks_fragment(request):
     )
 
 
+async def _wait_metadata(request, dataset, steps):
+    for _number, directory in steps:
+        await request.app.state.cache_hurrier.hurry(
+            "metadata", (dataset.source_path, directory / (dataset.participant + ".set"))
+        )
+
+
+async def cache_status(websocket):
+    await websocket.accept()
+    template = templates.env.get_template("_cache_progress.html")
+    warmer = websocket.app.state.cache_hurrier
+    async with anyio.create_task_group() as group:
+        async def send_progress():
+            try:
+                async for status in warmer.statuses():
+                    await websocket.send_text(template.render(status=status))
+            except (WebSocketDisconnect, OSError):
+                pass
+            finally:
+                group.cancel_scope.cancel()
+
+        group.start_soon(send_progress)
+        try:
+            # Detect disconnects even when there are no new progress events.
+            async for _message in websocket.iter_text():
+                pass
+        finally:
+            group.cancel_scope.cancel()
+
+
 async def participant_overview_fragment(request):
     dataset = ObservationData.from_request(request)
     logs = dataset.get_logs()
     qc = dataset.get_qc()
     steps = dataset.get_steps()
+    await _wait_metadata(request, dataset, steps)
     step_rows = await run_in_threadpool(
         _participant_step_rows, dataset.source_path, steps, dataset.participant
     )
@@ -343,12 +376,8 @@ async def participant_statistics_fragment(request):
         if step_num not in steps_by_number:
             raise HTTPException(status_code=404, detail="Step not found")
         selected_steps = [(step_num, steps_by_number[step_num])]
-    while 1:
-        stats_path = stats_file_path(dataset.source_path)
-        if not stats_path.exists():
-            await request.app.state.cache_hurrier.hurry("stats", dataset.source_path)
-        else:
-            break
+    stats_path = stats_file_path(dataset.source_path)
+    await request.app.state.cache_hurrier.hurry("stats", dataset.source_path)
     stats = load_xarray(stats_path)
     descriptive_heatmap = None
     if selected_steps:
@@ -414,6 +443,7 @@ def create_app(debug=False):
         debug=debug,
         routes=[
             Route('/', index, name="index"),
+            WebSocketRoute('/cache-status', cache_status, name='cache_status'),
             Mount('/static', app=StaticFiles(directory=STATIC_DIR), name="static"),
             Route('/overview', dataset_overview, name="dataset_overview"),
             Route('/participant', participant_select, name="participant_select"),

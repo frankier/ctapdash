@@ -138,13 +138,16 @@ class ArrayRangeSeries:
 class RecordingRangeSeries:
     """Lazy RangeSeries adapter for one channel of an EEGLAB recording."""
 
-    def __init__(self, path: Path, requested_channel: str, *, recording=None) -> None:
-        from ctapdash.io.eeglab import read_eeglab
-        from ctapdash.io.pyramid import load_pyramid
+    def __init__(self, path: Path, requested_channel: str, *, recording=None, recording_data=None) -> None:
+        from ctapdash.io.paths import DatasetPaths
+        from ctapdash.io.recording import RecordingData
 
         self.path = Path(path).resolve()
+        recording_data = recording_data or RecordingData(
+            DatasetPaths(self.path.parent.parent).recording(self.path)
+        )
         if recording is None:
-            recording = read_eeglab(self.path)
+            recording = recording_data.read_metadata()
         if not hasattr(recording, "mmap"):
             raise ValueError(f"{self.path} cannot provide memory-mapped raw samples")
         if recording.__class__.__name__.lower().find("epoch") >= 0:
@@ -164,9 +167,12 @@ class RecordingRangeSeries:
         stat = self.path.stat()
         self.dataset_version = f"{self.path}:{stat.st_size}:{stat.st_mtime_ns}:{channel_name}"
         self._levels: dict[int, object] = {}
-        pyramid_path = Path(f"{self.path}.rangepyramid")
-        if pyramid_path.exists():
-            tree, groups = load_pyramid(self.path, range=True)
+        pyramid_path = recording_data.paths.rangepyramid
+        try:
+            tree, groups = recording_data.open_pyramid(range=True)
+        except FileNotFoundError:
+            pass
+        else:
             for group in groups:
                 factor = int(group.rsplit("factor_", 1)[1])
                 dataset = tree[group].ds
@@ -231,13 +237,16 @@ class RecordingTileSource:
     array or from a lazily opened Zarr pyramid.
     """
 
-    def __init__(self, path: Path, *, recording=None) -> None:
-        from ctapdash.io.eeglab import read_eeglab
-        from ctapdash.io.pyramid import load_pyramid
+    def __init__(self, path: Path, *, recording=None, recording_data=None) -> None:
+        from ctapdash.io.paths import DatasetPaths
+        from ctapdash.io.recording import RecordingData
 
         self.path = Path(path).resolve()
+        recording_data = recording_data or RecordingData(
+            DatasetPaths(self.path.parent.parent).recording(self.path)
+        )
         if recording is None:
-            recording = read_eeglab(self.path, mmap=True)
+            recording = recording_data.read_metadata()
         if not hasattr(recording, "mmap"):
             raise ValueError(f"{self.path} does not support bounded memory-mapped reads")
         if "epoch" in recording.__class__.__name__.lower():
@@ -257,7 +266,15 @@ class RecordingTileSource:
             )
 
         self.recording = recording
-        self.raw = recording.mmap(return_xarray=True)
+        try:
+            recording_data._registered_ready("transpose")
+            recording_data._require(recording_data.paths.transpose)
+        except FileNotFoundError:
+            self.raw = recording.mmap(return_xarray=True)
+        else:
+            self.raw = recording.mmap(return_xarray=True,
+                                      data_fname=recording_data.paths.transpose,
+                                      ctapdash_order=True)
         if self.raw.dims != ("ch", "time"):
             raise ValueError(f"{self.path} is not a continuous channel/time recording")
         self.channels = tuple(str(value) for value in self.raw["ch"].values)
@@ -278,10 +295,11 @@ class RecordingTileSource:
             (False, "line_tree", "line_groups"),
             (True, "range_tree", "range_groups"),
         ):
-            pyramid_path = Path(f"{self.path}.{'rangepyramid' if is_range else 'pyramid'}")
-            if not pyramid_path.exists():
+            pyramid_path = recording_data.paths.rangepyramid if is_range else recording_data.paths.pyramid
+            try:
+                tree, groups = recording_data.open_pyramid(range=is_range)
+            except FileNotFoundError:
                 continue
-            tree, groups = load_pyramid(self.path, range=is_range)
             setattr(self, attribute, tree)
             setattr(
                 self,

@@ -1,6 +1,11 @@
 from natsort import natsorted
 
-from ctapdash.io.eeglab import CH_REGEX, SCALP_REGEX
+from dataclasses import dataclass
+from pathlib import Path
+import re
+
+SCALP_REGEX = re.compile(r"(?P<stem>[^-]+)-badChan-scalp.png")
+CH_REGEX = re.compile(r"(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
 
 
 def collect_logs(source_path, participant):
@@ -120,7 +125,7 @@ def collect_steps(root_path):
 
 class ObservationData:
     def __init__(self, source_path, participant=None, source=None):
-        self.source_path = source_path
+        self.source_path = DatasetPaths(source_path).root
         self.participant = participant
         self.source = source
 
@@ -170,9 +175,88 @@ class ObservationData:
         self.require_participant()
         return get_steps_for_participant(self.source_path, self.participant)
 
+    def get_recording(self, step):
+        from ctapdash.io.recording import RecordingData
+
+        self.require_participant()
+        steps = dict(self.get_steps())
+        try:
+            directory = steps[int(step)]
+        except (KeyError, ValueError, TypeError) as error:
+            raise ValueError(f"Unknown processing step: {step}") from error
+        return RecordingData(DatasetPaths(self.source_path).recording(
+            directory / (self.participant + ".set")
+        ))
+
     def get_all_steps(self):
         return collect_steps(self.source_path)
 
 
+@dataclass(frozen=True)
+class DatasetPaths:
+    root: Path
+
+    def __post_init__(self):
+        object.__setattr__(self, "root", Path(self.root).expanduser().resolve())
+
+    @property
+    def cache(self):
+        return self.root / ".ctapdash_cache"
+
+    @property
+    def stats(self):
+        return self.cache / "stats.xm"
+
+    def recording(self, path):
+        return RecordingPaths(self, path)
+
+
+@dataclass(frozen=True)
+class RecordingPaths:
+    dataset: DatasetPaths
+    relative: Path
+
+    def __post_init__(self):
+        path = Path(self.relative)
+        absolute = (self.dataset.root / path).resolve()
+        relative = absolute.relative_to(self.dataset.root)
+        if relative.suffix != ".set":
+            raise ValueError(f"Expected .set file, got {path}")
+        object.__setattr__(self, "relative", relative)
+
+    @property
+    def set(self):
+        return self.dataset.root / self.relative
+
+    @property
+    def metadata(self):
+        return metadata_file_path(self.set)
+
+    @property
+    def transpose(self):
+        return self.dataset.cache / self.relative.with_suffix(".ctapdash_order")
+
+    @property
+    def pyramid(self):
+        return self.dataset.cache / self.relative.with_suffix(".pyramid")
+
+    @property
+    def rangepyramid(self):
+        return self.dataset.cache / self.relative.with_suffix(".rangepyramid")
+
+
+def metadata_file_path(path):
+    path = Path(path)
+    return path.parent / ("." + path.stem + ".pkl")
+
+
 def cache_path(dataset_dir):
-    return dataset_dir / ".ctapdash_cache"
+    return DatasetPaths(dataset_dir).cache
+
+
+def transpose_file_path(dataset_dir, eeglab_file):
+    return DatasetPaths(dataset_dir).recording(eeglab_file).transpose
+
+
+def stats_file_path(dataset_dir):
+    return DatasetPaths(dataset_dir).stats

@@ -8,6 +8,7 @@
     <script src="{{ url_for('static', path='vendor/tailwind-browser.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/htmx.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/htmx-ext-sse.js') }}"></script>
+    <script src="{{ url_for('static', path='vendor/htmx-ext-ws.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/alpine.min.js') }}" defer></script>
     <title>{% block title %}{% endblock %}</title>
     <style>
@@ -27,6 +28,11 @@
         <img
             src="{{ url_for('static', path='img/flask.gif') }}"
             alt="Loading...">
+    </div>
+    <div id="cache-status-connection" hx-ext="ws" ws-connect="{{ url_for('cache_status') }}"
+         hx-on::ws-close="this.querySelector('#cache-progress').hidden = true"
+         hx-on::ws-error="this.querySelector('#cache-progress').hidden = true">
+        {% include "_cache_progress.html" %}
     </div>
 </body>
 </html>
