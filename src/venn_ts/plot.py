@@ -112,7 +112,7 @@ def _build_comparison(doc, dataset, stats):
         options=["overplot", "stretch", "normalize"],
         value="overplot",
     )
-    layers = CheckboxButtonGroup(labels=["Venn", "Lines"], active=[0, 1])
+    layers = CheckboxButtonGroup(labels=["Venn", "Lines"], active=[0])
     status = Div(text="", sizing_mode="stretch_width")
     plot_holder = column(sizing_mode="stretch_both")
     source_cache = {}
