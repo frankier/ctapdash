@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
-import pytest
 import xarray as xr
 
 from ctapdash.config import SETTINGS
@@ -221,15 +220,19 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     )
     steps = [(1, Path("/data/1_import")), (3, Path("/data/3_filter"))]
     heatmap = {"channels": ["Cz"], "rows": []}
+    stats = object()
     rendered = object()
 
     monkeypatch.setattr(SETTINGS, "sources", {"example": "/data"})
     dataset = SimpleNamespace(
         participant="sub-01",
+        source_path=Path("/data"),
         get_steps=lambda: steps,
     )
     with (
         patch("ctapdash.webapp.ObservationData.from_request", return_value=dataset),
+        patch("ctapdash.webapp.stats_file_path", return_value=Path(__file__)),
+        patch("ctapdash.webapp.load_xarray", return_value=stats),
         patch(
             "ctapdash.plotting.stats_heatmap.participant_descriptive_heatmap",
             return_value=heatmap,
@@ -245,7 +248,7 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
         response = asyncio.run(participant_statistics_fragment(request))
 
     assert response is rendered
-    build_heatmap.assert_called_once_with([steps[1]], "sub-01")
+    build_heatmap.assert_called_once_with([steps[1]], "sub-01", stats)
     assert template_response.call_args.args[1] == "participant_statistics.html"
     assert (
         template_response.call_args.kwargs["context"]["descriptive_heatmap"] is heatmap

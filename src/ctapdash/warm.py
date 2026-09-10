@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ctapdash import config
 from ctapdash.config import SETTINGS
-from ctapdash.io import read_eeglab, cached_path
+from ctapdash.io.eeglab import read_eeglab, cached_path
 
 
 def main(argv=None):

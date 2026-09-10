@@ -5,8 +5,6 @@ from matplotlib.colors import to_hex
 from natsort import natsorted
 import numpy as np
 
-from ctapdash.io import read_eeglab
-from ctapdash.stats import describe_mne
 
 
 STATISTIC_LABELS = {
@@ -177,12 +175,16 @@ def _descriptive_heatmap(summary):
     }
 
 
-def participant_descriptive_heatmap(steps, participant):
-    recordings = [
-        read_eeglab(step_path / (participant + ".set"))
-        for _, step_path in steps
+def participant_descriptive_heatmap(steps, participant, stats):
+    selected = [
+        (step_num, index)
+        for step_num, _ in steps
+        for index in np.flatnonzero(
+            (stats["participant"].values == participant)
+            & (stats["step"].values == step_num)
+        )
     ]
-    summary = describe_mne(*recordings).assign_coords(
-        recording=[step_num for step_num, _ in steps]
+    summary = stats.isel(recording=[index for _, index in selected]).assign_coords(
+        recording=[step_num for step_num, _ in selected]
     )
     return _descriptive_heatmap(summary)

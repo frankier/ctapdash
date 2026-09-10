@@ -49,7 +49,7 @@ def draw(arr, ranges, overall_range):
 
 
 def venn_time_series(eegs, width_px, height_px, time_range):
-    from ctapdash.pyramid import load_pyramid
+    from ctapdash.io.pyramid import load_pyramid
     import time
     from matplotlib.image import imsave
 

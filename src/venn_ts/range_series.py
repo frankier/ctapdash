@@ -139,8 +139,8 @@ class RecordingRangeSeries:
     """Lazy RangeSeries adapter for one channel of an EEGLAB recording."""
 
     def __init__(self, path: Path, requested_channel: str, *, recording=None) -> None:
-        from ctapdash.io import read_eeglab
-        from ctapdash.pyramid import load_pyramid
+        from ctapdash.io.eeglab import read_eeglab
+        from ctapdash.io.pyramid import load_pyramid
 
         self.path = Path(path).resolve()
         if recording is None:
@@ -232,8 +232,8 @@ class RecordingTileSource:
     """
 
     def __init__(self, path: Path, *, recording=None) -> None:
-        from ctapdash.io import read_eeglab
-        from ctapdash.pyramid import load_pyramid
+        from ctapdash.io.eeglab import read_eeglab
+        from ctapdash.io.pyramid import load_pyramid
 
         self.path = Path(path).resolve()
         if recording is None:

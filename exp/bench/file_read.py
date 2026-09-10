@@ -2,7 +2,7 @@ from mne.io import read_raw_eeglab, read_epochs_eeglab, read_raw_fif
 from mne import read_epochs
 from glob import glob
 
-from ctapdash.io import MmapRawEEGLAB, MmapEpochEEGLAB
+from ctapdash.io.eeglab import MmapRawEEGLAB, MmapEpochEEGLAB
 
 import pickle
 import warnings

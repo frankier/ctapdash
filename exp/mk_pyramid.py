@@ -3,8 +3,8 @@ import sys
 from mne import BaseEpochs
 from pathlib import Path
 
-from ctapdash.io import read_eeglab
-from ctapdash.pyramid import mne_to_pyramid, mne_to_rangepyramid
+from ctapdash.io.eeglab import read_eeglab
+from ctapdash.io.pyramid import mne_to_pyramid, mne_to_rangepyramid
 
 
 for in_path in sys.argv[1:]:

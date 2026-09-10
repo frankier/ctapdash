@@ -19,7 +19,7 @@ from bokeh.models import (
 from bokeh.models.renderers import GlyphRenderer
 from bokeh.plotting._figure import figure as BkFigure
 
-from ctapdash import webapp
+from ctapdash.io import paths
 from ctapdash.config import SETTINGS
 from venn_ts.renderer import VennTimeSeriesRenderer
 
@@ -69,7 +69,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
         step.mkdir()
         (step / "p.set").touch()
         steps.append((number, step))
-    dataset = webapp.ObservationData(tmp_path, "p", "fake")
+    dataset = paths.ObservationData(tmp_path, "p", "fake")
     dataset.get_steps = lambda: steps
 
     def fake_source(path):
@@ -78,7 +78,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path):
 
     with (
         patch.object(
-            webapp.ObservationData,
+            paths.ObservationData,
             "from_bokeh_doc",
             classmethod(lambda cls, doc: dataset),
         ),
@@ -220,7 +220,7 @@ def pyramid_source(tmp_path):
 
 
 def test_pyramid_groups_finest_to_coarsest(pyramid_source):
-    from ctapdash.pyramid import _pyramid_groups
+    from ctapdash.io.pyramid import _pyramid_groups
     ts_dt = xr.open_datatree(
         pyramid_source / "01_test" / "p.set.pyramid",
         engine="zarr",

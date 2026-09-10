@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from tests.dummy_data import write_eeglab
 
-from ctapdash.io import MmapEpochEEGLAB, MmapRawEEGLAB, mmap_eeglab
+from ctapdash.io.eeglab import MmapEpochEEGLAB, MmapRawEEGLAB, mmap_eeglab
 
 
 @pytest.mark.parametrize("n_epochs", [1, 2])
@@ -24,7 +24,10 @@ def test_mmap_eeglab_matches_mne(tmp_path, n_epochs):
 
     assert isinstance(data, np.memmap)
     assert data.dtype == np.float32
-    np.testing.assert_allclose(data, eeg.get_data() / CAL, rtol=1e-6, atol=0)
+    expected = eeg.get_data()
+    if n_epochs > 1:
+        expected = expected.transpose(1, 0, 2)
+    np.testing.assert_allclose(data, expected / CAL, rtol=1e-6, atol=0)
     assert fdt_path.read_bytes() == original_bytes
 
 
@@ -53,10 +56,10 @@ def test_mmap_eeglab_epochs_xarray(tmp_path):
 
     data = mmap_eeglab(eeg, return_xarray=True)
 
-    assert data.dims == ("epoch", "ch", "time")
+    assert data.dims == ("ch", "epoch", "time")
     assert isinstance(data.data, np.memmap)
     np.testing.assert_array_equal(data.epoch, eeg.selection)
-    np.testing.assert_allclose(data, eeg.get_data() / CAL, rtol=1e-6, atol=0)
+    np.testing.assert_allclose(data, eeg.get_data().transpose(1, 0, 2) / CAL, rtol=1e-6, atol=0)
 
 
 def test_mmap_raw_eeglab(tmp_path):
@@ -83,9 +86,9 @@ def test_mmap_epoch_eeglab(tmp_path, monkeypatch):
 
     assert eeg.preload is False
     assert eeg._data is None
-    assert data.dims == ("epoch", "ch", "time")
+    assert data.dims == ("ch", "epoch", "time")
     assert isinstance(data.data, np.memmap)
-    expected = np.arange(16, dtype=np.float32).reshape(2, 2, 4)
+    expected = np.arange(16, dtype=np.float32).reshape(2, 2, 4).transpose(1, 0, 2)
     np.testing.assert_allclose(data, expected, rtol=1e-6, atol=0)
     with pytest.raises(RuntimeError, match=r"use MmapEpochEEGLAB\.mmap"):
         eeg.get_data()
@@ -113,7 +116,7 @@ def test_mmap_eeglab_pickle_is_metadata_only(
     def fail_load_mat(*args, **kwargs):
         raise AssertionError("the .set file was read during unpickling")
 
-    monkeypatch.setattr("ctapdash.io._check_load_mat", fail_load_mat)
+    monkeypatch.setattr("ctapdash.io.eeglab._check_load_mat", fail_load_mat)
     restored = pickle.loads(payload)
     monkeypatch.undo()
 

@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 import re
 from importlib.resources import files
 from pathlib import Path
-from ctapdash.pyramid import load_pyramid
+from ctapdash.io.cache import CacheWarmer
+from ctapdash.io.paths import ObservationData
+from ctapdash.io.pyramid import load_pyramid
 import panel.io.resources as panel_resources
 
 from mne import BaseEpochs
@@ -20,9 +22,12 @@ from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from ctapdash.config import SETTINGS
-from ctapdash.io import read_eeglab, ObservationData
+from ctapdash.io.eeglab import read_eeglab
+from ctapdash.io.xarray import load_xarray
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
+
+from ctapdash.stats import stats_file_path
 
 
 # importlib.resources works both from a normal install and from inside a
@@ -250,7 +255,7 @@ def map_encode_qc(source_path, val):
 
 
 async def participant_peeks_fragment(request):
-    from ctapdash.io import qc_to_tree
+    from ctapdash.io.paths import qc_to_tree
 
     dataset = ObservationData.from_request(request)
     qcs = dataset.get_qc()
@@ -338,11 +343,17 @@ async def participant_statistics_fragment(request):
         if step_num not in steps_by_number:
             raise HTTPException(status_code=404, detail="Step not found")
         selected_steps = [(step_num, steps_by_number[step_num])]
-
+    while 1:
+        stats_path = stats_file_path(dataset.source_path)
+        if not stats_path.exists():
+            await request.app.state.cache_hurrier.hurry("stats", dataset.source_path)
+        else:
+            break
+    stats = load_xarray(stats_path)
     descriptive_heatmap = None
     if selected_steps:
         descriptive_heatmap = await run_in_threadpool(
-            participant_descriptive_heatmap, selected_steps, dataset.participant
+            participant_descriptive_heatmap, selected_steps, dataset.participant, stats
         )
     return templates.TemplateResponse(
         request,
@@ -386,14 +397,18 @@ def create_app(debug=False):
     })
 
     @asynccontextmanager
-    async def lifespan(_app: Starlette) -> AsyncGenerator[None, None]:
-        # Mounted Starlette applications don't receive lifespan events. Start and
-        # stop Bokeh from the parent application's lifespan instead.
-        await bokeh_application.core.start()
-        try:
-            yield
-        finally:
-            await bokeh_application.core.stop()
+    async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
+        async with CacheWarmer() as hurrier:
+            for path in SETTINGS.sources.values():
+                hurrier.add_dataset(path)
+            app.state.cache_hurrier = hurrier
+            # Mounted Starlette applications don't receive lifespan events. Start and
+            # stop Bokeh from the parent application's lifespan instead.
+            await bokeh_application.core.start()
+            try:
+                yield
+            finally:
+                await bokeh_application.core.stop()
 
     app = Starlette(
         debug=debug,

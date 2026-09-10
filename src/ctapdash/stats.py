@@ -1,13 +1,15 @@
+from pathlib import Path
+
 import numpy as np
 from mne import BaseEpochs
 from mne.io import BaseRaw
-from scipy import stats
 import xarray as xr
 import numba
 from collections import namedtuple
-from numpy import ma
 from math import isnan
-from ctapdash.io import MmapEpochEEGLAB, MmapRawEEGLAB
+from ctapdash.io.eeglab import MmapEpochEEGLAB, MmapRawEEGLAB, read_eeglab
+from ctapdash.io.transpose import transpose_file_path
+from ctapdash.io.xarray import save_xarray
 
 
 DESCRIPTIVE_STATISTICS = (
@@ -26,7 +28,7 @@ def _channel_samples(instance: BaseRaw | BaseEpochs) -> np.ndarray:
         return instance.mmap()
     if isinstance(instance, MmapEpochEEGLAB):
         data = instance.mmap()
-        return data.swapaxes(0, 1).reshape(len(instance.ch_names), -1)
+        return data.reshape(len(instance.ch_names), -1)
     if isinstance(instance, BaseRaw):
         return instance.get_data()
     if isinstance(instance, BaseEpochs):
@@ -41,44 +43,92 @@ def _channel_values(value, n_channels: int) -> np.ndarray:
     return values
 
 
-def describe_mne(*instances: BaseRaw | BaseEpochs) -> xr.Dataset:
+def describe_mne(instance: BaseRaw | BaseEpochs, samples=None) -> xr.Dataset:
+    if samples is None:
+        samples = _channel_samples(instance)
+    result = describe(samples, axis=-1)
+    values = (
+        result.nobs,
+        result.minmax[0],
+        result.minmax[1],
+        result.mean,
+        result.variance,
+        result.skewness,
+        result.kurtosis,
+    )
+    return xr.Dataset(
+        {
+            name: ("channel", _channel_values(value, len(instance.ch_names)))
+            for name, value in zip(DESCRIPTIVE_STATISTICS, values, strict=True)
+        },
+        coords={"channel": instance.ch_names},
+    )
+
+
+def describe_dataset(dataset_dir: Path) -> xr.Dataset:
     """Return SciPy descriptive statistics for each MNE channel.
 
     Raw observations are time samples. Epochs observations combine every epoch
     and time sample for a channel. Multiple inputs are indexed by ``recording``;
     xarray aligns their channel-name union and fills absent channels with NaN.
     """
-    if not instances:
-        raise ValueError("describe() requires at least one Raw or Epochs instance")
-
     summaries = []
-    for instance in instances:
-        samples = _channel_samples(instance)
-        result = describe(samples, axis=-1)
-        values = (
-            result.nobs,
-            result.minmax[0],
-            result.minmax[1],
-            result.mean,
-            result.variance,
-            result.skewness,
-            result.kurtosis,
-        )
-        summaries.append(
-            xr.Dataset(
-                {
-                    name: ("channel", _channel_values(value, len(instance.ch_names)))
-                    for name, value in zip(DESCRIPTIVE_STATISTICS, values, strict=True)
-                },
-                coords={"channel": instance.ch_names},
+    recordings = []
+    for step in dataset_dir.iterdir():
+        if not step.name[0].isnumeric():
+            continue
+        step_num = int(step.name.split("_", 1)[0])
+        for path in step.iterdir():
+            if path.suffix != ".set":
+                continue
+            instance = read_eeglab(path, mmap=True)
+            samples = instance.mmap(data_fname=transpose_file_path(dataset_dir, path), ctapdash_order=True)
+            if samples.ndim == 3:
+                samples = samples.reshape(len(instance.ch_names), -1)
+            result = describe(samples, axis=-1)
+            values = (
+                result.nobs,
+                result.minmax[0],
+                result.minmax[1],
+                result.mean,
+                result.variance,
+                result.skewness,
+                result.kurtosis,
             )
-        )
+            summaries.append(
+                xr.Dataset(
+                    {
+                        name: ("channel", _channel_values(value, len(instance.ch_names)))
+                        for name, value in zip(DESCRIPTIVE_STATISTICS, values, strict=True)
+                    },
+                    coords={"channel": instance.ch_names},
+                )
+            )
+            recordings.append((step_num, path.stem))
 
     return xr.concat(
         summaries,
         dim=xr.IndexVariable("recording", np.arange(len(summaries))),
         join="outer",
+    ).assign_coords(
+        step=("recording", [step_num for step_num, _ in recordings]),
+        participant=("recording", [participant for _, participant in recordings]),
     )
+
+
+def stats_file_path(dataset_dir):
+    from ctapdash.io.paths import cache_path
+    return cache_path(dataset_dir) / "stats.xm"
+
+
+def precompute_descriptive_statistics(dataset_dir):
+    dest = stats_file_path(dataset_dir)
+    # TODO: Find newest mtime of all .set files in a single pass in _cache_builder_loop and use the newest
+    if dest.exists():
+        return
+    dataset_dir = Path(dataset_dir)
+    stats = describe_dataset(dataset_dir)
+    save_xarray(stats, dest)
 
 
 @numba.njit

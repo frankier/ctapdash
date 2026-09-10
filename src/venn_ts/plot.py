@@ -1,4 +1,4 @@
-from ctapdash.io import ObservationData
+from ctapdash.io.paths import ObservationData
 
 
 def _comparison_channel_geometry(extrema, mode):
