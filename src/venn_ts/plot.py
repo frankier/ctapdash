@@ -230,18 +230,18 @@ def _build_comparison(doc, dataset, stats):
     def style_axes(plot, channels, geometry, mode):
         ticks, labels = [], {}
         for channel, item in zip(channels, geometry):
-            center = item["center"]
-            ticks.append(center)
-            labels[center] = channel
+            # Source amplitude zero maps to the channel's offset in every mode.
+            zero = item["offset"]
+            ticks.append(zero)
+            labels[zero] = channel
             if mode == "normalize" and item["outside"]:
                 values = [item["actual_min"], item["actual_max"]]
-                if item["actual_min"] <= 0 <= item["actual_max"]:
-                    values.insert(1, 0.0)
                 for value in values:
+                    if value == 0:
+                        continue
                     tick = value * item["scale"] + item["offset"]
                     ticks.append(tick)
-                    label = f"{value:.3g}"
-                    labels[tick] = f"{channel} · {label}" if abs(tick - center) < 1e-12 else label
+                    labels[tick] = f"{value:.3g}"
         plot.hspan(
             y=[item["center"] + offset for item in geometry for offset in (-0.4, 0.4)],
             line_color="#dddddd",
