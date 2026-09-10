@@ -1,9 +1,12 @@
 import xarray as xr
 import numpy as np
 from tsdownsample import MinMaxLTTBDownsampler
-from zarr.codecs import BloscCodec
 import numba
 from pathlib import Path
+
+from ctapdash.io.xarray import load_xarray, save_xarray
+
+_LEVEL_VARIABLE = "__xarray_dataarray_variable__"
 
 
 def convert_to_xarray(eeg):
@@ -50,13 +53,16 @@ def mne_to_pyramid(arr, pyramid_path, factors):
     from shutil import rmtree
     rmtree(pyramid_path, ignore_errors=True)
 
+    levels = {}
     effective_factor = 1
     cur_arr = arr
     for factor in factors:
         effective_factor *= factor
-        name = "factor_" + str(effective_factor)
         cur_arr = apply_downsample(cur_arr, factor=factor)
-        cur_arr.to_zarr(pyramid_path, group=name, mode="a", consolidated=False)
+        levels["factor_" + str(effective_factor)] = (
+            cur_arr.rename(_LEVEL_VARIABLE).to_dataset()
+        )
+    save_xarray(xr.DataTree.from_dict(levels), pyramid_path)
 
 
 @numba.njit
@@ -99,6 +105,7 @@ def mne_to_rangepyramid(arr, rangepyramid_path, factors):
     leading_shape = arr.shape[:-1]
     leading_coords = list(arr.coords.values())[:-1]
     leading_dims = arr.dims[:-1]
+    levels = {}
     effective_factor = 1
     cur_arr = arr.data
     cur_len = arr.shape[-1]
@@ -124,7 +131,8 @@ def mne_to_rangepyramid(arr, rangepyramid_path, factors):
             ),
             dims=(*leading_dims, "time", "range"),
         )
-        cur_xarr.to_zarr(rangepyramid_path, group=name, mode="a", consolidated=False)
+        levels[name] = cur_xarr.rename(_LEVEL_VARIABLE).to_dataset()
+    save_xarray(xr.DataTree.from_dict(levels), rangepyramid_path)
 
 
 def _pyramid_groups(ts_dt):
@@ -151,5 +159,5 @@ def load_pyramid(base, range=False):
     path = Path(base)
     if path.suffix not in (".pyramid", ".rangepyramid"):
         raise ValueError("Pass a RecordingPaths handle or an explicit pyramid artifact path")
-    dt = xr.open_datatree(path, engine="zarr", consolidated=False)
+    dt = load_xarray(path)
     return dt, _pyramid_groups(dt)

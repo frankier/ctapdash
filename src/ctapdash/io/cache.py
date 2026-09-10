@@ -95,6 +95,8 @@ def build_job(job):
         array = recording.open_transpose(return_xarray=True)
         builder = mne_to_pyramid if kind == "pyramid" else mne_to_rangepyramid
         with atomic_write(job.output, dir=True, overwrite=True) as staging:
+            # save_xarray creates its own destination.
+            staging.rmdir()
             builder(array, staging, [8, 8])
 
 

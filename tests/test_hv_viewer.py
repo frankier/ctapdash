@@ -20,6 +20,7 @@ from bokeh.models.renderers import GlyphRenderer
 from bokeh.plotting._figure import figure as BkFigure
 
 from ctapdash.io import paths
+from ctapdash.io.xarray import load_xarray, save_xarray
 from ctapdash.config import SETTINGS
 from venn_ts.renderer import VennTimeSeriesRenderer
 
@@ -228,12 +229,14 @@ def pyramid_source(tmp_path):
     t = np.linspace(0, 100, 100_000)
     chs = [f"Fp{i}" for i in range(8)]
     data = rng.normal(0, 50, (8, 100_000))
+    levels = {}
     for factor in (1, 10):
         sl = slice(None, None, factor)
-        xr.Dataset(
+        levels[f"factor_{factor}"] = xr.Dataset(
             {"data": (("ch", "time"), data[:, sl])},
             coords={"ch": chs, "time": t[sl]},
-        ).to_zarr(step / "p.set.pyramid", group=f"factor_{factor}", mode="a")
+        )
+    save_xarray(xr.DataTree.from_dict(levels), step / "p.set.pyramid")
 
     SETTINGS.sources["fake"] = str(tmp_path)
     yield tmp_path
@@ -242,9 +245,5 @@ def pyramid_source(tmp_path):
 
 def test_pyramid_groups_finest_to_coarsest(pyramid_source):
     from ctapdash.io.pyramid import _pyramid_groups
-    ts_dt = xr.open_datatree(
-        pyramid_source / "01_test" / "p.set.pyramid",
-        engine="zarr",
-        consolidated=True,
-    )
+    ts_dt = load_xarray(pyramid_source / "01_test" / "p.set.pyramid")
     assert _pyramid_groups(ts_dt) == ("/factor_1", "/factor_10")
