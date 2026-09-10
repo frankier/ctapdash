@@ -114,6 +114,10 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     custom = list(figure.select({"type": VennTimeSeriesRenderer}))
     glyphs = list(figure.select({"type": GlyphRenderer}))
     layer_control = doc.roots[0].select_one({"type": CheckboxButtonGroup})
+    # The view starts with lines disabled; enable them so that both layers
+    # are overlaid for the rest of the test.
+    assert layer_control.active == [0]
+    layer_control.active = [0, 1]
     channel_choice = doc.select_one({"type": MultiChoice})
     channel_toggle = doc.get_model_by_name("channel-dialog-toggle")
     channel_dialog = doc.select_one({"type": Dialog})
@@ -131,7 +135,8 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert custom[0].amplitude_scales == pytest.approx([0.2] * 8)
     assert custom[0].sample_count == 21
     assert len(glyphs) == 3
-    assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in glyphs)
+    overlay_glyphs = [glyph for glyph in glyphs if glyph.name is not None]
+    assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in overlay_glyphs)
     assert layer_control.labels == ["Venn", "Lines"]
     assert layer_control.active == [0, 1]
     assert channel_dialog.visible is False
