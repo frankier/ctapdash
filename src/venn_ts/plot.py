@@ -80,7 +80,6 @@ def _build_comparison(doc, dataset, stats):
         InlineStyleSheet,
         MultiChoice,
         Range1d,
-        RangeSlider,
         Select,
         Toggle,
         WheelZoomTool,
@@ -228,6 +227,13 @@ def _build_comparison(doc, dataset, stats):
         return counts
 
     def style_axes(plot, channels, geometry, mode):
+        from venn_ts.channel_axis import ChannelAxis
+
+        old_axis = plot.yaxis[0]
+        plot.left.remove(old_axis)
+        plot.add_layout(ChannelAxis(channel_labels={
+            item["offset"]: channel for channel, item in zip(channels, geometry)
+        }), "left")
         ticks, labels = [], {}
         for channel, item in zip(channels, geometry):
             # Source amplitude zero maps to the channel's offset in every mode.
@@ -250,7 +256,7 @@ def _build_comparison(doc, dataset, stats):
         )
         plot.yaxis.ticker = FixedTicker(ticks=ticks)
         plot.yaxis.major_label_overrides = labels
-        plot.yaxis.axis_label = "Channel"
+        plot.yaxis.axis_label = None
         plot.ygrid.grid_line_color = None
         plot.xaxis.axis_label = "Time (s)"
         plot.toolbar.logo = None
@@ -344,66 +350,6 @@ def _build_comparison(doc, dataset, stats):
                 """,
             ),
         )
-
-    def range_scrollbar(plot_range, *, start, end, value, orientation, **kwargs):
-        stylesheets = []
-        if orientation == "vertical":
-            # Reserve half a handle at each end of the track. Without this,
-            # noUiSlider positions the end handles outside the visible box.
-            stylesheets.append(InlineStyleSheet(css="""
-                :host {
-                    overflow: visible !important;
-                }
-                .bk-input-group {
-                    box-sizing: border-box !important;
-                    height: 100% !important;
-                    padding: 7px 0 !important;
-                    overflow: visible !important;
-                }
-                .noUi-target.noUi-vertical {
-                    flex: 1 1 auto !important;
-                    height: 100% !important;
-                    min-height: 0 !important;
-                    margin-top: 0 !important;
-                    margin-bottom: 0 !important;
-                }
-                .noUi-vertical .noUi-handle {
-                    top: auto !important;
-                    bottom: var(--handle-right) !important;
-                }
-            """))
-        scrollbar = RangeSlider(
-            start=start,
-            end=end,
-            value=value,
-            step=max((end - start) / 10_000, 1e-12),
-            orientation=orientation,
-            direction="rtl" if orientation == "vertical" else "ltr",
-            show_value=False,
-            tooltips=False,
-            bar_color="#d1d5db",
-            stylesheets=stylesheets,
-            **kwargs,
-        )
-        scrollbar.js_on_change("value", CustomJS(
-            args={"plot_range": plot_range},
-            code="""
-                const [start, end] = cb_obj.value
-                if (plot_range.start !== start) plot_range.start = start
-                if (plot_range.end !== end) plot_range.end = end
-            """,
-        ))
-        sync_scrollbar = CustomJS(
-            args={"scrollbar": scrollbar, "plot_range": plot_range},
-            code="""
-                const [old_start, old_end] = scrollbar.value
-                if (old_start !== plot_range.start || old_end !== plot_range.end)
-                    scrollbar.value = [plot_range.start, plot_range.end]
-            """,
-        )
-        plot_range.js_on_change("start", sync_scrollbar)
-        plot_range.js_on_change("end", sync_scrollbar)
-        return scrollbar
 
     def set_layers(_attr, _old, _new):
         renderer = active_renderer[0]
@@ -530,36 +476,10 @@ def _build_comparison(doc, dataset, stats):
                 code="status.text = cb_obj.error ? `<strong>${cb_obj.error}</strong>` : ''",
             ))
             coordinator = TileCoordinator(doc, renderer, (source_a, source_b), channels)
-            horizontal_scrollbar = range_scrollbar(
-                plot.x_range,
-                start=renderer.time_start,
-                end=renderer.time_end,
-                value=(plot.x_range.start, plot.x_range.end),
-                orientation="horizontal",
-                height=35,
-                sizing_mode="stretch_width",
-            )
-            vertical_scrollbar = range_scrollbar(
-                plot.y_range,
-                start=y_range[0],
-                end=y_range[1],
-                value=(plot.y_range.start, plot.y_range.end),
-                orientation="vertical",
-                width=45,
-                min_height=plot_height,
-                sizing_mode="stretch_height",
-            )
-            plot_frame = column(
-                row(
-                    plot,
-                    vertical_scrollbar,
-                    min_height=plot_height,
-                    sizing_mode="stretch_both",
-                ),
-                horizontal_scrollbar,
-                min_height=plot_height + 35,
-                sizing_mode="stretch_both",
-            )
+            from venn_ts.navigation import navigation_frame
+
+            plot.name = "comparison-plot"
+            plot_frame = navigation_frame(plot, x_bounds, y_range)
             plot.add_tools(CustomAction(
                 description="Fullscreen",
                 icon="fullscreen",
