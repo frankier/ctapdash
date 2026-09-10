@@ -1,4 +1,5 @@
 import {VennTimeSeriesRenderer} from "./vennrender"
 
 import {register_models} from "@bokehjs/base"
-register_models({VennTimeSeriesRenderer})
+import {ChannelAxis} from "./channel_axis"
+register_models({VennTimeSeriesRenderer, ChannelAxis})
