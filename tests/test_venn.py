@@ -182,7 +182,7 @@ def test_recording_tile_source_rejects_embedded_set_before_loading(tmp_path):
     path = tmp_path / "embedded.set"
     path.touch()
     Embedded = type(
-        "MmapRawEEGLAB",
+        "CtapRawEEGLAB",
         (),
         {
             "filenames": [path],

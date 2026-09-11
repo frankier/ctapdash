@@ -260,7 +260,7 @@ async def test_registered_reads_require_readiness_and_skip_stat(tmp_path, monkey
             recording.read_metadata()
         hurrier.jobs = scan_dataset(tmp_path)
         assert hurrier.ready("metadata", (tmp_path, path))
-        with patch("ctapdash.io.eeglab.os.stat", side_effect=AssertionError("Repeated stat")):
+        with patch("ctapdash.io.eeglab.porcelain.os.stat", side_effect=AssertionError("Repeated stat")):
             assert recording.read_metadata().ch_names == ["A", "B"]
     finally:
         REGISTERED.pop(str(tmp_path), None)
