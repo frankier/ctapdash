@@ -7,7 +7,7 @@ import xarray as xr
 import numba
 from collections import namedtuple
 from math import isnan
-from ctapdash.io.eeglab import MmapEpochEEGLAB, MmapRawEEGLAB
+from ctapdash.io.eeglab import CtapEpochEEGLAB, CtapRawEEGLAB
 from ctapdash.io.paths import DatasetPaths, stats_file_path
 from ctapdash.io.recording import RecordingData
 from ctapdash.io.xarray import save_xarray
@@ -25,9 +25,9 @@ DESCRIPTIVE_STATISTICS = (
 
 
 def _channel_samples(instance: BaseRaw | BaseEpochs) -> np.ndarray:
-    if isinstance(instance, MmapRawEEGLAB):
+    if isinstance(instance, CtapRawEEGLAB):
         return instance.mmap()
-    if isinstance(instance, MmapEpochEEGLAB):
+    if isinstance(instance, CtapEpochEEGLAB):
         data = instance.mmap()
         return data.reshape(len(instance.ch_names), -1)
     if isinstance(instance, BaseRaw):
