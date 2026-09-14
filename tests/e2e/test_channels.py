@@ -128,10 +128,10 @@ def test_heatmap_empty_selection_navigation_and_venndiff(page, dashboard_url):
 
 def test_mne_head_diagram(page, dashboard_url, tmp_path):
     import mne
-    from ctapdash.channels import _head_geometry
+    from ctapdash.head_geometry import _head_geometry
 
     positions = mne.channels.make_standard_montage("biosemi64").get_positions()["ch_pos"]
-    head, regions = _head_geometry(positions)
+    head, regions = _head_geometry(mne.channels.make_dig_montage(ch_pos=positions, coord_frame="head"))
     metadata = dict(METADATA, channels=[{"name": name, "type": "EEG"} for name in positions],
                     head=head, regions=regions, stateKey="biosemi64")
     selector = mount(page, dashboard_url, metadata)
@@ -146,3 +146,25 @@ def test_mne_head_diagram(page, dashboard_url, tmp_path):
         standalone.channels = [{name: 'A', type: 'EEG'}, {name: 'B', type: 'EEG'}];
         return [defaults, standalone.selectedNames, standalone.availableNames];
     }""") == [[["A"], ["A"]], [], []]
+
+
+def test_front_eog_selection(page, dashboard_url):
+    import mne
+    from ctapdash.head_geometry import _head_geometry
+
+    head, regions = _head_geometry(mne.channels.make_dig_montage(
+        ch_pos={"VEOG": [.03, .08, -.02], "HEOG": [-.03, .08, .02]}, coord_frame="head"))
+    metadata = dict(METADATA, channels=[{"name": n, "type": "EOG"} for n in head["points"]],
+                    head=head, regions=regions, stateKey="eog-front")
+    selector = mount(page, dashboard_url, metadata)
+    selector.get_by_role("tab", name="Front of face").click()
+    expect(selector.locator("svg .sensor")).to_have_count(2)
+    selector.get_by_role("checkbox", name="VEOG", exact=True).click()
+    selector.get_by_role("tab", name="Head diagram").click()
+    expect(selector.get_by_role("checkbox", name="VEOG", exact=True)).to_have_attribute("aria-checked", "false")
+    selector.get_by_role("tab", name="Head diagram").focus()
+    page.keyboard.press("ArrowRight")
+    expect(selector.get_by_role("tab", name="Front of face")).to_be_focused()
+    selector.get_by_role("checkbox", name="HEOG", exact=True).focus()
+    page.keyboard.press("Space")
+    assert selector.evaluate("s => s.selectedNames") == []

@@ -1,6 +1,6 @@
 export type Channel = {name: string; type: string}
 export type Groups = Record<string, string[]>
-export type Head = {points: Record<string, [number, number]>; outlines: number[][][]; message: string}
+export type Head = {points: Record<string, [number, number]>; outlines: number[][][]; message: string; front?: Head}
 export type Metadata = {channels: Channel[]; groups: Groups; regions: Groups; head: Head; steps: Groups; bads: Groups; stateKey: string}
 
 const stateEvent = "ctap-channel-state"
@@ -173,14 +173,14 @@ export class ChannelSelector extends HTMLElement {
         `
         this.root.append(style)
         const tabs = element("div"); tabs.className = "toolbar"; tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Channel selection view")
-        for (const [id, name] of [["list", "Grouped list"], ["head", "Head diagram"]]) {
+        for (const [id, name] of [["list", "Grouped list"], ["head", "Head diagram"], ["front", "Front of face"]]) {
             const tab = button(name, () => { this.view = id; this.schedule() })
             tab.id = `tab-${id}`; tab.dataset.focus = tab.id
             tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", String(this.view === id)); tab.setAttribute("aria-controls", "panel")
             tab.tabIndex = this.view === id ? 0 : -1
             tab.onkeydown = event => {
                 if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
-                    event.preventDefault(); this.view = event.key === "Home" ? "list" : event.key === "End" ? "head" : this.view === "list" ? "head" : "list"
+                    event.preventDefault(); const views = ["list", "head", "front"]; this.view = event.key === "Home" ? "list" : event.key === "End" ? "front" : views[(views.indexOf(this.view) + (event.key === "ArrowRight" ? 1 : 2)) % 3]
                     this.render(); this.root.querySelector<HTMLButtonElement>(`#tab-${this.view}`)?.focus()
                 }
             }
@@ -249,23 +249,24 @@ export class ChannelSelector extends HTMLElement {
         }
     }
     private renderHead(panel: HTMLElement): void {
-        if (!Object.keys(this._head.points).length) { panel.append(element("p", this._head.message)); return }
+        const head = this.view === "front" ? this._head.front ?? emptyHead : this._head
+        if (!Object.keys(head.points).length) { panel.append(element("p", head.message)); return }
         const toolbar = element("div"); toolbar.className = "toolbar"
         const mode = element("select"); mode.setAttribute("aria-label", "Lasso action"); mode.dataset.focus = "lasso-mode"
         for (const value of ["select", "deselect"]) { const option = element("option", `${value === "select" ? "Select" : "Deselect"} enclosed sensors`); option.value = value; mode.append(option) }
         mode.value = this.lassoMode; mode.onchange = () => { this.lassoMode = mode.value }
         toolbar.append(mode); panel.append(toolbar, element("p", "Click a sensor to toggle it. Drag around sensors to select or deselect them. Channels without positions remain in the list."))
         const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg")
-        svg.setAttribute("aria-label", "Head sensor positions; nose at top"); svg.setAttribute("role", "group")
-        const all = [...Object.values(this._head.points), ...this._head.outlines.flat()]
+        svg.setAttribute("aria-label", this.view === "front" ? "Front sensor positions; subject’s right on left" : "Head sensor positions; nose at top"); svg.setAttribute("role", "group")
+        const all = [...Object.values(head.points), ...head.outlines.flat()]
         const xs = all.map(p => p[0]), ys = all.map(p => p[1]), margin = .018
         const x = Math.min(...xs) - margin, y = Math.min(...ys) - margin
         svg.setAttribute("viewBox", `${x} ${y} ${Math.max(...xs) - x + margin} ${Math.max(...ys) - y + margin}`)
-        for (const points of this._head.outlines) {
+        for (const points of head.outlines) {
             const line = document.createElementNS(ns, "polyline"); line.setAttribute("points", points.map(p => p.join(",")).join(" "))
             line.setAttribute("fill", "none"); line.setAttribute("stroke", "#64748b"); line.setAttribute("stroke-width", ".001"); svg.append(line)
         }
-        for (const [name, [px, py]] of Object.entries(this._head.points)) {
+        for (const [name, [px, py]] of Object.entries(head.points)) {
             const sensor = document.createElementNS(ns, "g"); sensor.classList.add("sensor"); if (this.badDescription(name)) sensor.classList.add("bad")
             sensor.setAttribute("role", "checkbox"); sensor.setAttribute("aria-label", this.label(name)); sensor.setAttribute("aria-checked", String(this._selected.has(name))); sensor.setAttribute("aria-disabled", String(!this._available.has(name)))
             sensor.setAttribute("tabindex", this._available.has(name) ? "0" : "-1"); sensor.dataset.focus = `sensor:${name}`
@@ -286,7 +287,7 @@ export class ChannelSelector extends HTMLElement {
         svg.onpointermove = event => { if (polygon) { polygon.push(point(event)); trace.setAttribute("points", polygon.map(p => p.join(",")).join(" ")) } }
         svg.onpointerup = event => {
             if (!polygon) return
-            const enclosed = polygon.length >= 3 ? Object.entries(this._head.points).filter(([, p]) => inside(p, polygon!)).map(([name]) => name) : []
+            const enclosed = polygon.length >= 3 ? Object.entries(head.points).filter(([, p]) => inside(p, polygon!)).map(([name]) => name) : []
             polygon = null; trace.setAttribute("points", ""); svg.releasePointerCapture(event.pointerId); this.change(enclosed, this.lassoMode === "select")
         }
         svg.onpointercancel = () => { polygon = null; trace.setAttribute("points", "") }
