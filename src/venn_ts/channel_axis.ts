@@ -24,15 +24,17 @@ export class ChannelAxisView extends LinearAxisView {
     for (let i = 0; i < values.length; i++) {
       const text = labels instanceof Map ? (labels as Map<number | string, unknown>).get(values[i]) : labels[values[i]]
       if (typeof text !== "string") continue
+      const is_channel = this.model.channel_labels.has(values[i])
       let gap = frame.height
       for (let j = 0; j < ys.length; j++) {
-        if (j !== i) gap = Math.min(gap, Math.abs(ys[i] - ys[j]))
+        if (j !== i && this.model.channel_labels.has(values[j]))
+          gap = Math.min(gap, Math.abs(ys[i] - ys[j]))
       }
       // Dense overview ticks still get candidates. Select among their actual
       // text bounds below rather than dropping every crowded label.
       const room = this.model.avoid_overlap ? Math.max(12, gap - 4) : gap - 4
       if (room < 12) continue
-      const rotated = !this.model.truncate_labels && this.model.channel_labels.has(values[i]) && ctx.measureText(text).width > threshold
+      const rotated = !this.model.truncate_labels && is_channel && ctx.measureText(text).width > threshold
       const lines: string[] = []
       if (!rotated) {
         let line = text
@@ -72,10 +74,13 @@ export class ChannelAxisView extends LinearAxisView {
       for (const label of [endpoints[0], endpoints[endpoints.length - 1]]) {
         if (fits(label)) selected.push(label)
       }
-      // Earliest finishing intervals maximize the number of remaining labels
-      // around the reserved first and last channel names.
-      for (const label of ordered.slice().sort((a, b) => (a.y + a.height/2) - (b.y + b.height/2))) {
-        if (fits(label)) selected.push(label)
+      // Reserve channel names before considering amplitude guides. Guides
+      // only fill unused space; they never displace a channel label.
+      const guides = ordered.filter(label => !this.model.channel_labels.has(values[label.index]))
+      for (const group of [channels, guides]) {
+        for (const label of group.slice().sort((a, b) => (a.y + a.height/2) - (b.y + b.height/2))) {
+          if (fits(label)) selected.push(label)
+        }
       }
     }
     for (const label of selected) {
