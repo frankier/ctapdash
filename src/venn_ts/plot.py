@@ -182,7 +182,7 @@ def _build_comparison(doc, dataset, stats):
         metadata_json=json.dumps(channel_metadata),
         available=initial_channels,
         value=[channel["name"] for channel in channel_metadata["channels"]],
-        width=560, height=520,
+        width=900, height=520,
     )
     channel_toggle = Toggle(
         label="Show channels", active=False, name="channel-dialog-toggle",
@@ -231,7 +231,8 @@ def _build_comparison(doc, dataset, stats):
         width=220,
     )
     sidebar_shell = column(
-        sidebar_toggle, controls_sidebar, width=220, sizing_mode="stretch_height",
+        sidebar_toggle, controls_sidebar, width=230, sizing_mode="stretch_height",
+        styles={"padding-top": "10px", "padding-left": "10px"},
     )
     plot_panel = column(status, plot_holder, sizing_mode="stretch_both")
     viewer_frame = column(
@@ -264,7 +265,8 @@ def _build_comparison(doc, dataset, stats):
             const state = fullscreen ? fullscreen_state : normal_state
             state.active = cb_obj.active
             controls_sidebar.visible = cb_obj.active
-            sidebar_shell.width = cb_obj.active ? 160 : 30
+            sidebar_shell.width = cb_obj.active ? 230 : 40
+            cb_obj.width = cb_obj.active ? 110 : 30
             cb_obj.label = cb_obj.active ? "« Hide controls" : "»"
         """,
     ))
@@ -573,8 +575,9 @@ def _build_comparison(doc, dataset, stats):
                             (fullscreen ? view.shadow_el : document.body).append(dialog_el)
                         const state = fullscreen ? fullscreen_state : normal_state
                         controls_sidebar.visible = state.active
-                        sidebar_shell.width = state.active ? 160 : 30
+                        sidebar_shell.width = state.active ? 230 : 40
                         sidebar_toggle.active = state.active
+                        sidebar_toggle.width = state.active ? 110 : 30
                         sidebar_toggle.label = state.active ? "« Hide controls" : "»"
                     }
                     if (element._ctap_sidebar_fullscreen_listener == null) {

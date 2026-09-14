@@ -31,10 +31,9 @@ def test_union_types_bads_and_first_usable_position(tmp_path):
     early.raw_montage = mne.channels.make_dig_montage(ch_pos={"Cz": [0, 0, .09]}, coord_frame="head")
     late.raw_montage = mne.channels.make_dig_montage(ch_pos={"Fz": [0, .04, .08], "Pz": [0, -.04, .08]}, coord_frame="head")
     with patch("ctapdash.channels._head_geometry", return_value=({"points": {}, "outlines": [], "message": ""}, {})) as project:
-        result = channel_metadata([(2, late), (1, early)], bads_by_step={2: ["Pz", "unknown"]}, groups={"Middle": ["Fz", "Cz", "unknown"]})
+        result = channel_metadata([(2, late), (1, early)], bads_by_step={2: ["Pz", "unknown"]})
     assert result["channels"] == [{"name": "Fz", "type": "EEG"}, {"name": "Cz", "type": "Custom"}, {"name": "Pz", "type": "EOG"}]
     assert result["bads"] == {"1": ["Cz"], "2": ["Pz"]}
-    assert result["groups"] == {"Middle": ["Fz", "Cz"]}
     assert result["steps"] == {"1": ["Fz", "Cz"], "2": ["Fz", "Pz"]}
     np.testing.assert_array_equal(project.call_args.args[0].get_positions()["ch_pos"]["Fz"], [0, .04, .08])
     assert channel_metadata([(1, early)], bads_by_step={1: []})["bads"]["1"] == []
@@ -136,3 +135,22 @@ def test_montage_union_preserves_first_usable_eog_position(tmp_path):
     result = channel_metadata([(2, late), (1, early)])
     assert set(result["head"]["points"]) == {"Fz", "VEOG"}
     assert result["head"]["front"]["points"]["Fz"] == [0, -.08]
+
+
+def test_front_back_partition_and_boundary():
+    from ctapdash.head_geometry import _head_geometry
+    positions = {"Front": [.02, .05, .08], "Back": [.02, -.05, .08], "Boundary": [.02, 0, .08]}
+    head, _ = _head_geometry(mne.channels.make_dig_montage(ch_pos=positions, coord_frame="head"))
+    assert set(head["front"]["points"]) == {"Front", "Boundary"}
+    assert set(head["back"]["points"]) == {"Back"}
+    assert head["back"]["points"]["Back"] == [.02, -.08]
+
+
+def test_selector_reuses_heatmap_grouping(tmp_path):
+    raw = recording(tmp_path)
+    names = [f"{letter}{n}" for letter in "ABCD" for n in range(1, 33)]
+    from types import SimpleNamespace
+    raw = SimpleNamespace(ch_names=names, raw_ch_types=["EEG"] * len(names), info={"bads": []}, raw_montage=None)
+    result = channel_metadata([(1, raw)])
+    _, slices = _split_heatmap_channels(names)
+    assert result["typeColumns"]["EEG"] == [names[start:end] for start, end in slices]

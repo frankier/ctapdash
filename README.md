@@ -86,14 +86,14 @@ both compiled assets and skip compilation. `npm run check` checks component type
 ### Channel selector
 
 The statistics heatmap and Venndiff share `<channel-selector>`, with searchable
-type/region/custom groups and a clickable, lasso-selectable head diagram. Selection
+type/region groups and a clickable, lasso-selectable head diagram. Selection
 is remembered per dataset and participant in the current browser tab. Unavailable
 channels retain their selection for later steps. Bad-channel markers describe the
 steps reporting them and never exclude channels automatically. Heatmap colors are
 normalized over the selected channels in the displayed steps.
 
-`ctapdash.channels.participant_channel_metadata(dataset, bads_by_step=..., groups=...)`
-accepts optional per-step bad-channel overrides and named channel groups. Omitted
+`ctapdash.channels.participant_channel_metadata(dataset, bads_by_step=...)`
+accepts optional per-step bad-channel overrides. Omitted
 steps use recording `info["bads"]`; an explicit empty list clears that step's markers.
 The lower-level `channel_metadata` accepts `(step, Ctap*EEGLAB)` pairs. Both read
 metadata only, preserve EEGLAB type labels, and isolate private MNE projection and

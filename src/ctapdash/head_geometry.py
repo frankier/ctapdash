@@ -29,7 +29,7 @@ from mne.utils import _check_sphere
 
 
 def _head_geometry(raw_montage):
-    """Return top and front SVG views of every usable montage channel.
+    """Return top, front and back SVG views of every usable montage channel.
 
     Transform a copy using the montage fiducials before projecting. Missing or
     zero positions stay in the checklist, never at an invented sensor location.
@@ -66,7 +66,8 @@ def _head_geometry(raw_montage):
     paths = [np.column_stack((outlines[key][0], -outlines[key][1])).tolist()
              for key in ("head", "nose", "ear_left", "ear_right")]
     # Orthographic front projection preserves vertical separation of EOG pairs.
-    front_points = {name: [float(-x), float(-z)] for name, (x, y, z) in zip(positions, centred)}
+    front_points = {name: [float(-x), float(-z)] for name, (x, y, z) in zip(positions, centred) if y >= 0}
+    back_points = {name: [float(x), float(-z)] for name, (x, y, z) in zip(positions, centred) if y < 0}
     angle = np.linspace(0, 2 * np.pi, 101)
     r = sphere[3]
     front_paths = [np.column_stack((r * np.cos(angle), r * np.sin(angle))).tolist(),
@@ -82,4 +83,5 @@ def _head_geometry(raw_montage):
             regions = {label: [info.ch_names[int(i)] for i in indices]
                        for label, indices in _divide_to_regions(info, add_stim=False).items() if len(indices)}
     return {"points": points, "outlines": paths, "message": "",
-            "front": {"points": front_points, "outlines": front_paths, "message": ""}}, regions
+            "front": {"points": front_points, "outlines": front_paths, "message": ""},
+            "back": {"points": back_points, "outlines": front_paths[:1], "message": ""}}, regions
