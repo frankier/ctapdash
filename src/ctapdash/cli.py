@@ -49,12 +49,11 @@ def main(argv=None):
     else:
         config.load_from_env()
 
-    # Bokeh serves the venn_ts extension from a compiled bundle in
-    # venn_ts/dist; make sure it reflects the current sources before anything
-    # loads the extension. Skipped in frozen builds (see rthook_extbuild.py).
-    from venn_ts.build import ensure_extension_built
+    # Compile shared browser components and the Bokeh extension before serving.
+    # Frozen builds ship these assets (see rthook_extbuild.py).
+    from ctapdash.build import ensure_built
 
-    ensure_extension_built()
+    ensure_built()
 
     from ctapdash.webapp import create_app
 

@@ -7,19 +7,13 @@ so a stale bundle shows up as ``Cannot find module './...'`` in the browser.
 the sources and rebuilds through ``bokeh.ext.build`` (the internal API the
 ``bokeh build`` command line wraps) when anything is newer.
 
-Frozen builds ship a bundle made at packaging time and have no node runtime,
-so the bundling process sets :data:`SKIP_ENV_VAR` to make this module a
-no-op there; see ``rthook_extbuild.py`` and ``ctapdash.spec``.
+Application startup and frozen-build policy live in ``ctapdash.build``.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
-
-#: Set to a non-empty value other than "0" to skip the check entirely.
-SKIP_ENV_VAR = "CTAPDASH_SKIP_EXTENSION_BUILD"
 
 # Files that participate in the build. The TypeScript sources are found
 # dynamically so new files are picked up without touching this module.
@@ -81,9 +75,6 @@ def ensure_extension_built(*, force: bool = False, verbose: bool = False) -> Non
     that a broken or missing node toolchain does not take the whole dashboard
     down; without any bundle there is nothing to serve, so it raises.
     """
-    if os.environ.get(SKIP_ENV_VAR, "").strip() not in ("", "0"):
-        return
-
     base_dir = _extension_dir()
     if not force and _is_up_to_date(base_dir):
         return

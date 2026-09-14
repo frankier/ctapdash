@@ -346,6 +346,8 @@ async def participant_overview_fragment(request):
     qc = dataset.get_qc()
     steps = dataset.get_steps()
     await _wait_metadata(request, dataset, steps)
+    from ctapdash.channels import participant_channel_metadata
+    channel_metadata = await run_in_threadpool(participant_channel_metadata, dataset)
     step_rows = await run_in_threadpool(
         _participant_step_rows, dataset.source_path, steps, dataset.participant
     )
@@ -358,6 +360,7 @@ async def participant_overview_fragment(request):
             "qc": qc,
             "steps": steps,
             "step_rows": step_rows,
+            "channel_metadata": channel_metadata,
         }
     )
 
@@ -378,10 +381,19 @@ async def participant_statistics_fragment(request):
             raise HTTPException(status_code=404, detail="Step not found")
         selected_steps = [(step_num, steps_by_number[step_num])]
     stats = await DATASET_STATS.get(dataset.source_path)
+    import json
+    channels = None
+    if "channels" in request.query_params:
+        try:
+            channels = json.loads(request.query_params["channels"])
+            if not isinstance(channels, list) or not all(isinstance(name, str) for name in channels):
+                raise ValueError("Expected channel names")
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="channels must be a JSON list of names")
     descriptive_heatmap = None
     if selected_steps:
         descriptive_heatmap = await run_in_threadpool(
-            participant_descriptive_heatmap, selected_steps, dataset.participant, stats
+            participant_descriptive_heatmap, selected_steps, dataset.participant, stats, channels
         )
     return templates.TemplateResponse(
         request,

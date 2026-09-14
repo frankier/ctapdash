@@ -19,14 +19,12 @@ from PyInstaller.utils.hooks import (
 # can drive the extension build below.
 sys.path.insert(0, "src")
 
-# The frozen app cannot rebuild the venn_ts BokehJS extension (no node, no
-# TypeScript sources), so the bundle must be current here and shipped as
-# data. ensure_extension_built() only rebuilds when sources are newer, so
-# this is a no-op on an up-to-date tree. The runtime hook then disables the
-# same check inside the frozen app.
-from venn_ts.build import ensure_extension_built
+# The frozen app has no Node runtime. Build both shared browser components
+# and the Bokeh extension now; collect_data_files below includes their output.
+# The runtime hook disables this build check inside the frozen app.
+from ctapdash.build import ensure_built
 
-ensure_extension_built(verbose=True)
+ensure_built(verbose=True)
 
 IS_MACOS = sys.platform == "darwin"
 IS_LINUX = sys.platform.startswith("linux")

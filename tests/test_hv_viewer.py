@@ -10,7 +10,6 @@ from bokeh.models import (
     CustomAction,
     Dialog,
     HoverTool,
-    MultiChoice,
     PanTool,
     RangeSlider,
     Select as BkSelect,
@@ -22,6 +21,7 @@ from ctapdash.io import paths
 from ctapdash.io.xarray import load_xarray, save_xarray
 from ctapdash.config import SETTINGS
 from venn_ts.renderer import VennTimeSeriesRenderer
+from venn_ts.channel_selector import ChannelSelector
 
 
 def test_comparison_channel_geometry_modes():
@@ -96,6 +96,10 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     )
     with (
         patch("ctapdash.io.stats_cache.DATASET_STATS.get_cached", return_value=stats),
+        patch("ctapdash.channels.participant_channel_metadata", return_value={
+            "channels": [{"name": name, "type": "EEG"} for name in FakeRecording.ch_names],
+            "bads": {"1": [], "2": []},
+        }),
         patch.object(
             paths.ObservationData,
             "from_bokeh_doc",
@@ -117,7 +121,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     # are overlaid for the rest of the test.
     assert layer_control.active == [0]
     layer_control.active = [0, 1]
-    channel_choice = doc.select_one({"type": MultiChoice})
+    channel_choice = doc.select_one({"type": ChannelSelector})
     channel_toggle = doc.get_model_by_name("channel-dialog-toggle")
     channel_dialog = doc.select_one({"type": Dialog})
     scrollbars = list(doc.roots[0].select({"type": RangeSlider}))
