@@ -14,6 +14,7 @@ from venn_ts.renderer import (
     TileCoordinator,
     VennTimeSeriesRenderer,
 )
+from venn_ts.plot import floored_range, min_zoom_span
 from venn_ts.venn import (
     build_manifest,
     load_page,
@@ -22,7 +23,6 @@ from venn_ts.venn import (
     reference_raster,
     validate_alignment,
 )
-
 
 from tests.dummy_data import FakeMmapRecording, series
 
@@ -121,15 +121,16 @@ def test_packing_keeps_buffer_and_metadata_column_lengths_independent():
     np.testing.assert_array_equal(metadata["offset"], [0, 4])
 
 
-def test_reference_raster_aggregates_before_occupancy_and_is_transparent_elsewhere():
+def test_reference_raster_aggregates_before_occupancy():
     # Disjoint ranges in each input land in one output x pixel.  Extrema are
-    # aggregated first, so both occupy the whole interval and overlap is black.
+    # aggregated first, so both occupy the whole interval and overlap is
+    # black; rows covering only one band show that band's color.
     a = np.array([[0, 0], [2, 2]], dtype=float)
     b = np.array([[1, 1], [3, 3]], dtype=float)
     image = reference_raster(a, b, width=1, height=4, y_start=0, y_end=4)
     np.testing.assert_array_equal(
         image[:, 0],
-        [[0, 0, 0, 0], [0, 0, 255, 255], [0, 0, 0, 255], [0, 0, 0, 255]],
+        [[0, 0, 255, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]],
     )
 
 
@@ -137,8 +138,81 @@ def test_reference_raster_supports_reversed_y_ranges():
     ranges = np.array([[0, 1]], dtype=float)
     normal = reference_raster(ranges, ranges, width=1, height=4, y_start=0, y_end=2)
     reversed_ = reference_raster(ranges, ranges, width=1, height=4, y_start=2, y_end=0)
-    np.testing.assert_array_equal(normal[:, 0, 3], [0, 0, 255, 255])
+    np.testing.assert_array_equal(normal[:, 0, 3], [0, 255, 255, 255])
     np.testing.assert_array_equal(reversed_[:, 0, 3], [255, 255, 255, 0])
+
+
+def test_reference_raster_zoomed_past_one_entry_shows_previous_entry():
+    # Four columns per entry: no entry starts in most columns, so each shows
+    # the previous entry's degenerate value as a single-row step mark.
+    a = np.array([[0, 0], [3, 3]], dtype=float)
+    b = np.full((2, 2), np.nan)
+    image = reference_raster(a, b, width=8, height=4, y_start=-1, y_end=4)
+    red = (image[..., 0] == 255) & (image[..., 3] == 255)
+    np.testing.assert_array_equal(
+        red,
+        [
+            [False, False, False, False, True, True, True, True],
+            [False] * 8,
+            [False] * 8,
+            [True, True, True, True, False, False, False, False],
+        ],
+    )
+
+
+def test_reference_raster_one_entry_per_pixel_is_visible_and_not_duplicated():
+    # At one entry per pixel each column shows only its own degenerate
+    # entry: no blank columns, and no entry bleeding into its neighbour.
+    a = np.array([[0, 0], [3, 3]], dtype=float)
+    image = reference_raster(a, a, width=2, height=4, y_start=-1, y_end=4)
+    opaque = image[..., 3] == 255
+    np.testing.assert_array_equal(
+        opaque,
+        [[False, True], [False, False], [False, False], [True, False]],
+    )
+
+
+def test_reference_raster_partial_entry_columns_stay_visible():
+    # 1.5 entries per pixel: the column aggregating a single degenerate
+    # entry used to render blank; it keeps its one-row step mark.
+    a = np.array([[0.5, 0.5], [3.5, 3.5], [6.5, 6.5]], dtype=float)
+    b = np.full((3, 2), np.nan)
+    image = reference_raster(a, b, width=2, height=8, y_start=-1, y_end=7)
+    red = (image[..., 0] == 255) & (image[..., 3] == 255)
+    np.testing.assert_array_equal(
+        red,
+        [
+            [False, True],
+            [False, True],
+            [False, True],
+            [False, True],
+            [False, False],
+            [False, False],
+            [True, False],
+            [False, False],
+        ],
+    )
+
+
+def test_min_zoom_span_stops_at_sixteen_pixels_per_sample():
+    # 100 Hz data on a 1200 px frame: 75 samples span the floor.
+    assert min_zoom_span(0.01, 4.99, 4.99) == pytest.approx(0.75)
+    # The floor never exceeds the data span, and empty data has no floor.
+    assert min_zoom_span(0.01, 4.99, 0.2) == pytest.approx(0.2)
+    assert min_zoom_span(0.01, 4.99, 0.0) == 0.0
+
+
+def test_min_zoom_span_stops_at_one_float32_ulp_per_pixel():
+    # A long recording: the ULP wall at time_end binds before the sample
+    # wall.  3.6e5 s lies in [2^18, 2^19), so one float32 ULP is 2^-5.
+    assert min_zoom_span(0.002, 3.6e5, 3.5e6) == pytest.approx(1200 * 2.0**-5)
+
+
+def test_floored_range_widens_only_viewports_below_the_floor():
+    assert floored_range((2.0, 2.1), 0.75, (0.0, 4.99)) == pytest.approx((1.675, 2.425))
+    assert floored_range((0.0, 0.2), 0.75, (0.0, 4.99)) == pytest.approx((0.0, 0.75))
+    assert floored_range((4.8, 4.9), 0.75, (0.0, 4.99)) == pytest.approx((4.24, 4.99))
+    assert floored_range((0.0, 4.99), 0.75, (0.0, 4.99)) == (0.0, 4.99)
 
 
 def test_bokeh_model_manifest_and_mailbox_protocol():

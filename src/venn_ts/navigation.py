@@ -7,7 +7,7 @@ from bokeh.plotting import figure
 from venn_ts.channel_axis import ChannelAxis
 
 
-def _scrollbar(plot_range, bounds, orientation):
+def _scrollbar(plot_range, bounds, orientation, min_interval=None):
     vertical = orientation == "vertical"
     scrollbar = RangeSlider(
         name=f"{orientation}-range-scrollbar",
@@ -44,8 +44,17 @@ def _scrollbar(plot_range, bounds, orientation):
             }
         """)],
     )
-    scrollbar.js_on_change("value", CustomJS(args={"plot_range": plot_range}, code="""
-        const [start, end] = cb_obj.value
+    scrollbar.js_on_change("value", CustomJS(args={
+        "plot_range": plot_range, "min_interval": min_interval,
+    }, code="""
+        let [start, end] = cb_obj.value
+        // Range.min_interval only constrains tool-driven updates;
+        // keep the scrollbar on the same deepest-zoom floor.
+        if (min_interval !== null && end - start < min_interval) {
+            const center = (start + end) / 2
+            start = center - min_interval / 2
+            end = center + min_interval / 2
+        }
         if (plot_range.start !== start) plot_range.start = start
         if (plot_range.end !== end) plot_range.end = end
     """))
@@ -59,14 +68,14 @@ def _scrollbar(plot_range, bounds, orientation):
     return scrollbar
 
 
-def navigation_frame(plot, x_bounds, y_bounds):
+def navigation_frame(plot, x_bounds, y_bounds, min_interval=None):
     """Keep tracks and overview scales on the plot's actual frame, after layout.
 
     The overview ranges are deliberately separate from the viewport ranges.
     Only the handle positions change when the user pans or zooms.
     """
     plot.margin = 0
-    horizontal = _scrollbar(plot.x_range, x_bounds, "horizontal")
+    horizontal = _scrollbar(plot.x_range, x_bounds, "horizontal", min_interval)
     vertical = _scrollbar(plot.y_range, y_bounds, "vertical")
     common = dict(tools="", toolbar_location=None, min_border=0, margin=0,
                   outline_line_color=None, sizing_mode="fixed")

@@ -9,11 +9,11 @@ from bokeh.models import (
     CheckboxButtonGroup,
     CustomAction,
     Dialog,
+    MultiChoice,
     HoverTool,
     PanTool,
     RangeSlider,
     Select as BkSelect,
-    Toggle,
 )
 from bokeh.models.renderers import GlyphRenderer
 
@@ -68,7 +68,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
             self.offset = offset
 
         def mmap(self, *, return_xarray=False):
-            times = np.arange(20 + self.offset, dtype=float) * 0.1
+            times = np.arange(1400 + self.offset, dtype=float) * 0.001
             values = np.vstack(
                 [np.sin(times + index / 10) for index in range(len(self.ch_names))]
             ) + self.offset
@@ -134,10 +134,11 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert figure.min_height == 460
     assert figure.sizing_mode == "stretch_both"
     assert (figure.y_range.start, figure.y_range.end) == (0, 8)
+    assert figure.x_range.min_interval == pytest.approx(0.075)
     assert len(custom) == 1
     assert custom[0].channel_tile_size == 1
     assert custom[0].amplitude_scales == pytest.approx([0.2] * 8)
-    assert custom[0].sample_count == 21
+    assert custom[0].sample_count == 1401
     assert len(glyphs) == 3
     overlay_glyphs = [glyph for glyph in glyphs if glyph.name is not None]
     assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in overlay_glyphs)
@@ -152,7 +153,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     channel_dialog.visible = False
     assert channel_toggle.active is False
     assert {scrollbar.orientation for scrollbar in scrollbars} == {"horizontal", "vertical"}
-    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 2.0))
+    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.4))
     assert scrollbars_by_orientation["vertical"].value == (0, 8)
     assert scrollbars_by_orientation["vertical"].direction == "rtl"
     assert scrollbars_by_orientation["vertical"].sizing_mode == "fixed"
@@ -164,7 +165,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert channel_minimap.yaxis[0].truncate_labels is True
     assert channel_minimap.yaxis[0].avoid_overlap is True
     assert channel_minimap.y_range is not figure.y_range
-    assert (time_minimap.x_range.start, time_minimap.x_range.end) == (0, 2)
+    assert (time_minimap.x_range.start, time_minimap.x_range.end) == pytest.approx((0, 1.4))
     assert (channel_minimap.y_range.start, channel_minimap.y_range.end) == (0, 8)
     assert not list(figure.select({"type": PanTool}))
     layer_control.active = [1]

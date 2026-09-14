@@ -62,6 +62,42 @@ def _comparison_channel_geometry(extrema, mode):
         y_range = (0.0, max(float(len(prepared)), 1.0))
     return geometry, y_range
 
+#: Nominal plot-frame width in device pixels used for the deepest-zoom floor.
+NOMINAL_FRAME_WIDTH = 1200
+#: Deepest zoom keeps each sample within this many pixels.
+MAX_PIXELS_PER_SAMPLE = 16
+
+
+def min_zoom_span(sample_interval: float, time_end: float, data_span: float):
+    """Smallest x span the UI may zoom in to.
+
+    Zooming stops at the first of two walls: each sample spans at most
+    ``MAX_PIXELS_PER_SAMPLE`` pixels, and each pixel must advance the x
+    position by at least one float32 ULP at the worst-case time magnitude so
+    the shader's pixel-to-time mapping cannot collapse.  The floor never
+    exceeds the data span, so short recordings stay fully zoomable.
+    """
+    import numpy as np
+
+    if sample_interval <= 0 or data_span <= 0:
+        return 0.0
+    per_sample = NOMINAL_FRAME_WIDTH * sample_interval / MAX_PIXELS_PER_SAMPLE
+    per_ulp = NOMINAL_FRAME_WIDTH * float(np.spacing(np.float32(abs(time_end))))
+    return min(max(per_sample, per_ulp), data_span)
+
+
+def floored_range(viewport, floor, bounds):
+    """Widen a preserved viewport that is narrower than the zoom floor."""
+    start, end = viewport
+    if floor <= 0 or end - start >= floor:
+        return viewport
+    lower, upper = bounds
+    start = max(lower, (start + end) / 2 - floor / 2)
+    end = min(upper, start + floor)
+    if end - start < floor:
+        start = end - floor
+    return start, end
+
 
 def _build_comparison(doc, dataset, stats):
     """Build one WebGL figure containing Venn and line comparison layers."""
@@ -451,12 +487,18 @@ def _build_comparison(doc, dataset, stats):
                 )
             plot_height = max(180, visible_channel_count * 50 + 60)
             x_bounds = (renderer.time_start, renderer.time_end)
-            initial_x_range = preserved_range(viewport["x"], x_bounds, x_bounds)
+            x_floor = min_zoom_span(
+                renderer.sample_interval, renderer.time_end, renderer.time_end - renderer.time_start
+            )
+            initial_x_range = floored_range(
+                preserved_range(viewport["x"], x_bounds, x_bounds), x_floor, x_bounds
+            )
             initial_y_range = preserved_range(viewport["y"], y_range, initial_y_range)
             plot = figure(
                 x_range=Range1d(
                     *initial_x_range,
                     bounds=x_bounds,
+                    min_interval=x_floor or None,
                 ),
                 y_range=Range1d(*initial_y_range, bounds=y_range),
                 height=plot_height,
@@ -495,7 +537,7 @@ def _build_comparison(doc, dataset, stats):
             from venn_ts.navigation import navigation_frame
 
             plot.name = "comparison-plot"
-            plot_frame = navigation_frame(plot, x_bounds, y_range)
+            plot_frame = navigation_frame(plot, x_bounds, y_range, min_interval=x_floor or None)
             plot.add_tools(CustomAction(
                 description="Fullscreen",
                 icon="fullscreen",

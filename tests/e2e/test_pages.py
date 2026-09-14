@@ -1,5 +1,9 @@
 """Browser smoke coverage of every page and each rendered content family."""
+from io import BytesIO
+
+import numpy as np
 import pytest
+from PIL import Image
 from playwright.sync_api import expect
 
 
@@ -59,6 +63,86 @@ def test_venndiff_eeg(page, dashboard_url):
         [...doc.all_models].some(model =>
             model.type === "venn_ts.renderer.VennTimeSeriesRenderer" && model.ready &&
             model.tile_requests > 0 && model.error === ""))""", timeout=60000)
+
+
+
+def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
+    visit(page, dashboard_url, "/participant/overview" + QUERY)
+    page.locator("#viewer").get_by_role("link", name="Venndiff EEG viewer").click()
+    expect(page.locator(".bokeh-host canvas").first).to_be_visible(timeout=60000)
+    page.wait_for_function("""() => typeof Bokeh !== "undefined" && Bokeh.documents.some(doc =>
+        [...doc.all_models].some(model =>
+            model.type === "venn_ts.renderer.VennTimeSeriesRenderer" && model.ready &&
+            model.tile_requests > 0 && model.error === ""))""", timeout=60000)
+
+    def model_state(expression):
+        return page.evaluate(f"""() => {{
+            const models = Bokeh.documents.flatMap(doc => [...doc.all_models])
+            {expression}
+        }}""")
+
+    # Dummy data runs at 100 Hz: the floor keeps 16 pixels per sample on a
+    # 1200 px nominal frame, i.e. a 0.75 s span.
+    state = model_state("""
+        const figure = models.find(m => m.x_range && m.x_range.min_interval > 0)
+        return {min_interval: figure.x_range.min_interval,
+                span: figure.x_range.end - figure.x_range.start}
+    """)
+    assert state["min_interval"] == pytest.approx(0.75)
+    assert state["span"] > state["min_interval"]
+
+    # Range.min_interval only constrains tool-driven updates, so the
+    # scrollbar clamps itself: dragging it below the floor leaves the x
+    # span at the floor instead of collapsing into the blank regime.
+    page.evaluate("""() => {
+        const scrollbar = Bokeh.documents.flatMap(doc => [...doc.all_models])
+            .find(m => m.type === "RangeSlider" && m.orientation === "horizontal")
+        scrollbar.value = [2.0, 2.2]
+    }""")
+    page.wait_for_timeout(100)
+    span = model_state("""
+        const figure = models.find(m => m.x_range && m.x_range.min_interval > 0)
+        return figure.x_range.end - figure.x_range.start
+    """)
+    assert span == pytest.approx(0.75, rel=0.05)
+
+    # At the floor the Venn layer alone still paints: with the line layer
+    # off, every column shows the previous entry's degenerate value as a
+    # step mark.  Both dummy steps carry identical values, so the marks use
+    # the black overlap color; compare against a Venn-off baseline to
+    # cancel axes and grid.
+    page.evaluate("""() => {
+        const models = Bokeh.documents.flatMap(doc => [...doc.all_models])
+        const figure = models.find(m => m.x_range && m.x_range.min_interval > 0)
+        const renderer = models.find(
+            m => m.type === "venn_ts.renderer.VennTimeSeriesRenderer")
+        figure.y_range.setv({start: figure.y_range.bounds[0],
+                             end: figure.y_range.bounds[1]})
+        figure.x_range.setv({start: 2.12, end: 2.87})
+        renderer.lines_visible = false
+    }""")
+    page.wait_for_function("""() => Bokeh.documents.some(doc =>
+        [...doc.all_models].some(model =>
+            model.type === "venn_ts.renderer.VennTimeSeriesRenderer" && model.ready &&
+            model.venn_visible && !model.lines_visible && model.error === ""))""",
+        timeout=60000)
+    page.wait_for_timeout(250)
+    box = page.locator(".bk-Figure canvas").first.bounding_box()
+
+    def dark_pixel_count():
+        shot = page.screenshot(clip=box)
+        image = np.asarray(Image.open(BytesIO(shot)).convert("RGB"))
+        return int(((image < 100).all(axis=2)).sum())
+
+    with_venn = dark_pixel_count()
+    page.evaluate("""() => {
+        const renderer = Bokeh.documents.flatMap(doc => [...doc.all_models])
+            .find(m => m.type === "venn_ts.renderer.VennTimeSeriesRenderer")
+        renderer.venn_visible = false
+    }""")
+    page.wait_for_timeout(250)
+    without_venn = dark_pixel_count()
+    assert with_venn - without_venn > 100
 
 
 @pytest.mark.parametrize("peek,count", [("CTAP_peek_data", 2), ("CTAP_blink2event", 1)])

@@ -1,4 +1,5 @@
-from ctapdash.io.paths import DatasetPaths, transpose_file_path  # compatibility export
+from ctapdash.io.paths import DatasetPaths
+from ctapdash.io.paths import transpose_file_path as transpose_file_path  # compatibility export
 from ctapdash.io.recording import RecordingData
 from ctapdash.io.utils import atomic_write
 
