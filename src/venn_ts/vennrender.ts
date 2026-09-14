@@ -84,6 +84,9 @@ void main() {
   float local_x = gl_FragCoord.x - u_frame_origin.x;
   float x0 = u_x_start + (local_x - 0.5) / u_frame_size.x * (u_x_end - u_x_start);
   float x1 = u_x_start + (local_x + 0.5) / u_frame_size.x * (u_x_end - u_x_start);
+  // Aggregate the entries that start inside this pixel's x span.  When the
+  // zoom is so deep that no entry starts in the span, fall back to the
+  // previous entry so every pixel inside the data still shows something.
   float first = floor((min(x0, x1) - u_source_time_start) / u_source_time_step);
   float next_entry = floor((max(x0, x1) - u_source_time_start) / u_source_time_step);
   float last = next_entry == first ? first + 1.0 : next_entry;
@@ -115,9 +118,16 @@ void main() {
   }
   float local_y = gl_FragCoord.y - u_frame_origin.y;
   float plot_y = u_y_start + local_y / u_frame_size.y * (u_y_end - u_y_start);
-  float value = (plot_y - u_amplitude_offset) / u_amplitude_scale;
-  bool inside_a = has_a && amin <= value && value <= amax;
-  bool inside_b = has_b && bmin <= value && value <= bmax;
+  // The pixel row covers a value extent, not a point, so degenerate
+  // (zero-height) ranges still light the single row whose extent contains
+  // their value.
+  float row = (u_y_end - u_y_start) / u_frame_size.y;
+  float v0 = (plot_y - 0.5*row - u_amplitude_offset) / u_amplitude_scale;
+  float v1 = (plot_y + 0.5*row - u_amplitude_offset) / u_amplitude_scale;
+  float v_lo = min(v0, v1);
+  float v_hi = max(v0, v1);
+  bool inside_a = has_a && amin <= v_hi && amax >= v_lo;
+  bool inside_b = has_b && bmin <= v_hi && bmax >= v_lo;
   if (inside_a && inside_b) gl_FragColor = u_color_overlap;
   else if (inside_a) gl_FragColor = u_color_a;
   else if (inside_b) gl_FragColor = u_color_b;
@@ -652,7 +662,7 @@ export class VennTimeSeriesRenderer extends Renderer {
       range_factors: [List(Int), []], range_page_counts: [List(Int), []], line_factors: [List(Int), []], line_page_counts: [List(Int), []],
       channel_names: [List(Str), []], amplitude_scales: [List(Float), []], amplitude_offsets: [List(Float), []],
       channel_y_mins: [List(Float), []], channel_y_maxs: [List(Float), []], channel_tile_size: [Int, 1],
-      shader_schema_version: [Int, 1], color_a: [Color, "red"], color_b: [Color, "blue"], color_overlap: [Color, "black"],
+      shader_schema_version: [Int, 2], color_a: [Color, "red"], color_b: [Color, "blue"], color_overlap: [Color, "black"],
       amplitude_scale: [Float, 1], amplitude_offset: [Float, 0], max_ranges_per_pixel: [Int, 32], prefetch_pages: [Int, 1], lod_hysteresis: [Float, 0.2],
       rendered_cache_bytes: [Int, 64*1024*1024], data_cache_bytes: [Int, 64*1024*1024], ready: [Bool, false], error: [Str, ""],
       current_lod: [Int, 1], composition_mode: [Str, "pending"], venn_visible: [Bool, true], lines_visible: [Bool, true],

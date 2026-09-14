@@ -69,7 +69,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
             self.offset = offset
 
         def mmap(self, *, return_xarray=False):
-            times = np.arange(20 + self.offset, dtype=float) * 0.1
+            times = np.arange(1400 + self.offset, dtype=float) * 0.001
             values = np.vstack(
                 [np.sin(times + index / 10) for index in range(len(self.ch_names))]
             ) + self.offset
@@ -133,7 +133,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert len(custom) == 1
     assert custom[0].channel_tile_size == 1
     assert custom[0].amplitude_scales == pytest.approx([0.2] * 8)
-    assert custom[0].sample_count == 21
+    assert custom[0].sample_count == 1401
     assert len(glyphs) == 3
     overlay_glyphs = [glyph for glyph in glyphs if glyph.name is not None]
     assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in overlay_glyphs)
@@ -148,7 +148,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     channel_dialog.visible = False
     assert channel_toggle.active is False
     assert {scrollbar.orientation for scrollbar in scrollbars} == {"horizontal", "vertical"}
-    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 2.0))
+    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.4))
     assert scrollbars_by_orientation["vertical"].value == (2, 8)
     assert scrollbars_by_orientation["vertical"].direction == "rtl"
     assert scrollbars_by_orientation["vertical"].min_height == 660

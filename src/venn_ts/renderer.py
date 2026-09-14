@@ -77,7 +77,7 @@ class VennTimeSeriesRenderer(Renderer):
     source_factors = List(Int, default=[])
     page_size = Int(default=2048)
     page_counts = List(Int, default=[])
-    shader_schema_version = Int(default=1)
+    shader_schema_version = Int(default=2)
     color_a = Color(default="red")
     color_b = Color(default="blue")
     color_overlap = Color(default="black")

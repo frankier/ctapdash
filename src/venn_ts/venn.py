@@ -21,7 +21,7 @@ DEFAULT_PAGE_SIZE = 2048
 DEFAULT_MAX_RANGES_PER_PIXEL = 32
 DEFAULT_PREFETCH_PAGES = 1
 DEFAULT_LOD_HYSTERESIS = 0.20
-SHADER_SCHEMA_VERSION = 1
+SHADER_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -239,7 +239,15 @@ def reference_raster(
     y_start: float,
     y_end: float,
 ) -> NDArray[np.uint8]:
-    """Rasterize the shader contract to top-origin, non-antialiased RGBA."""
+    """Rasterize the shader contract to top-origin, non-antialiased RGBA.
+
+    A pixel column aggregates the entries that *start* inside its x span;
+    when the zoom is so deep that none does, it falls back to the previous
+    entry, so every column inside the data always shows something.  A pixel
+    row covers a value extent rather than a point, so degenerate
+    (zero-height) ranges still light the row whose extent contains their
+    value.
+    """
     a = np.asarray(ranges_a)
     b = np.asarray(ranges_b)
     if a.shape != b.shape or a.ndim != 2 or a.shape[1] != 2:
@@ -258,12 +266,14 @@ def reference_raster(
             continue
         av = a[start:stop][finite_a[start:stop]]
         bv = b[start:stop][finite_b[start:stop]]
-        amin, amax = (float(av[:, 0].min()), float(av[:, 1].max())) if len(av) else (1, 0)
-        bmin, bmax = (float(bv[:, 0].min()), float(bv[:, 1].max())) if len(bv) else (1, 0)
+        amin, amax = (float(av[:, 0].min()), float(av[:, 1].max())) if len(av) else (0, 0)
+        bmin, bmax = (float(bv[:, 0].min()), float(bv[:, 1].max())) if len(bv) else (0, 0)
         for y in range(height):
-            value = y_start + (y_end - y_start) * (1 - y / height)
-            inside_a = amin <= value <= amax
-            inside_b = bmin <= value <= bmax
+            top = y_start + (y_end - y_start) * (1 - y / height)
+            bottom = y_start + (y_end - y_start) * (1 - (y + 1) / height)
+            low, high = (top, bottom) if top <= bottom else (bottom, top)
+            inside_a = len(av) != 0 and amin <= high and amax >= low
+            inside_b = len(bv) != 0 and bmin <= high and bmax >= low
             if inside_a and inside_b:
                 output[y, x] = (0, 0, 0, 255)
             elif inside_a:
