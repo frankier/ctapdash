@@ -56,7 +56,7 @@
                 <script type="application/json">{{ channel_metadata | tojson }}</script>
                 <input type="hidden" id="channel-selection-input" name="channels" value="">
                 <button type="button" data-open class="border border-slate-400 rounded px-2 py-1">Show channels</button>
-                <dialog style="padding:20px;border:1px solid #94a3b8;border-radius:8px;max-width:95vw">
+                <dialog closedby="any" class="m-auto p-4">
                     <button type="button" data-close style="float:right;margin-bottom:10px">Close channels</button>
                     <channel-selector></channel-selector>
                 </dialog>

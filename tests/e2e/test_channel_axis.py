@@ -90,3 +90,48 @@ def test_dense_minimap_labels_keep_endpoints_and_do_not_overlap(page):
     assert positions[0] >= 6
     assert positions[-1] <= 245
     assert all(b - a >= 16 for a, b in zip(positions, positions[1:]))
+
+
+def test_guide_labels_yield_to_channels_and_each_other(page):
+    ensure_extension_built()
+    channels = {1: "B19", 2: "B20", 3: "B21"}
+    guides = {1.02: "10.1", 1.5: "10.2", 1.51: "10.3", 2.98: "10.4"}
+    labels = channels | guides
+    plot = figure(width=500, height=500, y_range=Range1d(0, 4), tools="",
+                  name="guide-axis-test")
+    plot.left.remove(plot.yaxis[0])
+    plot.add_layout(ChannelAxis(
+        ticker=FixedTicker(ticks=sorted(labels)), channel_labels=channels,
+        major_label_overrides=labels, avoid_overlap=True,
+    ), "left")
+    plot.line([0, 1], [0, 4])
+    page.evaluate(r"""() => {
+        window.guideDraws = [];
+        const original = CanvasRenderingContext2D.prototype.fillText;
+        CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
+            if (/^(B[0-9]+|10\.[0-9]+)$/.test(text)) {
+                const t = this.getTransform();
+                window.guideDraws.push({text, y:t.f + args[1]*t.d});
+            }
+            return original.call(this, text, ...args);
+        };
+    }""")
+    page.set_content(file_html(plot, INLINE))
+    page.wait_for_function("window.Bokeh?.documents[0]?.is_idle")
+    draws = page.evaluate("Array.from(new Map(window.guideDraws.map(d => [d.text, d])).values())")
+    text = {draw["text"] for draw in draws}
+    assert set(channels.values()) <= text
+    assert not {"10.1", "10.4"} & text
+    assert len({"10.2", "10.3"} & text) == 1
+    positions = sorted(draw["y"] for draw in draws)
+    assert all(b - a >= 16 for a, b in zip(positions, positions[1:]))
+    # Zooming makes room for previously suppressed guide labels.
+    page.evaluate("""() => {
+        window.guideDraws = [];
+        const plot = Bokeh.documents[0].get_model_by_name('guide-axis-test');
+        plot.y_range.start = 0.99;
+        plot.y_range.end = 1.04;
+    }""")
+    page.wait_for_function("window.guideDraws.some(d => d.text == '10.1')")
+    draws = page.evaluate("Array.from(new Map(window.guideDraws.map(d => [d.text, d])).values())")
+    assert {"B19", "10.1"} <= {draw["text"] for draw in draws}

@@ -35,6 +35,8 @@ def _get_info(eeg, *, eog, montage_units):
     """Keep EEGLAB type labels separately from MNE's restricted channel types."""
     eeg = copy(eeg)
     chanlocs = eeg.chanlocs
+    from pprint import pprint
+    pprint(chanlocs)
     if isinstance(chanlocs, dict):
         chanlocs = [chanlocs] if eeg.nbchan == 1 else _dol_to_lod(chanlocs)
     raw_ch_types = []
@@ -76,6 +78,7 @@ class CtapRawEEGLAB(BaseRaw):
         annotations = _read_annotations_eeglab(eeg)
         self.set_annotations(annotations)
         _check_boundary(annotations, None)
+        self.raw_montage = montage
         _set_dig_montage_in_init(self, montage)
         _check_latencies(np.round(annotations.onset * info["sfreq"]))
 
@@ -163,6 +166,8 @@ class CtapEpochEEGLAB(BaseEpochs):
             verbose=verbose,
         )
         self._bad_dropped = True
+
+        self.raw_montage = eeg_montage
         _set_dig_montage_in_init(self, eeg_montage)
 
     @staticmethod

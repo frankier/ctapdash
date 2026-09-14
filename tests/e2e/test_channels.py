@@ -7,7 +7,7 @@ from .test_pages import QUERY, visit
 METADATA = {
     "stateKey": "component-test",
     "channels": [{"name": name, "type": kind} for name, kind in [("Fz", "EEG"), ("Cz", "EEG"), ("Pz", "EEG"), ("Aux", "Custom")]],
-    "groups": {"Middle": ["Fz", "Cz"]}, "regions": {"Frontal": ["Fz"], "Parietal": ["Pz"]},
+     "regions": {"Frontal": ["Fz"], "Parietal": ["Pz"]},
     "head": {"points": {"Fz": [0, -.05], "Cz": [0, 0], "Pz": [0, .05]},
              "outlines": [[[-.09, 0], [0, -.09], [.09, 0], [0, .09], [-.09, 0]]], "message": ""},
     "bads": {"1": ["Cz"], "2": ["Cz"]}, "steps": {"1": ["Fz", "Cz", "Pz", "Aux"]},
@@ -30,7 +30,7 @@ def mount(page, dashboard_url, metadata=METADATA):
 
 def test_groups_search_bad_markers_and_keyboard(page, dashboard_url):
     selector = mount(page, dashboard_url)
-    cz = selector.get_by_role("checkbox", name="Cz — Bad in steps 1, 2", exact=True)
+    cz = selector.locator("#panel-list").get_by_role("checkbox", name="Cz — Bad in steps 1, 2", exact=True)
     expect(cz).to_be_checked()
     cz.focus(); page.keyboard.press("Space")
     group = selector.get_by_role("checkbox", name="EEG (2/3)", exact=True)
@@ -39,19 +39,16 @@ def test_groups_search_bad_markers_and_keyboard(page, dashboard_url):
     selector.get_by_role("button", name="Clear", exact=True).click()
     assert selector.evaluate("s => s.selectedNames") == ["Pz", "Aux"]
     selector.get_by_role("searchbox").fill("")
-    selector.get_by_role("combobox", name="Group channels by").select_option("custom")
-    expect(selector.get_by_role("checkbox", name="Middle (0/2)", exact=True)).not_to_be_checked()
-    selector.get_by_role("checkbox", name="Middle (0/2)", exact=True).click()
-    assert selector.evaluate("s => s.selectedNames") == ["Fz", "Cz", "Pz", "Aux"]
-    selector.get_by_role("tab", name="Grouped list").focus(); page.keyboard.press("ArrowRight")
-    expect(selector.get_by_role("tab", name="Head diagram")).to_be_focused()
-    expect(selector.get_by_role("checkbox", name="Cz — Bad in steps 1, 2", exact=True)).to_have_attribute("aria-checked", "true")
+    selector.get_by_role("tab", name="Head region").click()
+    expect(selector.get_by_role("tab", name="Head region")).to_have_attribute("aria-selected", "true")
+    selector.get_by_role("tab", name="Channel type").focus(); page.keyboard.press("ArrowRight")
+    expect(selector.get_by_role("tab", name="Head region")).to_be_focused()
 
 
 def test_head_click_lasso_and_programmatic_updates(page, dashboard_url, tmp_path):
     selector = mount(page, dashboard_url)
-    selector.get_by_role("tab", name="Head diagram").click()
-    selector.get_by_role("checkbox", name="Fz", exact=True).click()
+    selector.get_by_role("tab", name="top-down").click()
+    selector.locator("#panel-diagram").get_by_role("checkbox", name="Fz", exact=True).click()
     assert selector.evaluate("s => s.selectedNames") == ["Cz", "Pz", "Aux"]
     selector.get_by_role("combobox", name="Lasso action").select_option("deselect")
     # Draw a closed polygon around Cz only, using SVG coordinates.
@@ -66,11 +63,11 @@ def test_head_click_lasso_and_programmatic_updates(page, dashboard_url, tmp_path
     assert selector.evaluate("s => s.selectedNames") == ["Pz", "Aux"]
     assert page.evaluate("window.changes.length") == before + 1
     selector.evaluate("s => { s.selectedNames = ['Fz']; s.availableNames = ['Cz', 'Pz']; }")
-    expect(selector.get_by_role("checkbox", name="Fz — Unavailable in the displayed processing steps", exact=True)).to_have_attribute("aria-disabled", "true")
+    expect(selector.locator("#panel-diagram").get_by_role("checkbox", name="Fz — Unavailable in the displayed processing steps", exact=True)).to_have_attribute("aria-disabled", "true")
     assert selector.evaluate("s => s.selectedNames") == ["Fz"]
     assert page.evaluate("window.changes.length") == before + 1
     selector.evaluate("s => s.availableNames = ['Fz', 'Cz', 'Pz', 'Aux']")
-    expect(selector.get_by_role("checkbox", name="Fz", exact=True)).to_have_attribute("aria-checked", "true")
+    expect(selector.locator("#panel-diagram").get_by_role("checkbox", name="Fz", exact=True)).to_have_attribute("aria-checked", "true")
     selector.screenshot(path=str(tmp_path / "head-selector.png"))
 
 
@@ -82,7 +79,7 @@ def test_storage_isolation_missing_positions_and_cleanup(page, dashboard_url):
     other = dict(METADATA, stateKey="different-participant", head={"points": {}, "outlines": [], "message": "No usable positions"})
     selector = mount(page, dashboard_url, other)
     assert len(selector.evaluate("s => s.selectedNames")) == 4
-    selector.get_by_role("tab", name="Head diagram").click()
+    selector.get_by_role("tab", name="top-down").click()
     expect(selector.get_by_text("No usable positions", exact=True)).to_be_visible()
     assert page.evaluate("""() => {
         const s = document.querySelector('channel-selector'); s.remove();
@@ -128,14 +125,14 @@ def test_heatmap_empty_selection_navigation_and_venndiff(page, dashboard_url):
 
 def test_mne_head_diagram(page, dashboard_url, tmp_path):
     import mne
-    from ctapdash.channels import _head_geometry
+    from ctapdash.head_geometry import _head_geometry
 
     positions = mne.channels.make_standard_montage("biosemi64").get_positions()["ch_pos"]
-    head, regions = _head_geometry(positions)
+    head, regions = _head_geometry(mne.channels.make_dig_montage(ch_pos=positions, coord_frame="head"))
     metadata = dict(METADATA, channels=[{"name": name, "type": "EEG"} for name in positions],
                     head=head, regions=regions, stateKey="biosemi64")
     selector = mount(page, dashboard_url, metadata)
-    selector.get_by_role("tab", name="Head diagram").click()
+    selector.get_by_role("tab", name="top-down").click()
     expect(selector.locator("svg .sensor")).to_have_count(64)
     selector.screenshot(path=str(tmp_path / "mne-head-selector.png"))
     assert page.evaluate("""() => {
@@ -146,3 +143,48 @@ def test_mne_head_diagram(page, dashboard_url, tmp_path):
         standalone.channels = [{name: 'A', type: 'EEG'}, {name: 'B', type: 'EEG'}];
         return [defaults, standalone.selectedNames, standalone.availableNames];
     }""") == [[["A"], ["A"]], [], []]
+
+
+def test_front_eog_selection(page, dashboard_url):
+    import mne
+    from ctapdash.head_geometry import _head_geometry
+
+    head, regions = _head_geometry(mne.channels.make_dig_montage(
+        ch_pos={"VEOG": [.03, .08, -.02], "HEOG": [-.03, .08, .02]}, coord_frame="head"))
+    metadata = dict(METADATA, channels=[{"name": n, "type": "EOG"} for n in head["points"]],
+                    head=head, regions=regions, stateKey="eog-front")
+    selector = mount(page, dashboard_url, metadata)
+    selector.get_by_role("tab", name="front-back").click()
+    expect(selector.locator("svg .sensor")).to_have_count(2)
+    selector.locator("#panel-diagram").get_by_role("checkbox", name="VEOG", exact=True).click()
+    selector.get_by_role("tab", name="top-down").click()
+    expect(selector.locator("#panel-diagram").get_by_role("checkbox", name="VEOG", exact=True)).to_have_attribute("aria-checked", "false")
+    selector.get_by_role("tab", name="top-down").focus()
+    page.keyboard.press("ArrowRight")
+    expect(selector.get_by_role("tab", name="front-back")).to_be_focused()
+    selector.locator("#panel-diagram").get_by_role("checkbox", name="HEOG", exact=True).focus()
+    page.keyboard.press("Space")
+    assert selector.evaluate("s => s.selectedNames") == []
+
+
+def test_columns_scroll_independently_and_front_back_partition(page, dashboard_url):
+    import mne
+    from ctapdash.channels import channel_metadata
+    from types import SimpleNamespace
+    names = [f"{letter}{i}" for letter in "ABCD" for i in range(1, 89)]
+    positions = {name: [.02, .05 if i % 2 else -.05, .08] for i, name in enumerate(names)}
+    raw = SimpleNamespace(ch_names=names, raw_ch_types=["EEG"] * len(names), info={"bads": []},
+                          raw_montage=mne.channels.make_dig_montage(ch_pos=positions, coord_frame="head"))
+    metadata = dict(channel_metadata([(1, raw)]), stateKey="large-columns")
+    selector = mount(page, dashboard_url, metadata)
+    expect(selector.locator(".channel-column")).to_have_count(4)
+    assert selector.locator(".channel-column").first.get_by_role("checkbox").count() == 88
+    selector.get_by_role("tab", name="front-back").click()
+    assert selector.locator("svg .sensor").count() == len(names)
+    assert selector.evaluate("""s => {
+        const [left, right] = s.shadowRoot.querySelectorAll('.scroll-panel');
+        left.scrollTop = 100; right.scrollTop = 150;
+        return left.scrollTop === 100 && right.scrollTop === 150;
+    }""")
+    selector.locator("#panel-list").get_by_role("checkbox", name="A8", exact=True).uncheck()
+    assert selector.evaluate("s => s.shadowRoot.querySelector('#panel-diagram').scrollTop") == 150

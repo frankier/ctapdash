@@ -96,9 +96,9 @@ def navigation_frame(plot, x_bounds, y_bounds, min_interval=None):
     axis = plot.yaxis[0]
     channel_axis.add_layout(ChannelAxis(
         avoid_overlap=True, truncate_labels=True,
-        ticker=FixedTicker(ticks=list(axis.ticker.ticks)),
+        ticker=FixedTicker(ticks=list(axis.channel_labels)),
         channel_labels=dict(axis.channel_labels),
-        major_label_overrides=dict(axis.major_label_overrides),
+        major_label_overrides=dict(axis.channel_labels),
     ), "right")
     channel_axis.grid.visible = False
     # A fixed side strip and bottom strip cannot change the viewport's size

@@ -147,6 +147,8 @@ def _build_comparison(doc, dataset, stats):
         value="overplot",
     )
     layers = CheckboxButtonGroup(labels=["Venn", "Lines"], active=[0])
+    guides_toggle = Toggle(label="Guides", active=True, name="guides-toggle")
+    active_guides = [None]
     status = Div(text="", sizing_mode="stretch_width")
     plot_holder = column(sizing_mode="stretch_both")
     source_cache = {}
@@ -180,7 +182,7 @@ def _build_comparison(doc, dataset, stats):
         metadata_json=json.dumps(channel_metadata),
         available=initial_channels,
         value=[channel["name"] for channel in channel_metadata["channels"]],
-        width=560, height=520,
+        width=900, height=520,
     )
     channel_toggle = Toggle(
         label="Show channels", active=False, name="channel-dialog-toggle",
@@ -224,11 +226,13 @@ def _build_comparison(doc, dataset, stats):
         step_b,
         plotting_mode,
         layers,
+        guides_toggle,
         channel_toggle,
         width=220,
     )
     sidebar_shell = column(
-        sidebar_toggle, controls_sidebar, width=220, sizing_mode="stretch_height",
+        sidebar_toggle, controls_sidebar, width=230, sizing_mode="stretch_height",
+        styles={"padding-top": "10px", "padding-left": "10px"},
     )
     plot_panel = column(status, plot_holder, sizing_mode="stretch_both")
     viewer_frame = column(
@@ -261,7 +265,8 @@ def _build_comparison(doc, dataset, stats):
             const state = fullscreen ? fullscreen_state : normal_state
             state.active = cb_obj.active
             controls_sidebar.visible = cb_obj.active
-            sidebar_shell.width = cb_obj.active ? 160 : 30
+            sidebar_shell.width = cb_obj.active ? 230 : 40
+            cb_obj.width = cb_obj.active ? 110 : 30
             cb_obj.label = cb_obj.active ? "« Hide controls" : "»"
         """,
     ))
@@ -276,36 +281,44 @@ def _build_comparison(doc, dataset, stats):
             counts.append((length + 2047) // 2048)
         return counts
 
-    def style_axes(plot, channels, geometry, mode):
+    def set_guides(_attr, _old, _new):
+        if active_guides[0] is None:
+            return
+        renderer, axis, guide_labels = active_guides[0]
+        renderer.visible = guides_toggle.active
+        labels = dict(guide_labels) if guides_toggle.active else {}
+        # Channel names take precedence when zero coincides with a guide.
+        labels.update(axis.channel_labels)
+        axis.ticker.ticks = sorted(labels)
+        axis.major_label_overrides = labels
+
+    guides_toggle.on_change("active", set_guides)
+
+    def style_axes(plot, channels, geometry):
         from venn_ts.channel_axis import ChannelAxis
 
         old_axis = plot.yaxis[0]
         plot.left.remove(old_axis)
-        plot.add_layout(ChannelAxis(channel_labels={
-            item["offset"]: channel for channel, item in zip(channels, geometry)
-        }), "left")
-        ticks, labels = [], {}
-        for channel, item in zip(channels, geometry):
-            # Source amplitude zero maps to the channel's offset in every mode.
-            zero = item["offset"]
-            ticks.append(zero)
-            labels[zero] = channel
-            if mode == "normalize" and item["outside"]:
-                values = [item["actual_min"], item["actual_max"]]
-                for value in values:
-                    if value == 0:
-                        continue
-                    tick = value * item["scale"] + item["offset"]
-                    ticks.append(tick)
-                    labels[tick] = f"{value:.3g}"
-        plot.hspan(
-            y=[item["center"] + offset for item in geometry for offset in (-0.4, 0.4)],
+        axis = ChannelAxis(
+            channel_labels={item["offset"]: channel for channel, item in zip(channels, geometry)},
+            ticker=FixedTicker(),
+            avoid_overlap=True,
+        )
+        plot.add_layout(axis, "left")
+        guide_positions = [item["center"] + delta for item in geometry for delta in (-0.4, 0.4)]
+        guide_labels = {
+            position: f"{(position - item['offset']) / item['scale']:.3g}"
+            for item in geometry
+            for position in (item["center"] - 0.4, item["center"] + 0.4)
+        }
+        guides = plot.hspan(
+            y=guide_positions,
             line_color="#dddddd",
             line_width=1,
-            level="annotation",
+            level="underlay",
         )
-        plot.yaxis.ticker = FixedTicker(ticks=ticks)
-        plot.yaxis.major_label_overrides = labels
+        active_guides[0] = (guides, axis, guide_labels)
+        set_guides(None, None, None)
         plot.yaxis.axis_label = None
         plot.ygrid.grid_line_color = None
         plot.xaxis.axis_label = "Time (s)"
@@ -415,6 +428,7 @@ def _build_comparison(doc, dataset, stats):
         if active_coordinator[0] is not None:
             active_coordinator[0].close()
             active_coordinator[0] = None
+        active_guides[0] = None
         status.text = "Loading..."
         try:
             source_a, source_b = get_source(step_a.value), get_source(step_b.value)
@@ -454,6 +468,7 @@ def _build_comparison(doc, dataset, stats):
                 f"{source_a.dataset_version}|{source_b.dataset_version}|{channels}|{common}".encode()
             ).hexdigest()[:20]
             renderer = VennTimeSeriesRenderer(
+                level="glyph",
                 dataset_version=version,
                 sample_count=common,
                 time_start=max(source_a.time_start, source_b.time_start),
@@ -524,7 +539,7 @@ def _build_comparison(doc, dataset, stats):
                 tooltips=[("Step", "$name"), ("Channel", "@channel")],
                 mode="mouse",
             ))
-            style_axes(plot, channels, geometry, plotting_mode.value)
+            style_axes(plot, channels, geometry)
             plot.add_tools(
                 channel_count_action(plot.y_range, y_range, len(channels), -1),
                 channel_count_action(plot.y_range, y_range, len(channels), 1),
@@ -560,8 +575,9 @@ def _build_comparison(doc, dataset, stats):
                             (fullscreen ? view.shadow_el : document.body).append(dialog_el)
                         const state = fullscreen ? fullscreen_state : normal_state
                         controls_sidebar.visible = state.active
-                        sidebar_shell.width = state.active ? 160 : 30
+                        sidebar_shell.width = state.active ? 230 : 40
                         sidebar_toggle.active = state.active
+                        sidebar_toggle.width = state.active ? 110 : 30
                         sidebar_toggle.label = state.active ? "« Hide controls" : "»"
                     }
                     if (element._ctap_sidebar_fullscreen_listener == null) {

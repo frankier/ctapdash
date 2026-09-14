@@ -142,6 +142,23 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert len(glyphs) == 3
     overlay_glyphs = [glyph for glyph in glyphs if glyph.name is not None]
     assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in overlay_glyphs)
+    guides = next(glyph for glyph in glyphs if glyph.glyph.__class__.__name__ == "HSpan")
+    guide_toggle = doc.get_model_by_name("guides-toggle")
+    axis = figure.yaxis[0]
+    assert guides.level == "underlay"
+    assert custom[0].level == "glyph"
+    assert guides.visible is True
+    assert axis.avoid_overlap is True
+    # These channels span 0–4: the lower guide coincides with the channel
+    # name (zero), while the upper guide gets its amplitude label.
+    assert axis.major_label_overrides[7.1] == "Ch0"
+    assert axis.major_label_overrides[7.9] == "4"
+    guide_toggle.active = False
+    assert guides.visible is False
+    assert axis.major_label_overrides == axis.channel_labels
+    guide_toggle.active = True
+    assert guides.visible is True
+    assert axis.major_label_overrides[7.9] == "4"
     assert layer_control.labels == ["Venn", "Lines"]
     assert layer_control.active == [0, 1]
     assert channel_dialog.visible is False
@@ -217,8 +234,12 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
         select for select in doc.roots[0].select({"type": BkSelect})
         if select.title == "Plotting mode"
     )
+    guide_toggle.active = False
     plotting_mode.value = "normalize"
     rebuilt = doc.get_model_by_name("comparison-plot")
+    assert rebuilt.yaxis[0].major_label_overrides == rebuilt.yaxis[0].channel_labels
+    assert not next(glyph for glyph in rebuilt.renderers
+                    if isinstance(glyph, GlyphRenderer) and glyph.glyph.__class__.__name__ == "HSpan").visible
     assert (rebuilt.x_range.start, rebuilt.x_range.end) == pytest.approx((0.4, 1.2))
     assert (rebuilt.y_range.start, rebuilt.y_range.end) == pytest.approx((3.0, 7.0))
 
