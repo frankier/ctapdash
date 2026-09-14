@@ -78,7 +78,6 @@ def _build_comparison(doc, dataset, stats):
         FixedTicker,
         HoverTool,
         InlineStyleSheet,
-        MultiChoice,
         Range1d,
         Select,
         Toggle,
@@ -134,12 +133,18 @@ def _build_comparison(doc, dataset, stats):
         initial_channels = list(initial_source.channels)
     except Exception as error:
         doc.add_root(Div(text=f"<strong>Unable to open comparison data:</strong> {escape(str(error))}"))
-        return
+        raise
 
-    channel_choice = MultiChoice(
-        title="Channels",
-        options=initial_channels,
-        value=initial_channels,
+    import json
+    from ctapdash.channels import participant_channel_metadata
+    from venn_ts.channel_selector import ChannelSelector
+
+    channel_metadata = participant_channel_metadata(dataset)
+    channel_choice = ChannelSelector(
+        metadata_json=json.dumps(channel_metadata),
+        available=initial_channels,
+        value=[channel["name"] for channel in channel_metadata["channels"]],
+        width=560, height=520,
     )
     channel_toggle = Toggle(
         label="Show channels", active=False, name="channel-dialog-toggle",
@@ -163,6 +168,15 @@ def _build_comparison(doc, dataset, stats):
 
     channel_toggle.on_change("active", toggle_channels)
     channel_dialog.on_change("visible", sync_channel_toggle)
+    channel_dialog.js_on_change("visible", CustomJS(args={"dialog": channel_dialog}, code="""
+        queueMicrotask(() => {
+            if (!dialog.visible) return
+            const el = Bokeh.index.find_one(dialog)?.el
+            const fullscreen = document.fullscreenElement
+            if (el != null && fullscreen != null)
+                (fullscreen.shadowRoot ?? fullscreen).append(el)
+        })
+    """))
 
     normal_sidebar_open = Toggle(active=True, visible=False, name="normal-sidebar-open")
     fullscreen_sidebar_open = Toggle(active=False, visible=False, name="fullscreen-sidebar-open")
@@ -372,11 +386,13 @@ def _build_comparison(doc, dataset, stats):
             common_channels = [
                 channel for channel in source_a.channels if channel in source_b.channel_index
             ]
-            channel_choice.options = common_channels
-            channels = [channel for channel in channel_choice.value if channel in common_channels]
-            if list(channel_choice.value) != channels:
-                channel_choice.value = channels
-                return
+            channel_choice.available = common_channels
+            channel_choice.bads_json = json.dumps({
+                step: channel_metadata["bads"].get(step, [])
+                for step in dict.fromkeys((step_a.value, step_b.value))
+            })
+            selected_names = set(channel_choice.value)
+            channels = [channel for channel in common_channels if channel in selected_names]
             if not channels:
                 active_renderer[0] = None
                 active_plot[0] = None
@@ -485,6 +501,7 @@ def _build_comparison(doc, dataset, stats):
                 icon="fullscreen",
                 callback=CustomJS(args={
                     "viewer_frame": viewer_frame,
+                    "channel_dialog": channel_dialog,
                     "controls_sidebar": controls_sidebar,
                     "sidebar_shell": sidebar_shell,
                     "sidebar_toggle": sidebar_toggle,
@@ -496,6 +513,9 @@ def _build_comparison(doc, dataset, stats):
                     if (element == null) return
                     const sync_sidebar = () => {
                         const fullscreen = document.fullscreenElement === element
+                        const dialog_el = Bokeh.index.find_one(channel_dialog)?.el
+                        if (channel_dialog.visible && dialog_el != null)
+                            (fullscreen ? view.shadow_el : document.body).append(dialog_el)
                         const state = fullscreen ? fullscreen_state : normal_state
                         controls_sidebar.visible = state.active
                         sidebar_shell.width = state.active ? 160 : 30

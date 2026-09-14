@@ -193,6 +193,7 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
     with (
         patch("ctapdash.webapp.ObservationData.from_request", return_value=dataset),
         patch("ctapdash.webapp._participant_step_rows", return_value=step_rows),
+        patch("ctapdash.channels.participant_channel_metadata", return_value={}),
         patch("ctapdash.stats.describe_mne") as describe_mne,
         patch(
             "ctapdash.webapp.run_in_threadpool",
@@ -249,7 +250,7 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
         response = asyncio.run(participant_statistics_fragment(request))
 
     assert response is rendered
-    build_heatmap.assert_called_once_with([steps[1]], "sub-01", stats)
+    build_heatmap.assert_called_once_with([steps[1]], "sub-01", stats, None)
     assert template_response.call_args.args[1] == "participant_statistics.html"
     assert (
         template_response.call_args.kwargs["context"]["descriptive_heatmap"] is heatmap

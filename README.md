@@ -71,11 +71,42 @@ check it again after editing `.set` files; there is no filesystem watcher.
 
 ```bash
 uv sync --group build
+npm ci
+uv run python -m ctapdash.build
 uv run ctapdash --config conf.toml
 ```
 
 `uv run uvicorn ctapdash.webapp:create_app --factory` also works if you want a
-plain ASGI server.
+plain ASGI server. Build browser assets first when starting through ASGI directly.
+Node.js and npm are needed during development and packaging. `ctapdash.build`
+compiles the shared TypeScript components and invokes `venn_ts.build` for the
+Bokeh extension. Normal CLI startup rebuilds changed sources; frozen builds ship
+both compiled assets and skip compilation. `npm run check` checks component types.
+
+### Channel selector
+
+The statistics heatmap and Venndiff share `<channel-selector>`, with searchable
+type/region/custom groups and a clickable, lasso-selectable head diagram. Selection
+is remembered per dataset and participant in the current browser tab. Unavailable
+channels retain their selection for later steps. Bad-channel markers describe the
+steps reporting them and never exclude channels automatically. Heatmap colors are
+normalized over the selected channels in the displayed steps.
+
+`ctapdash.channels.participant_channel_metadata(dataset, bads_by_step=..., groups=...)`
+accepts optional per-step bad-channel overrides and named channel groups. Omitted
+steps use recording `info["bads"]`; an explicit empty list clears that step's markers.
+The lower-level `channel_metadata` accepts `(step, Ctap*EEGLAB)` pairs. Both read
+metadata only, preserve EEGLAB type labels, and isolate private MNE projection and
+region helpers in `ctapdash.channels`. Invalid positions fall back to the checklist.
+
+Import `static/generated/channel-selector.js` as an ES module to reuse the widget.
+Call `selector.configure(metadata, availableNames, badsByStep)` with the adapter's
+metadata (including a dataset/participant `stateKey`). Individual properties are
+`channels`, `groups`, `head`, `selectedNames`, `availableNames`, and `badsByStep`.
+Property updates do not emit selection events. User gestures emit a bubbling,
+composed `channel-selection-change` event with `detail.selectedNames` in metadata
+order, including selection intent for unavailable channels. Consumers should
+intersect with `availableNames` when choosing which channels to display.
 
 ### Accessing recording caches
 

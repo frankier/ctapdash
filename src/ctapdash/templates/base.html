@@ -10,6 +10,7 @@
     <script src="{{ url_for('static', path='vendor/htmx-ext-sse.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/htmx-ext-ws.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/alpine.min.js') }}" defer></script>
+    <script type="module" src="{{ url_for('static', path='generated/heatmap-channels.js') }}"></script>
     <title>{% block title %}{% endblock %}</title>
     <style>
     @layer utilities {

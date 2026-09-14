@@ -52,18 +52,25 @@ def _try_cache(load_func, path, base_stat, warm=False, force_cache=False):
 
 def read_eeglab(path, use_cache=True, warm=False, force_cache=False, mmap=True, *, validated=False):
     # Registered callers have already checked freshness and awaited readiness.
+    invalid = False
     if validated:
         if not mmap or not use_cache:
             raise ValueError("validated loading requires the metadata cache")
-        return pickle_load(cached_path(path))
-    base_stat = os.stat(path) if use_cache or force_cache else None
-    cache_path = cached_path(path)
+        cached = cached_path(path)
+        try:
+            return pickle_load(cached)
+        except Exception:
+            cached.unlink()
+            invalid = True
     if not mmap and (use_cache or force_cache or warm):
         raise ValueError("Cache is not implemented for mmap=False")
-    if use_cache or force_cache:
-        cached = _try_cache(pickle_load, cache_path, base_stat, warm=warm, force_cache=force_cache)
-        if cached is not None:
-            return cached
+    if not invalid:
+        base_stat = os.stat(path) if use_cache or force_cache else None
+        cache_path = cached_path(path)
+        if use_cache or force_cache:
+            cached = _try_cache(pickle_load, cache_path, base_stat, warm=warm, force_cache=force_cache)
+            if cached is not None:
+                return cached
     if force_cache:
         raise ValueError("Wasn't able to load from cache when force_cache=True")
     with warnings.catch_warnings(action="ignore"):
