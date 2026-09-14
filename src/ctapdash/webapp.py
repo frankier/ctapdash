@@ -1,7 +1,5 @@
 from collections.abc import AsyncGenerator
-from functools import partial
 from contextlib import asynccontextmanager
-import re
 from importlib.resources import files
 from pathlib import Path
 from ctapdash.io.cache import CacheWarmer

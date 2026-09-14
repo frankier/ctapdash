@@ -20,7 +20,7 @@ import pickle
 
 
 
-from ctapdash.io.paths import CH_REGEX, SCALP_REGEX, metadata_file_path
+from ctapdash.io.paths import metadata_file_path
 
 
 def is_epoched(path):

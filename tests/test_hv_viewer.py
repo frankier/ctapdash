@@ -9,15 +9,12 @@ from bokeh.models import (
     CheckboxButtonGroup,
     CustomAction,
     Dialog,
-    HoverTool,
     MultiChoice,
     PanTool,
     RangeSlider,
     Select as BkSelect,
-    Toggle,
 )
 from bokeh.models.renderers import GlyphRenderer
-from bokeh.plotting._figure import figure as BkFigure
 
 from ctapdash.io import paths
 from ctapdash.io.xarray import load_xarray, save_xarray
@@ -110,7 +107,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
         doc = Document()
         venn_time_series_bokeh(doc)
 
-    figure = doc.roots[0].select_one({"type": BkFigure})
+    figure = doc.get_model_by_name("comparison-plot")
     custom = list(figure.select({"type": VennTimeSeriesRenderer}))
     glyphs = list(figure.select({"type": GlyphRenderer}))
     layer_control = doc.roots[0].select_one({"type": CheckboxButtonGroup})
@@ -125,11 +122,13 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     scrollbars_by_orientation = {
         scrollbar.orientation: scrollbar for scrollbar in scrollbars
     }
+    assert figure.yaxis[0].axis_label is None
     assert figure.output_backend == "webgl"
-    assert figure.height == 660
-    assert figure.min_height == 660
+    assert figure.height == 460
+    assert figure.min_height == 460
     assert figure.sizing_mode == "stretch_both"
-    assert (figure.y_range.start, figure.y_range.end) == (2, 8)
+    assert (figure.y_range.start, figure.y_range.end) == (0, 8)
+    assert figure.x_range.min_interval == pytest.approx(0.075)
     assert len(custom) == 1
     assert custom[0].channel_tile_size == 1
     assert custom[0].amplitude_scales == pytest.approx([0.2] * 8)
@@ -149,10 +148,19 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert channel_toggle.active is False
     assert {scrollbar.orientation for scrollbar in scrollbars} == {"horizontal", "vertical"}
     assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.4))
-    assert scrollbars_by_orientation["vertical"].value == (2, 8)
+    assert scrollbars_by_orientation["vertical"].value == (0, 8)
     assert scrollbars_by_orientation["vertical"].direction == "rtl"
-    assert scrollbars_by_orientation["vertical"].min_height == 660
-    assert scrollbars_by_orientation["vertical"].sizing_mode == "stretch_height"
+    assert scrollbars_by_orientation["vertical"].sizing_mode == "fixed"
+    assert doc.get_model_by_name("align-range-navigation") is not None
+    time_minimap = doc.get_model_by_name("time-minimap")
+    channel_minimap = doc.get_model_by_name("channel-minimap")
+    assert time_minimap.x_range is not figure.x_range
+    assert channel_minimap.width == 65
+    assert channel_minimap.yaxis[0].truncate_labels is True
+    assert channel_minimap.yaxis[0].avoid_overlap is True
+    assert channel_minimap.y_range is not figure.y_range
+    assert (time_minimap.x_range.start, time_minimap.x_range.end) == pytest.approx((0, 1.4))
+    assert (channel_minimap.y_range.start, channel_minimap.y_range.end) == (0, 8)
     assert not list(figure.select({"type": PanTool}))
     layer_control.active = [1]
     assert custom[0].venn_visible is False
@@ -179,7 +187,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
         stylesheet.css
         for stylesheet in scrollbars_by_orientation["vertical"].stylesheets
     )
-    assert "padding: 7px 0 !important" in vertical_css
+    assert "padding: 0 !important" in vertical_css
     assert "height: 100% !important" in vertical_css
     assert "top: auto !important" in vertical_css
     assert "bottom: var(--handle-right) !important" in vertical_css
@@ -204,7 +212,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
         if select.title == "Plotting mode"
     )
     plotting_mode.value = "normalize"
-    rebuilt = doc.roots[0].select_one({"type": BkFigure})
+    rebuilt = doc.get_model_by_name("comparison-plot")
     assert (rebuilt.x_range.start, rebuilt.x_range.end) == pytest.approx((0.4, 1.2))
     assert (rebuilt.y_range.start, rebuilt.y_range.end) == pytest.approx((3.0, 7.0))
 
@@ -213,12 +221,12 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
         if select.title == "Step A (red)"
     )
     step_a.value = "2"
-    rebuilt = doc.roots[0].select_one({"type": BkFigure})
+    rebuilt = doc.get_model_by_name("comparison-plot")
     assert (rebuilt.x_range.start, rebuilt.x_range.end) == pytest.approx((0.4, 1.2))
     assert (rebuilt.y_range.start, rebuilt.y_range.end) == pytest.approx((3.0, 7.0))
 
     channel_choice.value = channel_choice.value[:-1]
-    rebuilt = doc.roots[0].select_one({"type": BkFigure})
+    rebuilt = doc.get_model_by_name("comparison-plot")
     assert (rebuilt.x_range.start, rebuilt.x_range.end) == pytest.approx((0.4, 1.2))
     assert rebuilt.y_range.end - rebuilt.y_range.start == pytest.approx(4.0)
 

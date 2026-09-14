@@ -99,7 +99,8 @@ async def setup_add(request):
 
 async def setup_pick(request):
     """Open the platform folder picker. Only reachable with a native window."""
-    form = await _read_form(request)
+    # _read_form validates the CSRF token; the form carries no other fields.
+    await _read_form(request)
     window = desktop.WINDOW
     if window is None:
         raise HTTPException(status_code=400, detail="No native window")

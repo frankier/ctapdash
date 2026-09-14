@@ -38,8 +38,6 @@ from contextlib import ExitStack
 import os
 from pathlib import Path
 import pickle
-import shutil
-import tempfile
 from typing import Literal
 
 import numpy as np
