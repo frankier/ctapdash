@@ -61,7 +61,6 @@ uniform sampler2D u_valid;
 uniform vec2 u_texture_size;
 uniform float u_entry_count;
 uniform float u_channel_row;
-uniform int u_max_aggregation;
 uniform float u_source_time_start;
 uniform float u_source_time_step;
 uniform float u_x_start;
@@ -88,7 +87,7 @@ void main() {
   float next_entry = floor((max(x0, x1) - u_source_time_start) / u_source_time_step);
   float last = next_entry == first ? first + 1.0 : next_entry;
   first = clamp(first, 0.0, u_entry_count);
-  last = clamp(last, first, min(u_entry_count, first + float(u_max_aggregation)));
+  last = clamp(last, first, u_entry_count);
 
   float amin = 3.402823466e38;
   float amax = -3.402823466e38;
@@ -96,7 +95,7 @@ void main() {
   float bmax = -3.402823466e38;
   bool has_a = false;
   bool has_b = false;
-  for (int offset = 0; offset < 128; offset++) {
+  for (int offset = 0; offset < 1024; offset++) {
     float index = first + float(offset);
     if (index >= last) break;
     vec2 position = texel_position(index);
@@ -541,7 +540,6 @@ export class VennTimeSeriesRendererView extends RendererView {
       const uniform1i = (name: string, value: number) => gl.uniform1i(gl.getUniformLocation(program, name), value)
       const uniform1f = (name: string, value: number) => gl.uniform1f(gl.getUniformLocation(program, name), value)
       uniform1i("u_ranges", 0); uniform1i("u_valid", 1)
-      uniform1i("u_max_aggregation", Math.min(128, Math.max(1, this.model.max_ranges_per_pixel)))
       uniform1f("u_x_start", this.coordinates.x_source.start); uniform1f("u_x_end", this.coordinates.x_source.end)
       uniform1f("u_y_start", this.coordinates.y_source.start); uniform1f("u_y_end", this.coordinates.y_source.end)
       gl.uniform2f(gl.getUniformLocation(program, "u_frame_origin"), origin_x, origin_y)
@@ -620,7 +618,7 @@ export namespace VennTimeSeriesRenderer {
     channel_y_mins: p.Property<number[]>; channel_y_maxs: p.Property<number[]>; channel_tile_size: p.Property<number>
     shader_schema_version: p.Property<number>; color_a: p.Property<Color>; color_b: p.Property<Color>
     color_overlap: p.Property<Color>; amplitude_scale: p.Property<number>; amplitude_offset: p.Property<number>
-    max_ranges_per_pixel: p.Property<number>; prefetch_pages: p.Property<number>; lod_hysteresis: p.Property<number>
+    prefetch_pages: p.Property<number>; lod_hysteresis: p.Property<number>
     rendered_cache_bytes: p.Property<number>; data_cache_bytes: p.Property<number>
     ready: p.Property<boolean>; error: p.Property<string>; current_lod: p.Property<number>
     composition_mode: p.Property<string>; venn_visible: p.Property<boolean>; lines_visible: p.Property<boolean>
@@ -653,7 +651,7 @@ export class VennTimeSeriesRenderer extends Renderer {
       channel_names: [List(Str), []], amplitude_scales: [List(Float), []], amplitude_offsets: [List(Float), []],
       channel_y_mins: [List(Float), []], channel_y_maxs: [List(Float), []], channel_tile_size: [Int, 1],
       shader_schema_version: [Int, 1], color_a: [Color, "red"], color_b: [Color, "blue"], color_overlap: [Color, "black"],
-      amplitude_scale: [Float, 1], amplitude_offset: [Float, 0], max_ranges_per_pixel: [Int, 32], prefetch_pages: [Int, 1], lod_hysteresis: [Float, 0.2],
+      amplitude_scale: [Float, 1], amplitude_offset: [Float, 0], prefetch_pages: [Int, 1], lod_hysteresis: [Float, 0.2],
       rendered_cache_bytes: [Int, 64*1024*1024], data_cache_bytes: [Int, 64*1024*1024], ready: [Bool, false], error: [Str, ""],
       current_lod: [Int, 1], composition_mode: [Str, "pending"], venn_visible: [Bool, true], lines_visible: [Bool, true],
       cpu_cache_bytes: [Int, 0], gpu_cache_bytes: [Int, 0], cache_hits: [Int, 0], cache_misses: [Int, 0],
