@@ -42,7 +42,7 @@
                 class="border border-slate-400 bg-white px-2 py-1 text-sm"
                 hx-get="{{ url_for('participant_statistics') }}"
                 hx-trigger="change"
-                hx-include="#source-select, #participant-select"
+                hx-include="#source-select, #participant-select, #channel-selection-input"
                 hx-target="#channel-statistics-table"
                 hx-sync="#channel-statistics-table:replace"
                 hx-indicator="#chanload"
@@ -52,12 +52,22 @@
                     <option value="{{ step_num }}">{{ step_num }}</option>
                 {% endfor %}
             </select>
+            <heatmap-channels>
+                <script type="application/json">{{ channel_metadata | tojson }}</script>
+                <input type="hidden" id="channel-selection-input" name="channels" value="">
+                <button type="button" data-open class="border border-slate-400 rounded px-2 py-1">Show channels</button>
+                <dialog style="padding:20px;border:1px solid #94a3b8;border-radius:8px;max-width:95vw">
+                    <button type="button" data-close style="float:right;margin-bottom:10px">Close channels</button>
+                    <channel-selector></channel-selector>
+                </dialog>
+            </heatmap-channels>
             <div class="relative min-h-64">
                 <div
                     id="channel-statistics-table"
                     class="mt-3"
                     hx-get="{{ url_for('participant_statistics') }}{{ source_participant_qs }}"
-                    hx-trigger="load"
+                    hx-trigger="load, channels-changed delay:100ms"
+                    hx-include="#channel-selection-input, #statistics-step"
                     hx-sync="#channel-statistics-table:replace"
                     hx-indicator="#chanload"
                     aria-live="polite">

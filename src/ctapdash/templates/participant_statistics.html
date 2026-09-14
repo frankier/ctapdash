@@ -1,4 +1,6 @@
-{% if descriptive_heatmap %}
+{% if descriptive_heatmap and not descriptive_heatmap.channels %}
+    <p role="status">Empty selection</p>
+{% elif descriptive_heatmap %}
     <p class="mb-3 text-sm text-slate-600">
         Color intensity is relative within each statistic. Hover over a tile
         to see its value. Missing channels and undefined values are grey.

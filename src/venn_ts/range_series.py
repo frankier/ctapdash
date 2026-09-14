@@ -252,11 +252,10 @@ class RecordingTileSource:
         if "epoch" in recording.__class__.__name__.lower():
             raise ValueError(f"{self.path} is epoched; the comparison viewer supports continuous data only")
 
-        # MmapRawEEGLAB must materialize embedded MATLAB data.  Reject that
-        # case before calling mmap; external .fdt recordings remain zero-copy.
+        # Only external .fdt recordings provide directly mapped samples.
         filenames = [Path(name) for name in getattr(recording, "filenames", ()) if name]
         if (
-            recording.__class__.__name__ == "MmapRawEEGLAB"
+            recording.__class__.__name__ == "CtapRawEEGLAB"
             and filenames
             and filenames[0].suffix.lower() != ".fdt"
         ):

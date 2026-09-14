@@ -1,6 +1,6 @@
 """Skip the on-startup extension build in frozen apps.
 
-Frozen builds ship a venn_ts bundle produced at packaging time (see
+Frozen builds ship browser components and a venn_ts bundle produced at packaging time (see
 ctapdash.spec) and contain no TypeScript sources or node runtime, so the
 out-of-date check in ctapdash.cli would either rebuild nothing or fail. The
 bundling process sets this environment variable for the frozen process to

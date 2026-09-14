@@ -35,6 +35,8 @@ def _viridis_gradient():
 
 def _split_heatmap_channels(channels, limit=MAX_HEATMAP_CHANNELS):
     """Return the table width and slices, preserving substantial sensor groups."""
+    if not len(channels):
+        return 0, []
     runs = []
     index = 0
     while index < len(channels):
@@ -175,7 +177,7 @@ def _descriptive_heatmap(summary):
     }
 
 
-def participant_descriptive_heatmap(steps, participant, stats):
+def participant_descriptive_heatmap(steps, participant, stats, channels=None):
     selected = [
         (step_num, index)
         for step_num, _ in steps
@@ -187,4 +189,7 @@ def participant_descriptive_heatmap(steps, participant, stats):
     summary = stats.isel(recording=[index for _, index in selected]).assign_coords(
         recording=[step_num for step_num, _ in selected]
     )
+    if channels is not None:
+        selected_names = set(channels)
+        summary = summary.sel(channel=[name for name in summary.channel.values if str(name) in selected_names])
     return _descriptive_heatmap(summary)

@@ -89,7 +89,6 @@ class VennTimeSeriesRenderer(Renderer):
         default=0.0,
         help="Offset mapping source amplitudes into the plot's y coordinates",
     )
-    max_ranges_per_pixel = Int(default=32)
     prefetch_pages = Int(default=1)
     lod_hysteresis = Float(default=0.2)
     rendered_cache_bytes = Int(default=64 * 1024 * 1024)
