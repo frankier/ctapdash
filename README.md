@@ -79,9 +79,13 @@ uv run ctapdash --config conf.toml
 `uv run uvicorn ctapdash.webapp:create_app --factory` also works if you want a
 plain ASGI server. Build browser assets first when starting through ASGI directly.
 Node.js and npm are needed during development and packaging. `ctapdash.build`
-compiles the shared TypeScript components and invokes `venn_ts.build` for the
-Bokeh extension. Normal CLI startup rebuilds changed sources; frozen builds ship
-both compiled assets and skip compilation. `npm run check` checks component types.
+bundles `src/js` with esbuild, compiles `src/css` with the Tailwind CLI, and
+invokes `venn_ts.build` for the Bokeh extension. The libraries the pages need
+(htmx and its extensions, Alpine, Tabulator, Tailwind) are npm dependencies
+compiled into `static/generated/index.js` and `static/generated/index.css`;
+nothing is fetched at runtime. Normal CLI startup rebuilds changed sources;
+frozen builds ship the compiled assets and skip compilation. `npm run watch`
+rebuilds on change and `npm run check` type-checks the components.
 
 ### Channel selector
 

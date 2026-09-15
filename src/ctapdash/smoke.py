@@ -17,8 +17,8 @@ HTTP_CHECKS = [
     # context, so this covers the whole head-injection path.
     ("setup", "mpl.js"),
     ("static/img/flask.gif", None),
-    ("static/vendor/htmx.min.js", None),
-    ("static/vendor/tailwind-browser.js", None),
+    ("static/generated/index.js", None),
+    ("static/generated/index.css", None),
     ("webagg/mpl.js", None),
     ("webagg/_static/js/mpl.js", None),
 ]

@@ -1,0 +1,18 @@
+/* Tailwind entry point. `npm run build-css` compiles this to
+   static/generated/index.css; the browser never runs Tailwind itself. */
+
+/* Tabulator first, in its own layer, so Tailwind's layers are declared after
+   it and utilities keep winning that used to win against the separate
+   <link> the vendored stylesheet was loaded through. */
+@import "tabulator-tables/dist/css/tabulator.min.css" layer(tabulator);
+@import "tailwindcss";
+
+/* Which files Tailwind looks for class names in. */
+@source "../ctapdash/templates";
+
+/* Used by the table headings in the templates. */
+@layer utilities {
+    .small-caps {
+        font-variant: all-small-caps;
+    }
+}

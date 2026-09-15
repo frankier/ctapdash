@@ -3,22 +3,9 @@
 <head>
     <meta charset="UTF-8">
     {{ mplbed_head(core=True) }}
-    <link href="{{ url_for('static', path='vendor/tabulator.min.css') }}" rel="stylesheet">
-    <script src="{{ url_for('static', path='vendor/tabulator.min.js') }}"></script>
-    <script src="{{ url_for('static', path='vendor/tailwind-browser.js') }}"></script>
-    <script src="{{ url_for('static', path='vendor/htmx.min.js') }}"></script>
-    <script src="{{ url_for('static', path='vendor/htmx-ext-sse.js') }}"></script>
-    <script src="{{ url_for('static', path='vendor/htmx-ext-ws.js') }}"></script>
-    <script src="{{ url_for('static', path='vendor/alpine.min.js') }}" defer></script>
-    <script type="module" src="{{ url_for('static', path='generated/heatmap-channels.js') }}"></script>
+    <link href="{{ url_for('static', path='generated/index.css') }}" rel="stylesheet">
+    <script type="module" src="{{ url_for('static', path='generated/index.js') }}"></script>
     <title>{% block title %}{% endblock %}</title>
-    <style>
-    @layer utilities {
-        .small-caps {
-            font-variant: all-small-caps;
-        }
-    }
-    </style>
     {% block extra_head %}{% endblock %}
 </head>
 <body class="min-h-screen" {% block body_attrs %}{% endblock %}>
