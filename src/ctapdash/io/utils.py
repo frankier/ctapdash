@@ -7,7 +7,9 @@ from shutil import rmtree
 @contextmanager
 def atomic_write(destination: Path, dir=False, overwrite=False):
     destination = Path(destination)
-    temporary = Path(tempfile.mkdtemp(prefix=f".{destination.name}-", dir=destination.parent))
+    temporary = Path(
+        tempfile.mkdtemp(prefix=f".{destination.name}-", dir=destination.parent)
+    )
     staging = temporary if dir else temporary / destination.name
     try:
         yield staging

@@ -76,7 +76,9 @@ def _add_source(directory, name=None):
     name = (name or directory.name or str(directory)).strip()
     candidate = name
     suffix = 2
-    while candidate in SETTINGS.sources and SETTINGS.sources[candidate] != str(directory):
+    while candidate in SETTINGS.sources and SETTINGS.sources[candidate] != str(
+        directory
+    ):
         candidate = f"{name}-{suffix}"
         suffix += 1
     SETTINGS.sources[candidate] = str(directory)

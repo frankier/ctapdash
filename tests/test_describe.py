@@ -52,5 +52,3 @@ def test_epochs_flattens_epochs_and_times_per_channel(info):
     expected = data.swapaxes(0, 1).reshape(2, -1)
     np.testing.assert_allclose(result["mean"].values, expected.mean(axis=-1))
     np.testing.assert_array_equal(result["nobs"].values, [6, 6])
-
-

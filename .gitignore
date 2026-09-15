@@ -19,7 +19,11 @@ wheels/
 # Profiling output
 /profiles/
 
-node_modules/
+# No trailing slash: a slash makes this match directories only, so a
+# node_modules that is a symlink (as in a worktree sharing another checkout's
+# install) slips into the tree.
+node_modules
+/watchlogtmp
 /src/venn_ts/dist/
 
 /src/ctapdash/static/generated/

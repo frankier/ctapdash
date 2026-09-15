@@ -1,9 +1,11 @@
 """Shared natural ordering and substantial numbered channel runs."""
+
 import re
 from natsort import natsorted
 
 MIN_GROUP_CHANNELS = 10
 NUMBERED_CHANNEL_RE = re.compile(r"^(?P<prefix>.*?)(?P<number>[0-9]+)$")
+
 
 def split_channel_columns(channels, limit=32):
     """Return the table width and slices, preserving substantial sensor groups."""
@@ -66,9 +68,7 @@ def channel_order(channels):
         prefix = match.group("prefix")
         run_end = index + 1
         while run_end < len(channels):
-            next_match = NUMBERED_CHANNEL_RE.match(
-                str(channels[run_end])
-            )
+            next_match = NUMBERED_CHANNEL_RE.match(str(channels[run_end]))
             if next_match is None or next_match.group("prefix") != prefix:
                 break
             run_end += 1

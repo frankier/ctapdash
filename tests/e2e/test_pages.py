@@ -1,4 +1,5 @@
 """Browser smoke coverage of every page and each rendered content family."""
+
 from io import BytesIO
 
 import numpy as np
@@ -27,8 +28,14 @@ def test_home_dataset_and_participant_selection(page, dashboard_url):
     expect(page.get_by_role("cell", name="3_fine_clean", exact=True)).to_be_visible()
     expect(page.locator("#channel-statistics-table table")).to_be_visible(timeout=30000)
     page.locator("#statistics-step").select_option("2")
-    expect(page.locator("#channel-statistics-table").get_by_role("columnheader", name="Step", exact=True)).to_have_count(0)
-    expect(page.locator("#channel-statistics-table td[aria-label]").first).to_be_visible()
+    expect(
+        page.locator("#channel-statistics-table").get_by_role(
+            "columnheader", name="Step", exact=True
+        )
+    ).to_have_count(0)
+    expect(
+        page.locator("#channel-statistics-table td[aria-label]").first
+    ).to_be_visible()
 
 
 def test_setup(page, dashboard_url):
@@ -43,9 +50,15 @@ def test_statistics_fragment(page, dashboard_url):
     expect(page.get_by_role("rowheader", name="Mean", exact=True)).to_have_count(3)
 
 
-@pytest.mark.parametrize("participant,step", [(PARTICIPANT, "1"), ("1002P_dummy_intake", "3")])
+@pytest.mark.parametrize(
+    "participant,step", [(PARTICIPANT, "1"), ("1002P_dummy_intake", "3")]
+)
 def test_classic_eeg(page, dashboard_url, participant, step):
-    visit(page, dashboard_url, f"/participant/overview?source=dummy&participant={participant}")
+    visit(
+        page,
+        dashboard_url,
+        f"/participant/overview?source=dummy&participant={participant}",
+    )
     page.get_by_role("link", name="Classic EEG viewer").click()
     expect(page.locator("#step-select")).to_be_visible()
     page.locator("#step-select").select_option(step)
@@ -59,21 +72,26 @@ def test_venndiff_eeg(page, dashboard_url):
     expect(page.locator(".bokeh-host canvas").first).to_be_visible(timeout=60000)
     expect(page.get_by_text("Step A (red)", exact=True)).to_be_visible()
     expect(page.get_by_text("Step B (blue)", exact=True)).to_be_visible()
-    page.wait_for_function("""() => Bokeh.documents.some(doc =>
+    page.wait_for_function(
+        """() => Bokeh.documents.some(doc =>
         [...doc.all_models].some(model =>
             model.type === "venn_ts.renderer.VennTimeSeriesRenderer" && model.ready &&
-            model.tile_requests > 0 && model.error === ""))""", timeout=60000)
-
+            model.tile_requests > 0 && model.error === ""))""",
+        timeout=60000,
+    )
 
 
 def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
     visit(page, dashboard_url, "/participant/overview" + QUERY)
     page.locator("#viewer").get_by_role("link", name="Venndiff EEG viewer").click()
     expect(page.locator(".bokeh-host canvas").first).to_be_visible(timeout=60000)
-    page.wait_for_function("""() => typeof Bokeh !== "undefined" && Bokeh.documents.some(doc =>
+    page.wait_for_function(
+        """() => typeof Bokeh !== "undefined" && Bokeh.documents.some(doc =>
         [...doc.all_models].some(model =>
             model.type === "venn_ts.renderer.VennTimeSeriesRenderer" && model.ready &&
-            model.tile_requests > 0 && model.error === ""))""", timeout=60000)
+            model.tile_requests > 0 && model.error === ""))""",
+        timeout=60000,
+    )
 
     def model_state(expression):
         return page.evaluate(f"""() => {{
@@ -121,11 +139,13 @@ def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
         figure.x_range.setv({start: 2.12, end: 2.87})
         renderer.lines_visible = false
     }""")
-    page.wait_for_function("""() => Bokeh.documents.some(doc =>
+    page.wait_for_function(
+        """() => Bokeh.documents.some(doc =>
         [...doc.all_models].some(model =>
             model.type === "venn_ts.renderer.VennTimeSeriesRenderer" && model.ready &&
             model.venn_visible && !model.lines_visible && model.error === ""))""",
-        timeout=60000)
+        timeout=60000,
+    )
     page.wait_for_timeout(250)
     box = page.locator(".bk-Figure canvas").first.bounding_box()
 
@@ -168,8 +188,15 @@ def test_logs(page, dashboard_url):
 def test_cache_progress_across_navigation(page, dashboard_url):
     from ctapdash.webapp import templates
 
-    status = {"state": "scanning", "completed": 0, "total": 0,
-              "dataset": "dummy", "operation": None, "failed": 0, "error": None}
+    status = {
+        "state": "scanning",
+        "completed": 0,
+        "total": 0,
+        "dataset": "dummy",
+        "operation": None,
+        "failed": 0,
+        "error": None,
+    }
     template = templates.env.get_template("_cache_progress.html")
     sockets = []
 
@@ -202,7 +229,11 @@ def test_cache_progress_across_navigation(page, dashboard_url):
     expect(page.locator("#channel-statistics-table table")).to_be_visible()
     connections = len(sockets)
     page.locator("#statistics-step").select_option("2")
-    expect(page.locator("#channel-statistics-table").get_by_role("columnheader", name="Step", exact=True)).to_have_count(0)
+    expect(
+        page.locator("#channel-statistics-table").get_by_role(
+            "columnheader", name="Step", exact=True
+        )
+    ).to_have_count(0)
     expect(indicator).to_have_count(1)
     assert len(sockets) == connections  # A fragment update retains the connection.
     for state in ("failed", "idle", "scanning"):
@@ -224,4 +255,4 @@ def test_real_cache_websocket_snapshot(dashboard_url):
         markup = connection.recv(timeout=10)
         assert 'id="cache-progress"' in markup
         assert 'hx-swap-oob="true"' in markup
-        assert 'hidden' in markup or 'Warming caches:' in markup
+        assert "hidden" in markup or "Warming caches:" in markup

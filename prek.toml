@@ -1,0 +1,29 @@
+[[repos]]
+repo = "https://github.com/astral-sh/ruff-pre-commit"
+rev = "v0.15.0" # Ruff version.
+hooks = [
+  # Run the linter.
+  #{ id = "ruff-check", types_or = ["python", "pyi"] },
+
+  # Run the formatter.
+  { id = "ruff-format", args = ["--check"], types_or = ["python", "pyi"] },
+]
+
+[[repos]]
+repo = "https://github.com/pre-commit/pre-commit-hooks"
+rev = "v6.0.0"
+hooks = [{ id = "trailing-whitespace" }]
+
+# The upstream hook runs `prettier --write`, which would make this hook edit
+# files where the other two only check. `entry` replaces that whole command.
+# .prettierignore keeps it off generated output and the Jinja templates.
+[[repos]]
+repo = "https://github.com/rbubley/mirrors-prettier"
+rev = "v3.9.6" # Prettier version, matching the npm devDependency.
+hooks = [
+  {
+    id = "prettier",
+    entry = "prettier --check --ignore-unknown",
+    types_or = ["javascript", "ts", "css", "json", "yaml", "markdown"],
+  },
+]

@@ -20,6 +20,7 @@ def pickle_load(path):
 
 def is_epoched(path):
     import pymatreader
+
     return len(pymatreader.read_mat(path, "epoch").get("epoch", ())) > 0
 
 
@@ -49,7 +50,9 @@ def _try_cache(load_func, path, base_stat, warm=False, force_cache=False):
     return None
 
 
-def read_eeglab(path, use_cache=True, warm=False, force_cache=False, mmap=True, *, validated=False):
+def read_eeglab(
+    path, use_cache=True, warm=False, force_cache=False, mmap=True, *, validated=False
+):
     # Registered callers have already checked freshness and awaited readiness.
     invalid = False
     if validated:
@@ -70,7 +73,9 @@ def read_eeglab(path, use_cache=True, warm=False, force_cache=False, mmap=True, 
         base_stat = os.stat(path) if use_cache or force_cache else None
         cache_path = cached_path(path)
         if use_cache or force_cache:
-            cached = _try_cache(pickle_load, cache_path, base_stat, warm=warm, force_cache=force_cache)
+            cached = _try_cache(
+                pickle_load, cache_path, base_stat, warm=warm, force_cache=force_cache
+            )
             if cached is not None:
                 return cached
     if force_cache:
@@ -84,6 +89,7 @@ def read_eeglab(path, use_cache=True, warm=False, force_cache=False, mmap=True, 
             if not use_cache:
                 return eeg
             from ctapdash.io.utils import atomic_write
+
             with atomic_write(cached_path(path), overwrite=True) as staging:
                 with staging.open("wb") as f:
                     pickle.dump(eeg, f)

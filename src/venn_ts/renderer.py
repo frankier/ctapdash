@@ -38,18 +38,36 @@ EMPTY_METADATA = {
     "time_step": [],
 }
 EMPTY_RANGE_TILE_DATA = {
-    "minimum_a": [], "maximum_a": [], "minimum_b": [], "maximum_b": [],
-    "valid_a": [], "valid_b": [],
+    "minimum_a": [],
+    "maximum_a": [],
+    "minimum_b": [],
+    "maximum_b": [],
+    "valid_a": [],
+    "valid_b": [],
 }
 EMPTY_RANGE_TILE_METADATA = {
-    "factor": [], "x_page": [], "channel_page": [], "offset": [], "length": [],
-    "channel_start": [], "channel_count": [], "entry_count": [], "data_start": [],
-    "core_start": [], "core_length": [], "time_start": [], "time_step": [],
+    "factor": [],
+    "x_page": [],
+    "channel_page": [],
+    "offset": [],
+    "length": [],
+    "channel_start": [],
+    "channel_count": [],
+    "entry_count": [],
+    "data_start": [],
+    "core_start": [],
+    "core_length": [],
+    "time_start": [],
+    "time_step": [],
 }
 EMPTY_LINE_TILE_DATA = {"time": [], "value_a": [], "value_b": []}
 EMPTY_LINE_TILE_METADATA = {
-    "factor": [], "x_page": [], "channel_page": [], "channel_index": [],
-    "offset": [], "length": [],
+    "factor": [],
+    "x_page": [],
+    "channel_page": [],
+    "channel_index": [],
+    "offset": [],
+    "length": [],
 }
 
 
@@ -66,7 +84,9 @@ class VennTimeSeriesRenderer(Renderer):
         default=[],
         help="Tile keys covered by the current response, including failed tiles",
     )
-    response_error = String(default="", help="Failure associated with the current response")
+    response_error = String(
+        default="", help="Failure associated with the current response"
+    )
     page_source = Instance(ColumnDataSource)
     page_metadata_source = Instance(ColumnDataSource)
     dataset_version = String(default="")
@@ -135,27 +155,27 @@ class VennTimeSeriesRenderer(Renderer):
     def __init__(self, *, manifest: VennManifest | None = None, **kwargs) -> None:
         kwargs.setdefault("page_source", ColumnDataSource(data=EMPTY_PAGE_DATA))
         kwargs.setdefault("page_metadata_source", ColumnDataSource(data=EMPTY_METADATA))
-        kwargs.setdefault("range_tile_source", ColumnDataSource(data=EMPTY_RANGE_TILE_DATA))
+        kwargs.setdefault(
+            "range_tile_source", ColumnDataSource(data=EMPTY_RANGE_TILE_DATA)
+        )
         kwargs.setdefault(
             "range_tile_metadata_source",
             ColumnDataSource(data=EMPTY_RANGE_TILE_METADATA),
         )
-        kwargs.setdefault("line_tile_source", ColumnDataSource(data=EMPTY_LINE_TILE_DATA))
+        kwargs.setdefault(
+            "line_tile_source", ColumnDataSource(data=EMPTY_LINE_TILE_DATA)
+        )
         kwargs.setdefault(
             "line_tile_metadata_source",
             ColumnDataSource(data=EMPTY_LINE_TILE_METADATA),
         )
         kwargs.setdefault(
             "line_source_a",
-            ColumnDataSource(
-                data={"xs": [], "ys": [], "channel": []}, syncable=False
-            ),
+            ColumnDataSource(data={"xs": [], "ys": [], "channel": []}, syncable=False),
         )
         kwargs.setdefault(
             "line_source_b",
-            ColumnDataSource(
-                data={"xs": [], "ys": [], "channel": []}, syncable=False
-            ),
+            ColumnDataSource(data={"xs": [], "ys": [], "channel": []}, syncable=False),
         )
         kwargs.setdefault("level", "image")
         if manifest is not None:
@@ -189,7 +209,9 @@ class PageMailbox:
         self.document = document
         self.renderer = renderer
         self.series = series
-        self._executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="venn-pages")
+        self._executor = ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix="venn-pages"
+        )
         self._closed = False
         self._lock = Lock()
         renderer.on_change("request_seq", self._request)
@@ -210,7 +232,9 @@ class PageMailbox:
         common_length: int | None = None,
         page_size: int | None = None,
     ):
-        common_length = self.renderer.sample_count if common_length is None else common_length
+        common_length = (
+            self.renderer.sample_count if common_length is None else common_length
+        )
         page_size = self.renderer.page_size if page_size is None else page_size
         pages = []
         for factor, page_index in requests:
@@ -280,7 +304,9 @@ class TileCoordinator:
         self.source_indices = tuple(
             source.indices(selected) for source, selected in zip(sources, selections)
         )
-        self._executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="venn-tiles")
+        self._executor = ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix="venn-tiles"
+        )
         self._closed = False
         self._lock = Lock()
         self._pending_responses = {}
@@ -294,8 +320,9 @@ class TileCoordinator:
         self.renderer.tile_requests += len(requests)
         future = self._executor.submit(self._load, seq, requests)
         future.add_done_callback(
-            lambda completed, request_seq=seq, requested=requests:
-                self._loaded(completed, request_seq, requested)
+            lambda completed, request_seq=seq, requested=requests: self._loaded(
+                completed, request_seq, requested
+            )
         )
 
     def _channel_slice(self, channel_page: int) -> tuple[int, int]:
@@ -349,7 +376,8 @@ class TileCoordinator:
             "data_start": data_start,
             "core_start": core_start,
             "core_length": core_length,
-            "time_start": self.renderer.time_start + data_start * factor * self.renderer.sample_interval,
+            "time_start": self.renderer.time_start
+            + data_start * factor * self.renderer.sample_interval,
             "time_step": factor * self.renderer.sample_interval,
             "minimum_a": np.where(valid_a, a[..., 0], 0).astype(np.float32).ravel(),
             "maximum_a": np.where(valid_a, a[..., 1], 0).astype(np.float32).ravel(),
@@ -380,15 +408,17 @@ class TileCoordinator:
             raise ValueError("The selected line-pyramid tiles are not aligned")
         rows = []
         for local, channel_index in enumerate(range(channel_start, channel_stop)):
-            rows.append({
-                "factor": factor,
-                "x_page": x_page,
-                "channel_page": channel_page,
-                "channel_index": channel_index,
-                "time": np.asarray(times_a, dtype=np.float64),
-                "value_a": np.asarray(values_a[local], dtype=np.float32),
-                "value_b": np.asarray(values_b[local], dtype=np.float32),
-            })
+            rows.append(
+                {
+                    "factor": factor,
+                    "x_page": x_page,
+                    "channel_page": channel_page,
+                    "channel_index": channel_index,
+                    "time": np.asarray(times_a, dtype=np.float64),
+                    "value_a": np.asarray(values_a[local], dtype=np.float32),
+                    "value_b": np.asarray(values_b[local], dtype=np.float32),
+                }
+            )
         return rows
 
     @staticmethod
@@ -409,11 +439,16 @@ class TileCoordinator:
                 metadata[name].append(values[name])
             offset += length
         packed_data = {
-            name: np.concatenate(parts) if parts else np.empty(0, np.uint8 if name.startswith("valid") else np.float32)
+            name: np.concatenate(parts)
+            if parts
+            else np.empty(0, np.uint8 if name.startswith("valid") else np.float32)
             for name, parts in data.items()
         }
         packed_metadata = {
-            name: np.asarray(values, dtype=np.float64 if name in {"time_start", "time_step"} else np.int32)
+            name: np.asarray(
+                values,
+                dtype=np.float64 if name in {"time_start", "time_step"} else np.int32,
+            )
             for name, values in metadata.items()
         }
         return packed_data, packed_metadata
@@ -432,11 +467,14 @@ class TileCoordinator:
                 metadata[name].append(values[name])
             offset += length
         packed_data = {
-            name: np.concatenate(parts) if parts else np.empty(0, np.float64 if name == "time" else np.float32)
+            name: np.concatenate(parts)
+            if parts
+            else np.empty(0, np.float64 if name == "time" else np.float32)
             for name, parts in data.items()
         }
         packed_metadata = {
-            name: np.asarray(values, dtype=np.int32) for name, values in metadata.items()
+            name: np.asarray(values, dtype=np.int32)
+            for name, values in metadata.items()
         }
         return packed_data, packed_metadata
 
@@ -453,9 +491,13 @@ class TileCoordinator:
 
     def _loaded(self, future: Future, seq: int, requests) -> None:
         try:
-            loaded_seq, (range_data, range_metadata), (line_data, line_metadata) = future.result()
+            loaded_seq, (range_data, range_metadata), (line_data, line_metadata) = (
+                future.result()
+            )
             if loaded_seq != seq:
-                raise ValueError(f"tile response {loaded_seq} does not match request {seq}")
+                raise ValueError(
+                    f"tile response {loaded_seq} does not match request {seq}"
+                )
             error_message = ""
         except Exception as error:
             range_data = {name: [] for name in EMPTY_RANGE_TILE_DATA}
@@ -468,10 +510,15 @@ class TileCoordinator:
             if self._closed:
                 return
             self._pending_responses[seq] = (
-                tuple(requests), range_data, range_metadata,
-                line_data, line_metadata, error_message,
+                tuple(requests),
+                range_data,
+                range_metadata,
+                line_data,
+                line_metadata,
+                error_message,
             )
             self._publish_next_response()
+
         self.document.add_next_tick_callback(enqueue)
 
     def _publish_next_response(self) -> None:

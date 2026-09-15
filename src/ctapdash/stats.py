@@ -66,7 +66,9 @@ def describe_mne(instance: BaseRaw | BaseEpochs, samples=None) -> xr.Dataset:
     )
 
 
-def describe_dataset(dataset_dir: Path, *, recordings=None, metadata_validated=False) -> xr.Dataset:
+def describe_dataset(
+    dataset_dir: Path, *, recordings=None, metadata_validated=False
+) -> xr.Dataset:
     """Return SciPy descriptive statistics for each MNE channel.
 
     Raw observations are time samples. Epochs observations combine every epoch
@@ -77,8 +79,9 @@ def describe_dataset(dataset_dir: Path, *, recordings=None, metadata_validated=F
     recording_ids = []
     paths = DatasetPaths(dataset_dir)
     if recordings is None:
-        recordings = [p for p in paths.root.glob("*/*.set")
-                      if p.parent.name[0].isnumeric()]
+        recordings = [
+            p for p in paths.root.glob("*/*.set") if p.parent.name[0].isnumeric()
+        ]
     for path in recordings:
         recording = RecordingData(paths.recording(path), metadata_validated)
         path = recording.paths.set
@@ -109,8 +112,13 @@ def describe_dataset(dataset_dir: Path, *, recordings=None, metadata_validated=F
         recording_ids.append((step_num, path.stem))
 
     if not summaries:
-        return xr.Dataset(coords={"recording": [], "step": ("recording", []),
-                                  "participant": ("recording", [])})
+        return xr.Dataset(
+            coords={
+                "recording": [],
+                "step": ("recording", []),
+                "participant": ("recording", []),
+            }
+        )
     return xr.concat(
         summaries,
         dim=xr.IndexVariable("recording", np.arange(len(summaries))),
@@ -121,12 +129,15 @@ def describe_dataset(dataset_dir: Path, *, recordings=None, metadata_validated=F
     )
 
 
-def precompute_descriptive_statistics(dataset_dir, *, recordings=None, metadata_validated=False):
+def precompute_descriptive_statistics(
+    dataset_dir, *, recordings=None, metadata_validated=False
+):
     from ctapdash.io.utils import atomic_write
 
     dest = stats_file_path(dataset_dir)
-    stats = describe_dataset(dataset_dir, recordings=recordings,
-                             metadata_validated=metadata_validated)
+    stats = describe_dataset(
+        dataset_dir, recordings=recordings, metadata_validated=metadata_validated
+    )
     dest.parent.mkdir(parents=True, exist_ok=True)
     with atomic_write(dest, dir=True, overwrite=True) as staging:
         # save_xarray creates its own destination.
@@ -156,13 +167,13 @@ def moments(a, mean, n, orders, results):
     for x in a:
         demean = x - mean
         for i, order in enumerate(orders):
-            results[i] += demean ** order
+            results[i] += demean**order
     results /= n
 
 
-DescribeResult = namedtuple('DescribeResult',
-                            ('nobs', 'minmax', 'mean', 'variance', 'skewness',
-                             'kurtosis'))
+DescribeResult = namedtuple(
+    "DescribeResult", ("nobs", "minmax", "mean", "variance", "skewness", "kurtosis")
+)
 
 
 @numba.njit
@@ -206,6 +217,4 @@ def describe(a, axis=-1):
         variance[i] = result.variance
         skewness[i] = result.skewness
         kurtosis[i] = result.kurtosis
-    return DescribeResult(
-        nobs, (mn, mx), mean, variance, skewness, kurtosis
-    )
+    return DescribeResult(nobs, (mn, mx), mean, variance, skewness, kurtosis)

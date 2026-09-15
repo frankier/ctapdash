@@ -120,9 +120,8 @@ def test_heatmap_naturally_orders_channels_before_grouping():
 
     assert heatmap["groups"][0]["channels"] == expected
     a2_index = heatmap["groups"][0]["channels"].index("A2")
-    assert (
-        heatmap["groups"][0]["rows"][0]["cells"][a2_index]["title"]
-        == str(channels.index("A2"))
+    assert heatmap["groups"][0]["rows"][0]["cells"][a2_index]["title"] == str(
+        channels.index("A2")
     )
 
 
@@ -162,7 +161,10 @@ def test_step_rows_strip_dataset_root_and_include_observations():
     ]
 
     with (
-        patch("ctapdash.webapp.RecordingData.read_metadata", side_effect=[object(), object()]),
+        patch(
+            "ctapdash.webapp.RecordingData.read_metadata",
+            side_effect=[object(), object()],
+        ),
         patch("ctapdash.webapp._observation_count", side_effect=[100, 24]),
     ):
         rows = _participant_step_rows(root, steps, "sub-01")
@@ -175,8 +177,10 @@ def test_step_rows_strip_dataset_root_and_include_observations():
 
 def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
     request = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=SimpleNamespace(hurry=AsyncMock()))),
-        query_params={"source": "example", "participant": "sub-01"}
+        app=SimpleNamespace(
+            state=SimpleNamespace(cache_hurrier=SimpleNamespace(hurry=AsyncMock()))
+        ),
+        query_params={"source": "example", "participant": "sub-01"},
     )
     steps = [(1, Path("/data/1_import"))]
     step_rows = [{"number": 1, "directory": "1_import", "observations": 100}]
@@ -214,12 +218,14 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
 
 def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     request = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=SimpleNamespace(hurry=AsyncMock()))),
+        app=SimpleNamespace(
+            state=SimpleNamespace(cache_hurrier=SimpleNamespace(hurry=AsyncMock()))
+        ),
         query_params={
             "source": "example",
             "participant": "sub-01",
             "step": "3",
-        }
+        },
     )
     steps = [(1, Path("/data/1_import")), (3, Path("/data/3_filter"))]
     heatmap = {"channels": ["Cz"], "rows": []}

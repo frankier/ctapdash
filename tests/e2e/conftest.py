@@ -1,4 +1,5 @@
 """Run the actual CLI in an isolated process with temporary data and caches."""
+
 import os
 from pathlib import Path
 import socket
@@ -26,9 +27,20 @@ def dashboard_url(tmp_path_factory):
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2] / "src")
     with (directory / "server.log").open("w+") as log:
         process = subprocess.Popen(
-            [sys.executable, "-m", "ctapdash", "--config", str(config),
-             "--no-window", "--no-browser", "--port", str(port)],
-            env=env, stdout=log, stderr=subprocess.STDOUT,
+            [
+                sys.executable,
+                "-m",
+                "ctapdash",
+                "--config",
+                str(config),
+                "--no-window",
+                "--no-browser",
+                "--port",
+                str(port),
+            ],
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
         )
         try:
             deadline = time.monotonic() + 90
@@ -37,7 +49,7 @@ def dashboard_url(tmp_path_factory):
                     with urlopen(url + "/setup", timeout=1) as response:
                         if response.status == 200:
                             break
-                except (URLError, TimeoutError):
+                except URLError, TimeoutError:
                     time.sleep(0.1)
             else:
                 log.seek(0)

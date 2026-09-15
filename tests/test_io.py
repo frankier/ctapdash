@@ -50,22 +50,20 @@ def test_mmap_eeglab_epochs_xarray(tmp_path):
     import mne
     from mne.io.eeglab.eeglab import CAL
 
-    eeg = mne.read_epochs_eeglab(
-        write_eeglab(tmp_path, 2), verbose="error"
-    )
+    eeg = mne.read_epochs_eeglab(write_eeglab(tmp_path, 2), verbose="error")
 
     data = mmap_eeglab(eeg, return_xarray=True)
 
     assert data.dims == ("ch", "epoch", "time")
     assert isinstance(data.data, np.memmap)
     np.testing.assert_array_equal(data.epoch, eeg.selection)
-    np.testing.assert_allclose(data, eeg.get_data().transpose(1, 0, 2) / CAL, rtol=1e-6, atol=0)
+    np.testing.assert_allclose(
+        data, eeg.get_data().transpose(1, 0, 2) / CAL, rtol=1e-6, atol=0
+    )
 
 
 def test_mmap_raw_eeglab(tmp_path):
-    eeg = CtapRawEEGLAB(
-        write_eeglab(tmp_path, 1), preload=False, verbose="error"
-    )
+    eeg = CtapRawEEGLAB(write_eeglab(tmp_path, 1), preload=False, verbose="error")
 
     data = eeg.mmap()
 
@@ -137,12 +135,14 @@ def test_ctap_channel_types(tmp_path, monkeypatch, n_epochs, reader, labels):
 
     path = write_eeglab(tmp_path, n_epochs)
     metadata = loadmat(path, simplify_cells=True)
-    metadata = {key: value for key, value in metadata.items() if not key.startswith("__")}
+    metadata = {
+        key: value for key, value in metadata.items() if not key.startswith("__")
+    }
     if labels is None:
         metadata["chanlocs"] = np.empty(0)
     else:
         metadata["chanlocs"] = np.rec.fromarrays(
-            [["A", "B"], labels, [0., 0.], [80., -80.], [60., 60.]],
+            [["A", "B"], labels, [0.0, 0.0], [80.0, -80.0], [60.0, 60.0]],
             names=["labels", "type", "X", "Y", "Z"],
         )
     savemat(path, metadata)
@@ -153,10 +153,14 @@ def test_ctap_channel_types(tmp_path, monkeypatch, n_epochs, reader, labels):
     monkeypatch.setattr(np, "fromfile", fail_fromfile)
     eeg = reader(path, montage_units="mm", verbose="error")
     assert reader.__bases__ == ((BaseRaw,) if n_epochs == 1 else (BaseEpochs,))
-    expected = [label.strip() or "EEG" for label in labels] if labels else ["EEG", "EEG"]
+    expected = (
+        [label.strip() or "EEG" for label in labels] if labels else ["EEG", "EEG"]
+    )
     assert eeg.raw_ch_types == expected
     assert pickle.loads(pickle.dumps(eeg)).raw_ch_types == expected
-    assert eeg.get_channel_types() == (["eeg", "eog"] if labels and labels[1].strip() == "EOG" else ["eeg", "eeg"])
+    assert eeg.get_channel_types() == (
+        ["eeg", "eog"] if labels and labels[1].strip() == "EOG" else ["eeg", "eeg"]
+    )
     assert isinstance(eeg.mmap(), np.memmap)
     if labels:
         assert eeg.get_montage() is not None
@@ -168,7 +172,9 @@ def test_ctap_rejects_embedded_samples(tmp_path, n_epochs, reader):
 
     path = write_eeglab(tmp_path, n_epochs)
     metadata = loadmat(path, simplify_cells=True)
-    metadata = {key: value for key, value in metadata.items() if not key.startswith("__")}
+    metadata = {
+        key: value for key, value in metadata.items() if not key.startswith("__")
+    }
     metadata["data"] = np.zeros((2, 4, n_epochs))
     savemat(path, metadata)
     with pytest.raises(ValueError, match="external .fdt"):

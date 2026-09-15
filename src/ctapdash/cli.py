@@ -29,7 +29,9 @@ def build_parser():
     parser.add_argument(
         "--no-browser", action="store_true", help="Do not open the system browser"
     )
-    parser.add_argument("--debug", action="store_true", help="Show tracebacks in the browser")
+    parser.add_argument(
+        "--debug", action="store_true", help="Show tracebacks in the browser"
+    )
     parser.add_argument(
         "--smoke-test",
         action="store_true",
@@ -74,8 +76,10 @@ def main(argv=None):
     except Exception as err:
         # A missing or broken webview backend should degrade to the browser,
         # not to nothing at all.
-        print(f"Could not open a native window ({err}); falling back to the browser.",
-              file=sys.stderr)
+        print(
+            f"Could not open a native window ({err}); falling back to the browser.",
+            file=sys.stderr,
+        )
         # uvicorn closes the sockets it was handed when it shuts down, so the
         # socket run_window used is dead by now; the fallback needs a fresh one.
         sock.close()
@@ -86,5 +90,6 @@ def main(argv=None):
 
 if __name__ == "__main__":
     from multiprocessing import freeze_support
+
     freeze_support()
     sys.exit(main())

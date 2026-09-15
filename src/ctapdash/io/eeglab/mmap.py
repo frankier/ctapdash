@@ -70,9 +70,7 @@ def mmap_eeglab(eeg, *, return_xarray=False, data_fname=None, ctapdash_order=Fal
             if orig_nchan != len(eeg.ch_names):
                 raise ValueError("mmap_eeglab does not support picked Raw channels")
             n_total = os.path.getsize(data_fname) // (orig_nchan * 4)
-            data = _eeglab_memmap(
-                data_fname, (orig_nchan, n_total), order=order
-            )
+            data = _eeglab_memmap(data_fname, (orig_nchan, n_total), order=order)
             data = data[:, eeg.first_samp : eeg.last_samp + 1]
         else:
             data = np.asarray(eeg.get_data(), dtype=np.float32)
@@ -95,7 +93,9 @@ def mmap_eeglab(eeg, *, return_xarray=False, data_fname=None, ctapdash_order=Fal
                 raise ValueError("mmap_eeglab does not support picked Epochs channels")
             selection = np.asarray(eeg.selection)
             if not np.array_equal(selection, np.arange(eeglab.trials)):
-                raise ValueError("mmap_eeglab does not support selected or dropped epochs")
+                raise ValueError(
+                    "mmap_eeglab does not support selected or dropped epochs"
+                )
             if len(eeg.times) != eeglab.pnts:
                 raise ValueError("mmap_eeglab does not support cropped epochs")
             if ctapdash_order:

@@ -1,9 +1,11 @@
 {
   "compilerOptions": {
-    "target": "ES2022", "module": "ES2022", "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"], "strict": true,
-    "noEmitOnError": true, "rootDir": "src/ctapdash/frontend",
-    "outDir": "src/ctapdash/static/generated"
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true
   },
-  "include": ["src/ctapdash/frontend/**/*.ts"]
+  "include": ["src/js/**/*.ts"]
 }

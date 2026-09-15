@@ -26,12 +26,15 @@ from venn_ts.channel_selector import ChannelSelector
 
 def test_comparison_channel_geometry_modes():
     from venn_ts.plot import _comparison_channel_geometry
+
     extrema = [(-1, 1, -3, 2), (-2, 2, -1, 1)]
 
     overplot, overplot_range = _comparison_channel_geometry(extrema, "overplot")
     assert overplot_range == (0.0, 2.0)
     assert overplot[0]["outside"] is True
-    assert overplot[0]["actual_min"] * overplot[0]["scale"] + overplot[0]["offset"] < 1.1
+    assert (
+        overplot[0]["actual_min"] * overplot[0]["scale"] + overplot[0]["offset"] < 1.1
+    )
 
     stretch, stretch_range = _comparison_channel_geometry(extrema, "stretch")
     assert stretch_range[1] > overplot_range[1]
@@ -46,7 +49,9 @@ def test_comparison_channel_geometry_modes():
         assert mapped_span == pytest.approx(0.8)
 
 
-def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, monkeypatch):
+def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
+    tmp_path, monkeypatch
+):
     from venn_ts.range_series import RecordingTileSource
     from venn_ts import venn_time_series_bokeh
 
@@ -58,8 +63,11 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
         return original_isel(array, *args, **kwargs)
 
     monkeypatch.setattr(xr.DataArray, "isel", metadata_only_isel)
-    monkeypatch.setattr(RecordingTileSource, "finite_extrema",
-                        lambda *args: pytest.fail("Plot setup scanned extrema"))
+    monkeypatch.setattr(
+        RecordingTileSource,
+        "finite_extrema",
+        lambda *args: pytest.fail("Plot setup scanned extrema"),
+    )
 
     class FakeRecording:
         ch_names = [f"Ch{index}" for index in range(8)]
@@ -69,10 +77,15 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
 
         def mmap(self, *, return_xarray=False):
             times = np.arange(1400 + self.offset, dtype=float) * 0.001
-            values = np.vstack(
-                [np.sin(times + index / 10) for index in range(len(self.ch_names))]
-            ) + self.offset
-            return xr.DataArray(values, coords=(self.ch_names, times), dims=("ch", "time"))
+            values = (
+                np.vstack(
+                    [np.sin(times + index / 10) for index in range(len(self.ch_names))]
+                )
+                + self.offset
+            )
+            return xr.DataArray(
+                values, coords=(self.ch_names, times), dims=("ch", "time")
+            )
 
     steps = []
     for number in (1, 2):
@@ -88,18 +101,27 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
         return RecordingTileSource(path, recording=FakeRecording(offset))
 
     stats = xr.Dataset(
-        {"min": (("recording", "channel"), np.zeros((2, 8))),
-         "max": (("recording", "channel"), np.full((2, 8), 4.0))},
-        coords={"channel": FakeRecording.ch_names,
-                "participant": ("recording", ["p", "p"]),
-                "step": ("recording", [1, 2])},
+        {
+            "min": (("recording", "channel"), np.zeros((2, 8))),
+            "max": (("recording", "channel"), np.full((2, 8), 4.0)),
+        },
+        coords={
+            "channel": FakeRecording.ch_names,
+            "participant": ("recording", ["p", "p"]),
+            "step": ("recording", [1, 2]),
+        },
     )
     with (
         patch("ctapdash.io.stats_cache.DATASET_STATS.get_cached", return_value=stats),
-        patch("ctapdash.channels.participant_channel_metadata", return_value={
-            "channels": [{"name": name, "type": "EEG"} for name in FakeRecording.ch_names],
-            "bads": {"1": [], "2": []},
-        }),
+        patch(
+            "ctapdash.channels.participant_channel_metadata",
+            return_value={
+                "channels": [
+                    {"name": name, "type": "EEG"} for name in FakeRecording.ch_names
+                ],
+                "bads": {"1": [], "2": []},
+            },
+        ),
         patch.object(
             paths.ObservationData,
             "from_bokeh_doc",
@@ -141,8 +163,13 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert custom[0].sample_count == 1401
     assert len(glyphs) == 3
     overlay_glyphs = [glyph for glyph in glyphs if glyph.name is not None]
-    assert all(glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b} for glyph in overlay_glyphs)
-    guides = next(glyph for glyph in glyphs if glyph.glyph.__class__.__name__ == "HSpan")
+    assert all(
+        glyph.data_source in {custom[0].line_source_a, custom[0].line_source_b}
+        for glyph in overlay_glyphs
+    )
+    guides = next(
+        glyph for glyph in glyphs if glyph.glyph.__class__.__name__ == "HSpan"
+    )
     guide_toggle = doc.get_model_by_name("guides-toggle")
     axis = figure.yaxis[0]
     assert guides.level == "underlay"
@@ -169,7 +196,10 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert channel_toggle.label == "Hide channels"
     channel_dialog.visible = False
     assert channel_toggle.active is False
-    assert {scrollbar.orientation for scrollbar in scrollbars} == {"horizontal", "vertical"}
+    assert {scrollbar.orientation for scrollbar in scrollbars} == {
+        "horizontal",
+        "vertical",
+    }
     assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.4))
     assert scrollbars_by_orientation["vertical"].value == (0, 8)
     assert scrollbars_by_orientation["vertical"].direction == "rtl"
@@ -182,7 +212,9 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert channel_minimap.yaxis[0].truncate_labels is True
     assert channel_minimap.yaxis[0].avoid_overlap is True
     assert channel_minimap.y_range is not figure.y_range
-    assert (time_minimap.x_range.start, time_minimap.x_range.end) == pytest.approx((0, 1.4))
+    assert (time_minimap.x_range.start, time_minimap.x_range.end) == pytest.approx(
+        (0, 1.4)
+    )
     assert (channel_minimap.y_range.start, channel_minimap.y_range.end) == (0, 8)
     assert not list(figure.select({"type": PanTool}))
     layer_control.active = [1]
@@ -194,7 +226,9 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
 
     actions = list(figure.select({"type": CustomAction}))
     assert {action.description for action in actions} == {
-        "+1 channel", "-1 channel", "Fullscreen",
+        "+1 channel",
+        "-1 channel",
+        "Fullscreen",
     }
     channel_actions = [action for action in actions if "channel" in action.description]
     assert all(
@@ -214,7 +248,9 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     assert "height: 100% !important" in vertical_css
     assert "top: auto !important" in vertical_css
     assert "bottom: var(--handle-right) !important" in vertical_css
-    fullscreen = next(action for action in actions if action.description == "Fullscreen")
+    fullscreen = next(
+        action for action in actions if action.description == "Fullscreen"
+    )
     fullscreen_frame = fullscreen.callback.args["viewer_frame"]
     assert fullscreen_frame.min_height == 695
     assert fullscreen_frame.sizing_mode == "stretch_both"
@@ -231,20 +267,26 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(tmp_path, mo
     figure.x_range.start, figure.x_range.end = 0.4, 1.2
     figure.y_range.start, figure.y_range.end = 3.0, 7.0
     plotting_mode = next(
-        select for select in doc.roots[0].select({"type": BkSelect})
+        select
+        for select in doc.roots[0].select({"type": BkSelect})
         if select.title == "Plotting mode"
     )
     guide_toggle.active = False
     plotting_mode.value = "normalize"
     rebuilt = doc.get_model_by_name("comparison-plot")
     assert rebuilt.yaxis[0].major_label_overrides == rebuilt.yaxis[0].channel_labels
-    assert not next(glyph for glyph in rebuilt.renderers
-                    if isinstance(glyph, GlyphRenderer) and glyph.glyph.__class__.__name__ == "HSpan").visible
+    assert not next(
+        glyph
+        for glyph in rebuilt.renderers
+        if isinstance(glyph, GlyphRenderer)
+        and glyph.glyph.__class__.__name__ == "HSpan"
+    ).visible
     assert (rebuilt.x_range.start, rebuilt.x_range.end) == pytest.approx((0.4, 1.2))
     assert (rebuilt.y_range.start, rebuilt.y_range.end) == pytest.approx((3.0, 7.0))
 
     step_a = next(
-        select for select in doc.roots[0].select({"type": BkSelect})
+        select
+        for select in doc.roots[0].select({"type": BkSelect})
         if select.title == "Step A (red)"
     )
     step_a.value = "2"
@@ -285,5 +327,6 @@ def pyramid_source(tmp_path):
 
 def test_pyramid_groups_finest_to_coarsest(pyramid_source):
     from ctapdash.io.pyramid import _pyramid_groups
+
     ts_dt = load_xarray(pyramid_source / "01_test" / "p.set.pyramid")
     assert _pyramid_groups(ts_dt) == ("/factor_1", "/factor_10")

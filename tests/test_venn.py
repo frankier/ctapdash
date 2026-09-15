@@ -112,7 +112,9 @@ def test_nan_is_invalid_but_infinity_is_rejected():
 def test_packing_keeps_buffer_and_metadata_column_lengths_independent():
     s = series(np.arange(8))
     pages = [
-        load_page(s, series_id=i, source_factor=1, page_index=0, common_length=8, page_size=3)
+        load_page(
+            s, series_id=i, source_factor=1, page_index=0, common_length=8, page_size=3
+        )
         for i in (0, 1)
     ]
     data, metadata = pack_pages(pages)
@@ -260,7 +262,9 @@ def test_recording_tile_source_rejects_embedded_set_before_loading(tmp_path):
         (),
         {
             "filenames": [path],
-            "mmap": lambda self, **kwargs: pytest.fail("embedded data was eagerly loaded"),
+            "mmap": lambda self, **kwargs: pytest.fail(
+                "embedded data was eagerly loaded"
+            ),
         },
     )
     with pytest.raises(ValueError, match="external .fdt"):

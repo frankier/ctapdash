@@ -36,6 +36,7 @@ def _get_info(eeg, *, eog, montage_units):
     eeg = copy(eeg)
     chanlocs = eeg.chanlocs
     from pprint import pprint
+
     pprint(chanlocs)
     if isinstance(chanlocs, dict):
         chanlocs = [chanlocs] if eeg.nbchan == 1 else _dol_to_lod(chanlocs)
@@ -60,8 +61,16 @@ def _get_info(eeg, *, eog, montage_units):
 class CtapRawEEGLAB(BaseRaw):
     """Continuous EEGLAB metadata; access external samples through ``mmap()``."""
 
-    def __init__(self, input_fname, eog=(), preload=False, *,
-                 uint16_codec=None, montage_units="auto", verbose=None):
+    def __init__(
+        self,
+        input_fname,
+        eog=(),
+        preload=False,
+        *,
+        uint16_codec=None,
+        montage_units="auto",
+        verbose=None,
+    ):
         if preload:
             raise ValueError("Preload has been disabled. Use .mmap(...)")
         input_fname = os.fspath(input_fname)
@@ -72,9 +81,14 @@ class CtapRawEEGLAB(BaseRaw):
         info, self.raw_ch_types, montage, _ = _get_info(
             eeg, eog=eog, montage_units=montage_units
         )
-        super().__init__(info, preload=False, filenames=[data_fname],
-                         last_samps=[eeg.pnts - 1], orig_format="double",
-                         verbose=verbose)
+        super().__init__(
+            info,
+            preload=False,
+            filenames=[data_fname],
+            last_samps=[eeg.pnts - 1],
+            orig_format="double",
+            verbose=verbose,
+        )
         annotations = _read_annotations_eeglab(eeg)
         self.set_annotations(annotations)
         _check_boundary(annotations, None)
@@ -83,14 +97,20 @@ class CtapRawEEGLAB(BaseRaw):
         _check_latencies(np.round(annotations.onset * info["sfreq"]))
 
     def mmap(self, *, return_xarray=False, data_fname=None, ctapdash_order=False):
-        return mmap_eeglab(self, return_xarray=return_xarray, data_fname=data_fname,
-                           ctapdash_order=ctapdash_order)
+        return mmap_eeglab(
+            self,
+            return_xarray=return_xarray,
+            data_fname=data_fname,
+            ctapdash_order=ctapdash_order,
+        )
 
     def __reduce__(self):
         return _restore_mmap_eeglab, (type(self),), _mmap_eeglab_state(self)
 
     def _read_segment_file(self, *args, **kwargs):
-        raise RuntimeError("Normal MNE data loading is disabled; use CtapRawEEGLAB.mmap()")
+        raise RuntimeError(
+            "Normal MNE data loading is disabled; use CtapRawEEGLAB.mmap()"
+        )
 
 
 class CtapEpochEEGLAB(BaseEpochs):
@@ -219,8 +239,7 @@ class CtapEpochEEGLAB(BaseEpochs):
             )
 
         event_id = {
-            event_name: index + 1
-            for index, event_name in enumerate(unique_events)
+            event_name: index + 1 for index, event_name in enumerate(unique_events)
         }
         events = np.zeros((eeg.trials, 3), dtype=int)
         for index, (event_name, latency) in enumerate(
@@ -233,7 +252,12 @@ class CtapEpochEEGLAB(BaseEpochs):
         return events, event_id
 
     def mmap(self, *, return_xarray=False, data_fname=None, ctapdash_order=False):
-        return mmap_eeglab(self, return_xarray=return_xarray, data_fname=data_fname, ctapdash_order=ctapdash_order)
+        return mmap_eeglab(
+            self,
+            return_xarray=return_xarray,
+            data_fname=data_fname,
+            ctapdash_order=ctapdash_order,
+        )
 
     def __reduce__(self):
         return _restore_mmap_eeglab, (type(self),), _mmap_eeglab_state(self)

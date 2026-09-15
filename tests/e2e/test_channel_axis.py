@@ -1,4 +1,5 @@
 """Exercise text measurement and axis layout in a real canvas."""
+
 from bokeh.embed import file_html
 from bokeh.models import FixedTicker, Range1d
 from bokeh.plotting import figure
@@ -11,17 +12,28 @@ from venn_ts.channel_axis import ChannelAxis
 def test_channel_labels_fit_without_moving_plot(page):
     ensure_extension_built()
     labels = {
-        0.5: "A888", 1.5: "A1", 2.5: "LongChannelName",
+        0.5: "A888",
+        1.5: "A1",
+        2.5: "LongChannelName",
         3.5: "ReallyExtremelyLongChannelNameThatNeedsTruncation",
-        4.5: "Fp1", 5.5: "ReferenceLeft", 6.5: "A88", 7.5: "EMG",
+        4.5: "Fp1",
+        5.5: "ReferenceLeft",
+        6.5: "A88",
+        7.5: "EMG",
     }
-    plot = figure(width=800, height=520, y_range=Range1d(0, 8), tools="",
-                  name="channel-axis-test")
+    plot = figure(
+        width=800, height=520, y_range=Range1d(0, 8), tools="", name="channel-axis-test"
+    )
     plot.left.remove(plot.yaxis[0])
-    plot.add_layout(ChannelAxis(
-        ticker=FixedTicker(ticks=list(labels)), channel_labels=labels,
-        major_label_overrides=labels, axis_label="Channel",
-    ), "left")
+    plot.add_layout(
+        ChannelAxis(
+            ticker=FixedTicker(ticks=list(labels)),
+            channel_labels=labels,
+            major_label_overrides=labels,
+            axis_label="Channel",
+        ),
+        "left",
+    )
     plot.line([0, 1], [0, 8])
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
@@ -37,7 +49,10 @@ def test_channel_labels_fit_without_moving_plot(page):
     page.set_content(file_html(plot, INLINE))
     page.wait_for_function("window.Bokeh?.documents[0]?.is_idle")
     draws = page.evaluate("window.labelDraws")
-    assert any(d["text"] == "A888" and not d["rotated"] and d["align"] == "right" for d in draws)
+    assert any(
+        d["text"] == "A888" and not d["rotated"] and d["align"] == "right"
+        for d in draws
+    )
     assert any(d["text"].endswith("...") and d["rotated"] for d in draws)
     assert any(d["text"].startswith("Long") and d["rotated"] for d in draws)
     before = page.evaluate("""() => {
@@ -58,15 +73,33 @@ def test_dense_minimap_labels_keep_endpoints_and_do_not_overlap(page):
     ensure_extension_built()
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
-    labels = {i + 0.5: f"A{i}" + ("LongChannelName" if i % 2 else "") for i in range(80)}
-    plot = figure(width=70, height=250, frame_height=250, frame_width=0,
-                  min_border=0, margin=0, y_range=Range1d(0, 80), x_range=(0, 1),
-                  x_axis_location=None, y_axis_location=None, tools="",
-                  toolbar_location=None)
-    plot.add_layout(ChannelAxis(
-        ticker=FixedTicker(ticks=list(labels)), channel_labels=labels,
-        major_label_overrides=labels, avoid_overlap=True, truncate_labels=True,
-    ), "right")
+    labels = {
+        i + 0.5: f"A{i}" + ("LongChannelName" if i % 2 else "") for i in range(80)
+    }
+    plot = figure(
+        width=70,
+        height=250,
+        frame_height=250,
+        frame_width=0,
+        min_border=0,
+        margin=0,
+        y_range=Range1d(0, 80),
+        x_range=(0, 1),
+        x_axis_location=None,
+        y_axis_location=None,
+        tools="",
+        toolbar_location=None,
+    )
+    plot.add_layout(
+        ChannelAxis(
+            ticker=FixedTicker(ticks=list(labels)),
+            channel_labels=labels,
+            major_label_overrides=labels,
+            avoid_overlap=True,
+            truncate_labels=True,
+        ),
+        "right",
+    )
     page.evaluate("""() => {
         window.draws = [];
         const original = CanvasRenderingContext2D.prototype.fillText;
@@ -80,7 +113,9 @@ def test_dense_minimap_labels_keep_endpoints_and_do_not_overlap(page):
     }""")
     page.set_content(file_html(plot, INLINE))
     page.wait_for_function("window.Bokeh?.documents[0]?.is_idle")
-    draws = page.evaluate("Array.from(new Map(window.draws.map(d => [d.text, d])).values())")
+    draws = page.evaluate(
+        "Array.from(new Map(window.draws.map(d => [d.text, d])).values())"
+    )
     assert not errors
     assert any(d["text"] == "A0" for d in draws)
     assert any(d["text"].startswith("A79") and d["text"].endswith("...") for d in draws)
@@ -97,13 +132,19 @@ def test_guide_labels_yield_to_channels_and_each_other(page):
     channels = {1: "B19", 2: "B20", 3: "B21"}
     guides = {1.02: "10.1", 1.5: "10.2", 1.51: "10.3", 2.98: "10.4"}
     labels = channels | guides
-    plot = figure(width=500, height=500, y_range=Range1d(0, 4), tools="",
-                  name="guide-axis-test")
+    plot = figure(
+        width=500, height=500, y_range=Range1d(0, 4), tools="", name="guide-axis-test"
+    )
     plot.left.remove(plot.yaxis[0])
-    plot.add_layout(ChannelAxis(
-        ticker=FixedTicker(ticks=sorted(labels)), channel_labels=channels,
-        major_label_overrides=labels, avoid_overlap=True,
-    ), "left")
+    plot.add_layout(
+        ChannelAxis(
+            ticker=FixedTicker(ticks=sorted(labels)),
+            channel_labels=channels,
+            major_label_overrides=labels,
+            avoid_overlap=True,
+        ),
+        "left",
+    )
     plot.line([0, 1], [0, 4])
     page.evaluate(r"""() => {
         window.guideDraws = [];
@@ -118,7 +159,9 @@ def test_guide_labels_yield_to_channels_and_each_other(page):
     }""")
     page.set_content(file_html(plot, INLINE))
     page.wait_for_function("window.Bokeh?.documents[0]?.is_idle")
-    draws = page.evaluate("Array.from(new Map(window.guideDraws.map(d => [d.text, d])).values())")
+    draws = page.evaluate(
+        "Array.from(new Map(window.guideDraws.map(d => [d.text, d])).values())"
+    )
     text = {draw["text"] for draw in draws}
     assert set(channels.values()) <= text
     assert not {"10.1", "10.4"} & text
@@ -133,5 +176,7 @@ def test_guide_labels_yield_to_channels_and_each_other(page):
         plot.y_range.end = 1.04;
     }""")
     page.wait_for_function("window.guideDraws.some(d => d.text == '10.1')")
-    draws = page.evaluate("Array.from(new Map(window.guideDraws.map(d => [d.text, d])).values())")
+    draws = page.evaluate(
+        "Array.from(new Map(window.guideDraws.map(d => [d.text, d])).values())"
+    )
     assert {"B19", "10.1"} <= {draw["text"] for draw in draws}

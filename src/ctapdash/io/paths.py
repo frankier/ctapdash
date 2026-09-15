@@ -54,7 +54,9 @@ def qc_to_tree(qcs):
                 stem = match.group("stem")
                 ch_start = int(match.group("ch_start"))
                 ch_end = int(match.group("ch_end"))
-                groups.setdefault(stem, {}).setdefault("chs", []).append((ch_start, ch_end, value, path))
+                groups.setdefault(stem, {}).setdefault("chs", []).append(
+                    (ch_start, ch_end, value, path)
+                )
                 groups[stem]["chs"].sort()
                 continue
             rest[value] = path
@@ -66,7 +68,9 @@ def qc_to_tree(qcs):
         for directory in peek_list:
             first_seg = directory.parts[1]
             if first_seg.startswith("set"):
-                peek_dict.setdefault(directory.parts[1], []).append((directory.parts[-1], directory))
+                peek_dict.setdefault(directory.parts[1], []).append(
+                    (directory.parts[-1], directory)
+                )
             else:
                 sub_peek_dict, rest_dict = form_sets(directory)
                 peek_dict.update(sub_peek_dict)
@@ -155,6 +159,7 @@ class ObservationData:
             if not val:
                 return None
             return val[-1].decode()
+
         source = get_arg("source")
         participant = get_arg("participant")
         return cls.from_source(source, participant)
@@ -184,9 +189,11 @@ class ObservationData:
             directory = steps[int(step)]
         except (KeyError, ValueError, TypeError) as error:
             raise ValueError(f"Unknown processing step: {step}") from error
-        return RecordingData(DatasetPaths(self.source_path).recording(
-            directory / (self.participant + ".set")
-        ))
+        return RecordingData(
+            DatasetPaths(self.source_path).recording(
+                directory / (self.participant + ".set")
+            )
+        )
 
     def get_all_steps(self):
         return collect_steps(self.source_path)

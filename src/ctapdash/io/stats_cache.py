@@ -4,6 +4,7 @@ Consumers must not mutate or close returned xarrays. Registration determines
 freshness; invalidation drops references without closing live consumer views.
 Methods run on the server event loop, like CacheHurrier itself.
 """
+
 import anyio
 
 from ctapdash.io.paths import DatasetPaths

@@ -12,8 +12,12 @@ def main(argv=None):
         prog="ctapdash-warm",
         description="Pre-cache EEGLAB .set metadata for faster loading.",
     )
-    parser.add_argument("--config", type=Path, metavar="PATH", help="TOML configuration file")
-    parser.add_argument("--clean", action="store_true", help="Discard existing caches first")
+    parser.add_argument(
+        "--config", type=Path, metavar="PATH", help="TOML configuration file"
+    )
+    parser.add_argument(
+        "--clean", action="store_true", help="Discard existing caches first"
+    )
     args = parser.parse_args(argv)
 
     if args.config:

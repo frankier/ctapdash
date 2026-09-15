@@ -1,6 +1,29 @@
 {
   "name": "ctapdash",
   "private": true,
-  "scripts": {"build": "tsc", "check": "tsc --noEmit"},
-  "devDependencies": {"typescript": "~5.9.3"}
+  "scripts": {
+    "build": "npm run build-css && npm run build-js",
+    "build-css": "tailwindcss -i src/css/index.css -o src/ctapdash/static/generated/index.css",
+    "build-js": "esbuild src/js/index.ts --bundle --outfile=src/ctapdash/static/generated/index.js",
+    "watch": "(trap 'kill 0' SIGINT; rm -f watchlogtmp; npm run watch-css >> watchlogtmp & npm run watch-js >> watchlogtmp & tail -f watchlogtmp & wait)",
+    "watch-css": "tailwindcss -i src/css/index.css -o src/ctapdash/static/generated/index.css --watch",
+    "watch-js": "esbuild src/js/index.ts --bundle --outfile=src/ctapdash/static/generated/index.js --watch",
+    "check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format-check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "esbuild": "^0.28.2",
+    "prettier": "^3.9.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "alpinejs": "^3.17.3",
+    "htmx-ext-sse": "^2.2.4",
+    "htmx-ext-ws": "^2.0.4",
+    "htmx.org": "^2.0.10",
+    "tabulator-tables": "^6.5.2"
+  }
 }

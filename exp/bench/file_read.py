@@ -12,6 +12,7 @@ import sys
 
 def is_epoched(path):
     import pymatreader
+
     return len(pymatreader.read_mat(path, "epoch").get("epoch", ())) > 0
 
 
@@ -25,6 +26,7 @@ def read_eeglab(path):
 
 def read_fif(path, preload=False):
     import warnings
+
     with warnings.catch_warnings(action="ignore"):
         try:
             return read_epochs(path, preload=preload)
@@ -71,7 +73,7 @@ for set_file in sys.argv[1:]:
     start = time.time()
     eeg = pickle.load(open(set_file + ".bare.pkl", "rb"))
     pickle_end = time.time()
-    arr = eeg.mmap() # return_xarray=True
+    arr = eeg.mmap()  # return_xarray=True
     print("Pickle load : {:.2f} seconds".format(pickle_end - start))
     print("Time taken: {:.2f} seconds".format(time.time() - start))
     print()
