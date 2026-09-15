@@ -1,0 +1,13 @@
+{
+  "printWidth": 100,
+  "semi": false,
+  "bracketSpacing": false,
+  "overrides": [
+    {
+      "files": ["*.ts", "*.css"],
+      "options": {
+        "tabWidth": 4
+      }
+    }
+  ]
+}

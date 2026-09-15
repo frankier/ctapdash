@@ -1,0 +1,23 @@
+# Compiled by `npm run build` and venn_ts.build. Never edit these by hand.
+/src/ctapdash/static/generated/
+/src/venn_ts/dist/
+
+# Prettier's HTML parser does not understand Jinja: it rewrites `{% if %}`
+# inside a tag into bogus attributes, which breaks the templates.
+/src/ctapdash/templates/
+
+# Written by npm and uv; formatting them just makes both tools rewrite them.
+/package-lock.json
+/uv.lock
+
+# Prettier does not read .gitignore, so local tooling state and scratch data
+# have to be listed here as well.
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+__marimo__/
+/build/
+/dist/
+/profiles/
+/attic/

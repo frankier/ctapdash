@@ -8,11 +8,14 @@
     "watch": "(trap 'kill 0' SIGINT; rm -f watchlogtmp; npm run watch-css >> watchlogtmp & npm run watch-js >> watchlogtmp & tail -f watchlogtmp & wait)",
     "watch-css": "tailwindcss -i src/css/index.css -o src/ctapdash/static/generated/index.css --watch",
     "watch-js": "esbuild src/js/index.ts --bundle --outfile=src/ctapdash/static/generated/index.js --watch",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format-check": "prettier --check ."
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
     "esbuild": "^0.28.2",
+    "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3"
   },
