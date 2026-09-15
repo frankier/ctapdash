@@ -13,11 +13,7 @@ def convert_to_xarray(eeg):
     # Extract coordinates for the specified dimensions
     arr, times = eeg.get_data(return_times=True)
 
-    return xr.DataArray(
-        arr,
-        coords=(eeg.ch_names, times),
-        dims=("ch", "time")
-    )
+    return xr.DataArray(arr, coords=(eeg.ch_names, times), dims=("ch", "time"))
 
 
 def help_downsample(data, time, n_out):
@@ -51,6 +47,7 @@ def apply_downsample(arr, factor):
 
 def mne_to_pyramid(arr, pyramid_path, factors):
     from shutil import rmtree
+
     rmtree(pyramid_path, ignore_errors=True)
 
     levels = {}
@@ -59,9 +56,9 @@ def mne_to_pyramid(arr, pyramid_path, factors):
     for factor in factors:
         effective_factor *= factor
         cur_arr = apply_downsample(cur_arr, factor=factor)
-        levels["factor_" + str(effective_factor)] = (
-            cur_arr.rename(_LEVEL_VARIABLE).to_dataset()
-        )
+        levels["factor_" + str(effective_factor)] = cur_arr.rename(
+            _LEVEL_VARIABLE
+        ).to_dataset()
     save_xarray(xr.DataTree.from_dict(levels), pyramid_path)
 
 
@@ -100,6 +97,7 @@ def range_downsample_with_epochs_ch(x, factor, out):
 
 def mne_to_rangepyramid(arr, rangepyramid_path, factors):
     from shutil import rmtree
+
     rmtree(rangepyramid_path, ignore_errors=True)
 
     leading_shape = arr.shape[:-1]
@@ -126,8 +124,10 @@ def mne_to_rangepyramid(arr, rangepyramid_path, factors):
             cur_arr,
             coords=(
                 *leading_coords,
-                arr["time"].isel(time=slice(0, cur_len * effective_factor, effective_factor)),
-                ["min", "max"]
+                arr["time"].isel(
+                    time=slice(0, cur_len * effective_factor, effective_factor)
+                ),
+                ["min", "max"],
             ),
             dims=(*leading_dims, "time", "range"),
         )
@@ -158,6 +158,8 @@ def load_pyramid(base, range=False):
         base = base.rangepyramid if range else base.pyramid
     path = Path(base)
     if path.suffix not in (".pyramid", ".rangepyramid"):
-        raise ValueError("Pass a RecordingPaths handle or an explicit pyramid artifact path")
+        raise ValueError(
+            "Pass a RecordingPaths handle or an explicit pyramid artifact path"
+        )
     dt = load_xarray(path)
     return dt, _pyramid_groups(dt)

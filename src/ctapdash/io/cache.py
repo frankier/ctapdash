@@ -1,4 +1,5 @@
 """Registration-time cache validation and a single-reader worker dispatcher."""
+
 from dataclasses import dataclass
 from multiprocessing import Pipe, Process
 from pathlib import Path
@@ -37,9 +38,11 @@ def scan_dataset(directory):
     dataset = DatasetPaths(directory)
     if not dataset.root.is_dir():
         raise FileNotFoundError(f"Dataset directory does not exist: {dataset.root}")
-    inputs = [(dataset.recording(path), path.stat().st_mtime_ns)
-              for path in sorted(dataset.root.rglob("*.set"))
-              if dataset.cache not in path.parents]
+    inputs = [
+        (dataset.recording(path), path.stat().st_mtime_ns)
+        for path in sorted(dataset.root.rglob("*.set"))
+        if dataset.cache not in path.parents
+    ]
     jobs = {}
     stats_inputs = []
     stats_mtimes = []
@@ -50,8 +53,13 @@ def scan_dataset(directory):
             fresh = output.stat().st_mtime_ns >= mtime
         except FileNotFoundError:
             fresh = False
-        jobs[key] = Job(key, output, dependencies, "ready" if fresh else "pending",
-                        recordings=recordings)
+        jobs[key] = Job(
+            key,
+            output,
+            dependencies,
+            "ready" if fresh else "pending",
+            recordings=recordings,
+        )
         return key
 
     for paths, mtime in inputs:
@@ -63,10 +71,19 @@ def scan_dataset(directory):
         if len(paths.relative.parts) == 2 and paths.relative.parts[0][0].isnumeric():
             stats_inputs.append(paths.relative)
             stats_mtimes.append(mtime)
-    dependencies = tuple((kind, str(dataset.root), str(path))
-                         for path in stats_inputs for kind in ("metadata", "transpose"))
-    add("stats", None, dataset.stats, max(stats_mtimes, default=0), dependencies,
-        tuple(stats_inputs))
+    dependencies = tuple(
+        (kind, str(dataset.root), str(path))
+        for path in stats_inputs
+        for kind in ("metadata", "transpose")
+    )
+    add(
+        "stats",
+        None,
+        dataset.stats,
+        max(stats_mtimes, default=0),
+        dependencies,
+        tuple(stats_inputs),
+    )
     return jobs
 
 
@@ -88,8 +105,9 @@ def build_job(job):
     elif kind == "transpose":
         write_transpose(root, relative, metadata_validated=True)
     elif kind == "stats":
-        precompute_descriptive_statistics(root, recordings=job.recordings,
-                                          metadata_validated=True)
+        precompute_descriptive_statistics(
+            root, recordings=job.recordings, metadata_validated=True
+        )
     else:
         recording = RecordingData(DatasetPaths(root).recording(relative), True)
         array = recording.open_transpose(return_xarray=True)
@@ -113,9 +131,19 @@ class JobQueue:
         self.jobs = {key: job for key, job in self.jobs.items() if key[1] != root}
         self.jobs.update(snapshot)
         # Metadata, transposes, stats, then pyramids. Priorities preserve dependencies.
-        order = {"metadata": 0, "transpose": 1, "stats": 2, "pyramid": 3, "rangepyramid": 4}
-        self.pending.extend(sorted((key for key, job in snapshot.items()
-                                    if job.state == "pending"), key=lambda key: order[key[0]]))
+        order = {
+            "metadata": 0,
+            "transpose": 1,
+            "stats": 2,
+            "pyramid": 3,
+            "rangepyramid": 4,
+        }
+        self.pending.extend(
+            sorted(
+                (key for key, job in snapshot.items() if job.state == "pending"),
+                key=lambda key: order[key[0]],
+            )
+        )
         return snapshot
 
     def prioritize(self, key):
@@ -128,6 +156,7 @@ class JobQueue:
                 visit(dependency)
             if current in self.pending:
                 ordered.append(current)
+
         visit(key)
         self.pending = ordered + [item for item in self.pending if item not in ordered]
 
@@ -161,13 +190,15 @@ def _cache_builder_loop(conn):
                         snapshot = queue.register(value)
                         conn.send(("snapshot", value, snapshot))
                     except Exception as error:
-                        conn.send(("scan_failed", value, f"{type(error).__name__}: {error}"))
+                        conn.send(
+                            ("scan_failed", value, f"{type(error).__name__}: {error}")
+                        )
                 elif command == "hurry":
                     queue.prioritize(value)
                 # Drain registration/priority requests before choosing the next job.
                 continue
             queue.run_next(conn.send)
-    except (EOFError, BrokenPipeError):
+    except EOFError, BrokenPipeError:
         return
     finally:
         conn.close()
@@ -188,8 +219,10 @@ class CacheHurrier:
 
     def add_dataset(self, dataset_dir):
         root = str(DatasetPaths(dataset_dir).root)
-        if root in self.scanning or any(key[1] == root and job.state in ("pending", "running")
-                                        for key, job in self.jobs.items()):
+        if root in self.scanning or any(
+            key[1] == root and job.state in ("pending", "running")
+            for key, job in self.jobs.items()
+        ):
             return
         self._send(("add_dataset", root))
         DATASET_STATS.invalidate(root)
@@ -210,7 +243,11 @@ class CacheHurrier:
 
     def ready(self, kind, file):
         key = job_key(kind, file)
-        return key[1] not in self.scanning and key in self.jobs and self.jobs[key].state == "ready"
+        return (
+            key[1] not in self.scanning
+            and key in self.jobs
+            and self.jobs[key].state == "ready"
+        )
 
     def _wake(self):
         self.status_changed.set()
@@ -241,17 +278,37 @@ class CacheHurrier:
             await event.wait()
 
     def status(self):
-        running = next((job.key for job in self.jobs.values() if job.state == "running"), None)
+        running = next(
+            (job.key for job in self.jobs.values() if job.state == "running"), None
+        )
         failed = [job for job in self.jobs.values() if job.state == "failed"]
         completed = sum(self.jobs[key].state == "ready" for key in self.required)
-        active = bool(self.scanning or any(job.state in ("pending", "running") for job in self.jobs.values()))
-        error = self.worker_error or next(iter(self.errors.values()), None) or (failed[0].error if failed else None)
-        return {"state": "scanning" if self.scanning else "warming" if active else "failed" if error else "idle",
-                "completed": completed, "total": len(self.required),
-                "failed": len(failed), "error": error,
-                "dataset": Path(running[1]).name if running else
-                           (Path(sorted(self.scanning)[0]).name if self.scanning else None),
-                "operation": running[0] if running else None}
+        active = bool(
+            self.scanning
+            or any(job.state in ("pending", "running") for job in self.jobs.values())
+        )
+        error = (
+            self.worker_error
+            or next(iter(self.errors.values()), None)
+            or (failed[0].error if failed else None)
+        )
+        return {
+            "state": "scanning"
+            if self.scanning
+            else "warming"
+            if active
+            else "failed"
+            if error
+            else "idle",
+            "completed": completed,
+            "total": len(self.required),
+            "failed": len(failed),
+            "error": error,
+            "dataset": Path(running[1]).name
+            if running
+            else (Path(sorted(self.scanning)[0]).name if self.scanning else None),
+            "operation": running[0] if running else None,
+        }
 
     async def statuses(self):
         """Broadcast snapshots to each subscriber without consuming worker messages."""
@@ -271,10 +328,16 @@ class CacheHurrier:
                     message = self.conn.recv()
                     if message[0] == "snapshot":
                         _, root, snapshot = message
-                        self.jobs = {key: job for key, job in self.jobs.items() if key[1] != root}
+                        self.jobs = {
+                            key: job for key, job in self.jobs.items() if key[1] != root
+                        }
                         self.required = {key for key in self.required if key[1] != root}
                         self.jobs.update(snapshot)
-                        self.required.update(key for key, job in snapshot.items() if job.state == "pending")
+                        self.required.update(
+                            key
+                            for key, job in snapshot.items()
+                            if job.state == "pending"
+                        )
                         self.scanning.discard(root)
                     elif message[0] == "scan_failed":
                         _, root, error = message
@@ -306,7 +369,7 @@ class CacheHurrier:
                 del REGISTERED[root]
         try:
             self.conn.send(("exit", None))
-        except (BrokenPipeError, OSError):
+        except BrokenPipeError, OSError:
             pass
         process = self.warmer.process
         await anyio.to_thread.run_sync(process.join, 3)

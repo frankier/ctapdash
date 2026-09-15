@@ -1,4 +1,5 @@
 """Bokeh transport for the shared browser channel selector."""
+
 from bokeh.core.properties import List, String
 from bokeh.models import Widget
 

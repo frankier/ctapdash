@@ -1,9 +1,11 @@
-from ..channel_grouping import channel_order, split_channel_columns as _split_heatmap_channels
+from ..channel_grouping import (
+    channel_order,
+    split_channel_columns as _split_heatmap_channels,
+)
 
 from matplotlib import colormaps
 from matplotlib.colors import to_hex
 import numpy as np
-
 
 
 STATISTIC_LABELS = {
@@ -18,7 +20,6 @@ STATISTIC_LABELS = {
 MAX_HEATMAP_CHANNELS = 32
 
 
-
 def _display_statistic(value):
     return f"{value:.4g}"
 
@@ -29,7 +30,6 @@ def _viridis_gradient():
         for position in np.linspace(0, 1, 9)
     )
     return f"background: linear-gradient(to right, {stops})"
-
 
 
 def _descriptive_heatmap(summary):
@@ -61,7 +61,9 @@ def _descriptive_heatmap(summary):
                     title = "Not available"
                 else:
                     normalized = 0.0 if high == low else (value - low) / (high - low)
-                    style = f"background-color: {to_hex(colormaps['viridis'](normalized))}"
+                    style = (
+                        f"background-color: {to_hex(colormaps['viridis'](normalized))}"
+                    )
                     title = _display_statistic(value)
                 cells.append(
                     {
@@ -117,5 +119,9 @@ def participant_descriptive_heatmap(steps, participant, stats, channels=None):
     )
     if channels is not None:
         selected_names = set(channels)
-        summary = summary.sel(channel=[name for name in summary.channel.values if str(name) in selected_names])
+        summary = summary.sel(
+            channel=[
+                name for name in summary.channel.values if str(name) in selected_names
+            ]
+        )
     return _descriptive_heatmap(summary)

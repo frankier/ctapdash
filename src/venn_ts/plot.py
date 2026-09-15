@@ -43,7 +43,9 @@ def _comparison_channel_geometry(extrema, mode):
             cursor += high - low + 0.1
         y_range = (0.0, max(cursor, 1.0))
     else:
-        for index, (nominal_min, nominal_max, actual_min, actual_max) in enumerate(prepared):
+        for index, (nominal_min, nominal_max, actual_min, actual_max) in enumerate(
+            prepared
+        ):
             center = len(prepared) - index - 0.5
             source_min, source_max = (
                 (actual_min, actual_max)
@@ -61,6 +63,7 @@ def _comparison_channel_geometry(extrema, mode):
             }
         y_range = (0.0, max(float(len(prepared)), 1.0))
     return geometry, y_range
+
 
 #: Nominal plot-frame width in device pixels used for the deepest-zoom floor.
 NOMINAL_FRAME_WIDTH = 1200
@@ -130,7 +133,9 @@ def _build_comparison(doc, dataset, stats):
 
     steps = dataset.get_steps()
     if not steps:
-        doc.add_root(Div(text="No processing steps are available for this participant."))
+        doc.add_root(
+            Div(text="No processing steps are available for this participant.")
+        )
         return
 
     steps_by_number = dict(steps)
@@ -163,14 +168,20 @@ def _build_comparison(doc, dataset, stats):
     def get_source(value):
         path = path_for(value).resolve()
         if path not in source_cache:
-            source_cache[path] = RecordingTileSource(path, recording_data=dataset.get_recording(value))
+            source_cache[path] = RecordingTileSource(
+                path, recording_data=dataset.get_recording(value)
+            )
         return source_cache[path]
 
     try:
         initial_source = get_source(step_a.value)
         initial_channels = list(initial_source.channels)
     except Exception as error:
-        doc.add_root(Div(text=f"<strong>Unable to open comparison data:</strong> {escape(str(error))}"))
+        doc.add_root(
+            Div(
+                text=f"<strong>Unable to open comparison data:</strong> {escape(str(error))}"
+            )
+        )
         raise
 
     import json
@@ -182,10 +193,13 @@ def _build_comparison(doc, dataset, stats):
         metadata_json=json.dumps(channel_metadata),
         available=initial_channels,
         value=[channel["name"] for channel in channel_metadata["channels"]],
-        width=900, height=520,
+        width=900,
+        height=520,
     )
     channel_toggle = Toggle(
-        label="Show channels", active=False, name="channel-dialog-toggle",
+        label="Show channels",
+        active=False,
+        name="channel-dialog-toggle",
     )
     channel_dialog = Dialog(
         title="Channels",
@@ -206,7 +220,11 @@ def _build_comparison(doc, dataset, stats):
 
     channel_toggle.on_change("active", toggle_channels)
     channel_dialog.on_change("visible", sync_channel_toggle)
-    channel_dialog.js_on_change("visible", CustomJS(args={"dialog": channel_dialog}, code="""
+    channel_dialog.js_on_change(
+        "visible",
+        CustomJS(
+            args={"dialog": channel_dialog},
+            code="""
         queueMicrotask(() => {
             if (!dialog.visible) return
             const el = Bokeh.index.find_one(dialog)?.el
@@ -214,12 +232,19 @@ def _build_comparison(doc, dataset, stats):
             if (el != null && fullscreen != null)
                 (fullscreen.shadowRoot ?? fullscreen).append(el)
         })
-    """))
+    """,
+        ),
+    )
 
     normal_sidebar_open = Toggle(active=True, visible=False, name="normal-sidebar-open")
-    fullscreen_sidebar_open = Toggle(active=False, visible=False, name="fullscreen-sidebar-open")
+    fullscreen_sidebar_open = Toggle(
+        active=False, visible=False, name="fullscreen-sidebar-open"
+    )
     sidebar_toggle = Toggle(
-        label="« Hide controls", active=True, width=110, name="sidebar-toggle",
+        label="« Hide controls",
+        active=True,
+        width=110,
+        name="sidebar-toggle",
     )
     controls_sidebar = column(
         step_a,
@@ -231,7 +256,10 @@ def _build_comparison(doc, dataset, stats):
         width=220,
     )
     sidebar_shell = column(
-        sidebar_toggle, controls_sidebar, width=230, sizing_mode="stretch_height",
+        sidebar_toggle,
+        controls_sidebar,
+        width=230,
+        sizing_mode="stretch_height",
         styles={"padding-top": "10px", "padding-left": "10px"},
     )
     plot_panel = column(status, plot_holder, sizing_mode="stretch_both")
@@ -239,7 +267,9 @@ def _build_comparison(doc, dataset, stats):
         row(sidebar_shell, plot_panel, sizing_mode="stretch_both"),
         min_height=695,
         sizing_mode="stretch_both",
-        stylesheets=[InlineStyleSheet(css="""
+        stylesheets=[
+            InlineStyleSheet(
+                css="""
             :host {
                 background: white;
             }
@@ -249,17 +279,21 @@ def _build_comparison(doc, dataset, stats):
                 overflow: auto;
                 padding: 8px;
             }
-        """)],
+        """
+            )
+        ],
     )
-    sidebar_toggle.js_on_change("active", CustomJS(
-        args={
-            "controls_sidebar": controls_sidebar,
-            "sidebar_shell": sidebar_shell,
-            "viewer_frame": viewer_frame,
-            "normal_state": normal_sidebar_open,
-            "fullscreen_state": fullscreen_sidebar_open,
-        },
-        code="""
+    sidebar_toggle.js_on_change(
+        "active",
+        CustomJS(
+            args={
+                "controls_sidebar": controls_sidebar,
+                "sidebar_shell": sidebar_shell,
+                "viewer_frame": viewer_frame,
+                "normal_state": normal_sidebar_open,
+                "fullscreen_state": fullscreen_sidebar_open,
+            },
+            code="""
             const frame_view = Bokeh.index.find_one(viewer_frame)
             const fullscreen = document.fullscreenElement === frame_view?.el
             const state = fullscreen ? fullscreen_state : normal_state
@@ -269,7 +303,8 @@ def _build_comparison(doc, dataset, stats):
             cb_obj.width = cb_obj.active ? 110 : 30
             cb_obj.label = cb_obj.active ? "« Hide controls" : "»"
         """,
-    ))
+        ),
+    )
 
     def page_counts(sources, layer, factors, common):
         counts = []
@@ -300,12 +335,16 @@ def _build_comparison(doc, dataset, stats):
         old_axis = plot.yaxis[0]
         plot.left.remove(old_axis)
         axis = ChannelAxis(
-            channel_labels={item["offset"]: channel for channel, item in zip(channels, geometry)},
+            channel_labels={
+                item["offset"]: channel for channel, item in zip(channels, geometry)
+            },
             ticker=FixedTicker(),
             avoid_overlap=True,
         )
         plot.add_layout(axis, "left")
-        guide_positions = [item["center"] + delta for item in geometry for delta in (-0.4, 0.4)]
+        guide_positions = [
+            item["center"] + delta for item in geometry for delta in (-0.4, 0.4)
+        ]
         guide_labels = {
             position: f"{(position - item['offset']) / item['scale']:.3g}"
             for item in geometry
@@ -434,15 +473,21 @@ def _build_comparison(doc, dataset, stats):
             source_a, source_b = get_source(step_a.value), get_source(step_b.value)
             common = validate_tile_source_alignment(source_a, source_b)
             common_channels = [
-                channel for channel in source_a.channels if channel in source_b.channel_index
+                channel
+                for channel in source_a.channels
+                if channel in source_b.channel_index
             ]
             channel_choice.available = common_channels
-            channel_choice.bads_json = json.dumps({
-                step: channel_metadata["bads"].get(step, [])
-                for step in dict.fromkeys((step_a.value, step_b.value))
-            })
+            channel_choice.bads_json = json.dumps(
+                {
+                    step: channel_metadata["bads"].get(step, [])
+                    for step in dict.fromkeys((step_a.value, step_b.value))
+                }
+            )
             selected_names = set(channel_choice.value)
-            channels = [channel for channel in common_channels if channel in selected_names]
+            channels = [
+                channel for channel in common_channels if channel in selected_names
+            ]
             if not channels:
                 active_renderer[0] = None
                 active_plot[0] = None
@@ -450,10 +495,16 @@ def _build_comparison(doc, dataset, stats):
                 status.text = ""
                 return
 
-            extrema_a = _stats_extrema(stats, dataset.participant, step_a.value, channels)
-            extrema_b = _stats_extrema(stats, dataset.participant, step_b.value, channels)
+            extrema_a = _stats_extrema(
+                stats, dataset.participant, step_a.value, channels
+            )
+            extrema_b = _stats_extrema(
+                stats, dataset.participant, step_b.value, channels
+            )
             extrema = [(*a, *b) for a, b in zip(extrema_a, extrema_b)]
-            geometry, y_range = _comparison_channel_geometry(extrema, plotting_mode.value)
+            geometry, y_range = _comparison_channel_geometry(
+                extrema, plotting_mode.value
+            )
             scales = [item["scale"] for item in geometry]
             offsets = [item["offset"] for item in geometry]
             channel_y_mins = [
@@ -462,8 +513,12 @@ def _build_comparison(doc, dataset, stats):
             channel_y_maxs = [
                 item["actual_max"] * item["scale"] + item["offset"] for item in geometry
             ]
-            range_factors = sorted(set(source_a.range_factors) & set(source_b.range_factors))
-            line_factors = sorted(set(source_a.line_factors) & set(source_b.line_factors))
+            range_factors = sorted(
+                set(source_a.range_factors) & set(source_b.range_factors)
+            )
+            line_factors = sorted(
+                set(source_a.line_factors) & set(source_b.line_factors)
+            )
             version = sha256(
                 f"{source_a.dataset_version}|{source_b.dataset_version}|{channels}|{common}".encode()
             ).hexdigest()[:20]
@@ -473,13 +528,20 @@ def _build_comparison(doc, dataset, stats):
                 sample_count=common,
                 time_start=max(source_a.time_start, source_b.time_start),
                 time_end=min(source_a.times[common - 1], source_b.times[common - 1]),
-                sample_interval=(source_a.sample_interval + source_b.sample_interval) / 2,
+                sample_interval=(source_a.sample_interval + source_b.sample_interval)
+                / 2,
                 source_factors=range_factors,
-                page_counts=page_counts((source_a, source_b), "venn", range_factors, common),
+                page_counts=page_counts(
+                    (source_a, source_b), "venn", range_factors, common
+                ),
                 range_factors=range_factors,
-                range_page_counts=page_counts((source_a, source_b), "venn", range_factors, common),
+                range_page_counts=page_counts(
+                    (source_a, source_b), "venn", range_factors, common
+                ),
                 line_factors=line_factors,
-                line_page_counts=page_counts((source_a, source_b), "line", line_factors, common),
+                line_page_counts=page_counts(
+                    (source_a, source_b), "line", line_factors, common
+                ),
                 channel_names=channels,
                 amplitude_scales=scales,
                 amplitude_offsets=offsets,
@@ -496,14 +558,19 @@ def _build_comparison(doc, dataset, stats):
                 # increase bottom-to-top. Put the first selected channels in
                 # the initial fixed-height viewport.
                 initial_y_range = (
-                    (geometry[visible_channel_count - 1]["center"]
-                     + geometry[visible_channel_count]["center"]) / 2,
+                    (
+                        geometry[visible_channel_count - 1]["center"]
+                        + geometry[visible_channel_count]["center"]
+                    )
+                    / 2,
                     y_range[1],
                 )
             plot_height = max(180, visible_channel_count * 50 + 60)
             x_bounds = (renderer.time_start, renderer.time_end)
             x_floor = min_zoom_span(
-                renderer.sample_interval, renderer.time_end, renderer.time_end - renderer.time_start
+                renderer.sample_interval,
+                renderer.time_end,
+                renderer.time_end - renderer.time_start,
             )
             initial_x_range = floored_range(
                 preserved_range(viewport["x"], x_bounds, x_bounds), x_floor, x_bounds
@@ -525,46 +592,64 @@ def _build_comparison(doc, dataset, stats):
             )
             plot.renderers.append(renderer)
             line_a = plot.multi_line(
-                xs="xs", ys="ys", source=renderer.line_source_a,
-                line_color="red", line_width=1, line_alpha=0.9,
+                xs="xs",
+                ys="ys",
+                source=renderer.line_source_a,
+                line_color="red",
+                line_width=1,
+                line_alpha=0.9,
                 name=f"step {step_a.value}",
             )
             line_b = plot.multi_line(
-                xs="xs", ys="ys", source=renderer.line_source_b,
-                line_color="blue", line_width=1, line_alpha=0.9,
+                xs="xs",
+                ys="ys",
+                source=renderer.line_source_b,
+                line_color="blue",
+                line_width=1,
+                line_alpha=0.9,
                 name=f"step {step_b.value}",
             )
-            plot.add_tools(HoverTool(
-                renderers=[line_a, line_b],
-                tooltips=[("Step", "$name"), ("Channel", "@channel")],
-                mode="mouse",
-            ))
+            plot.add_tools(
+                HoverTool(
+                    renderers=[line_a, line_b],
+                    tooltips=[("Step", "$name"), ("Channel", "@channel")],
+                    mode="mouse",
+                )
+            )
             style_axes(plot, channels, geometry)
             plot.add_tools(
                 channel_count_action(plot.y_range, y_range, len(channels), -1),
                 channel_count_action(plot.y_range, y_range, len(channels), 1),
             )
-            renderer.js_on_change("error", CustomJS(
-                args={"status": status},
-                code="status.text = cb_obj.error ? `<strong>${cb_obj.error}</strong>` : ''",
-            ))
+            renderer.js_on_change(
+                "error",
+                CustomJS(
+                    args={"status": status},
+                    code="status.text = cb_obj.error ? `<strong>${cb_obj.error}</strong>` : ''",
+                ),
+            )
             coordinator = TileCoordinator(doc, renderer, (source_a, source_b), channels)
             from venn_ts.navigation import navigation_frame
 
             plot.name = "comparison-plot"
-            plot_frame = navigation_frame(plot, x_bounds, y_range, min_interval=x_floor or None)
-            plot.add_tools(CustomAction(
-                description="Fullscreen",
-                icon="fullscreen",
-                callback=CustomJS(args={
-                    "viewer_frame": viewer_frame,
-                    "channel_dialog": channel_dialog,
-                    "controls_sidebar": controls_sidebar,
-                    "sidebar_shell": sidebar_shell,
-                    "sidebar_toggle": sidebar_toggle,
-                    "normal_state": normal_sidebar_open,
-                    "fullscreen_state": fullscreen_sidebar_open,
-                }, code="""
+            plot_frame = navigation_frame(
+                plot, x_bounds, y_range, min_interval=x_floor or None
+            )
+            plot.add_tools(
+                CustomAction(
+                    description="Fullscreen",
+                    icon="fullscreen",
+                    callback=CustomJS(
+                        args={
+                            "viewer_frame": viewer_frame,
+                            "channel_dialog": channel_dialog,
+                            "controls_sidebar": controls_sidebar,
+                            "sidebar_shell": sidebar_shell,
+                            "sidebar_toggle": sidebar_toggle,
+                            "normal_state": normal_sidebar_open,
+                            "fullscreen_state": fullscreen_sidebar_open,
+                        },
+                        code="""
                     const view = Bokeh.index.find_one(viewer_frame)
                     const element = view?.el
                     if (element == null) return
@@ -588,8 +673,10 @@ def _build_comparison(doc, dataset, stats):
                         void document.exitFullscreen()
                     else if (document.fullscreenElement == null)
                         void element.requestFullscreen()
-                """),
-            ))
+                """,
+                    ),
+                )
+            )
             install_toolbar_sizing(plot)
             active_renderer[0] = renderer
             active_coordinator[0] = coordinator
@@ -599,7 +686,11 @@ def _build_comparison(doc, dataset, stats):
         except Exception as error:
             active_renderer[0] = None
             active_plot[0] = None
-            plot_holder.children = [Div(text=f"<strong>Unable to build comparison:</strong> {escape(str(error))}")]
+            plot_holder.children = [
+                Div(
+                    text=f"<strong>Unable to build comparison:</strong> {escape(str(error))}"
+                )
+            ]
             status.text = ""
 
     layers.on_change("active", set_layers)
@@ -627,7 +718,9 @@ def _stats_extrema(stats, participant, step, channels):
         & (stats["step"].values == int(step))
     )
     if len(matches) != 1:
-        raise ValueError(f"Expected one stats recording for {participant}, step {step}; found {len(matches)}")
+        raise ValueError(
+            f"Expected one stats recording for {participant}, step {step}; found {len(matches)}"
+        )
     recording = stats.isel(recording=int(matches[0])).sel(channel=channels)
     extrema = np.column_stack((recording["min"].values, recording["max"].values))
     if not np.all(np.isfinite(extrema)) or np.any(extrema[:, 0] > extrema[:, 1]):
@@ -643,7 +736,9 @@ def venn_time_series_bokeh(doc):
 
     dataset = ObservationData.from_bokeh_doc(doc)
     if not dataset.get_steps():
-        doc.add_root(Div(text="No processing steps are available for this participant."))
+        doc.add_root(
+            Div(text="No processing steps are available for this participant.")
+        )
         return
     stats = DATASET_STATS.get_cached(dataset.source_path)
     if stats is not None:

@@ -50,7 +50,9 @@ _VERSION = 2
 
 
 def save_xarray(
-    obj: xr.Dataset | xr.DataTree, directory: str | os.PathLike, *,
+    obj: xr.Dataset | xr.DataTree,
+    directory: str | os.PathLike,
+    *,
     consolidated: bool = False,
 ) -> None:
     """Save a Dataset or DataTree to a new directory.
@@ -93,20 +95,33 @@ def save_xarray(
         raise FileExistsError(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with atomic_write(destination, dir=True) as staging, ExitStack() as stack:
-        shared_file = (stack.enter_context((staging / "consolidated.bin").open("wb"))
-                    if consolidated else None)
+        shared_file = (
+            stack.enter_context((staging / "consolidated.bin").open("wb"))
+            if consolidated
+            else None
+        )
         if not consolidated:
             (staging / "data").mkdir()
-        metadata = {"format": _FORMAT, "version": _VERSION, "kind": kind,
-                    "name": name, "nodes": [], "consolidated": consolidated}
+        metadata = {
+            "format": _FORMAT,
+            "version": _VERSION,
+            "kind": kind,
+            "name": name,
+            "nodes": [],
+            "consolidated": consolidated,
+        }
         counter = 0
         for path, ds in nodes:
             # Keeping an actual coordinate-only Dataset preserves custom indexes,
             # MultiIndexes, coordinate encodings, attrs, and Dataset encodings.
             shell = ds.drop_vars(list(ds.data_vars)).compute()
             shell.set_close(None)
-            record = {"path": path, "shell": shell, "variables": [],
-                    "variable_order": list(ds.variables)}
+            record = {
+                "path": path,
+                "shell": shell,
+                "variables": [],
+                "variable_order": list(ds.variables),
+            }
             if consolidated:
                 record["offset"] = shared_file.tell()
             for var_name, da in ds.data_vars.items():
@@ -117,7 +132,9 @@ def save_xarray(
                         f"{path}: variable {var_name!r} has non-mappable dtype {dtype}; "
                         "use a fixed-size dtype without Python objects"
                     )
-                filename = "consolidated.bin" if consolidated else f"data/{counter:08d}.bin"
+                filename = (
+                    "consolidated.bin" if consolidated else f"data/{counter:08d}.bin"
+                )
                 counter += 1
                 # tofile writes in C order, including for strided/Fortran inputs.
                 if consolidated:
@@ -129,12 +146,19 @@ def save_xarray(
                     offset = 0
                     with (staging / filename).open("wb") as f:
                         array.tofile(f)
-                record["variables"].append({
-                    "name": var_name, "file": filename, "dtype": dtype,
-                    "offset": offset,
-                    "shape": array.shape, "dims": da.dims, "order": "C",
-                    "attrs": dict(da.attrs), "encoding": dict(da.encoding),
-                })
+                record["variables"].append(
+                    {
+                        "name": var_name,
+                        "file": filename,
+                        "dtype": dtype,
+                        "offset": offset,
+                        "shape": array.shape,
+                        "dims": da.dims,
+                        "order": "C",
+                        "attrs": dict(da.attrs),
+                        "encoding": dict(da.encoding),
+                    }
+                )
             if consolidated:
                 record["nbytes"] = shared_file.tell() - record["offset"]
             metadata["nodes"].append(record)
@@ -162,9 +186,11 @@ def load_xarray(
     directory = Path(directory).resolve()
     with (directory / "metadata.pkl").open("rb") as f:
         metadata = pickle.load(f)
-    if (metadata.get("format") != _FORMAT
-            or metadata.get("version") not in (1, _VERSION)
-            or metadata.get("kind") not in ("Dataset", "DataTree")):
+    if (
+        metadata.get("format") != _FORMAT
+        or metadata.get("version") not in (1, _VERSION)
+        or metadata.get("kind") not in ("Dataset", "DataTree")
+    ):
         raise ValueError("Unsupported xarray mmap store format/version")
 
     consolidated = metadata.get("consolidated", False)
@@ -174,8 +200,11 @@ def load_xarray(
         file = (directory / "consolidated.bin").resolve()
         if not file.is_relative_to(directory):
             raise ValueError("Data file is outside the store directory")
-        if (not isinstance(total_bytes, int) or total_bytes < 0
-                or file.stat().st_size != total_bytes):
+        if (
+            not isinstance(total_bytes, int)
+            or total_bytes < 0
+            or file.stat().st_size != total_bytes
+        ):
             raise ValueError("Wrong byte size for consolidated.bin")
         if total_bytes:
             shared = np.memmap(file, dtype=np.uint8, mode=mode, shape=(total_bytes,))
@@ -184,9 +213,13 @@ def load_xarray(
     for node in metadata["nodes"]:
         if consolidated:
             node_start, node_size = node["offset"], node["nbytes"]
-            if (not isinstance(node_start, int) or not isinstance(node_size, int)
-                    or node_start < 0 or node_size < 0
-                    or node_start + node_size > total_bytes):
+            if (
+                not isinstance(node_start, int)
+                or not isinstance(node_size, int)
+                or node_start < 0
+                or node_size < 0
+                or node_start + node_size > total_bytes
+            ):
                 raise ValueError("Invalid consolidated node byte range")
         ds = node["shell"]
         variables = dict(ds.variables)
@@ -195,14 +228,20 @@ def load_xarray(
             shape = tuple(spec["shape"])
             if dtype.hasobject or dtype.kind == "T":
                 raise ValueError("Store contains a non-mappable dtype")
-            if (any(not isinstance(n, int) or n < 0 for n in shape)
-                    or len(shape) != len(spec["dims"]) or spec["order"] != "C"):
+            if (
+                any(not isinstance(n, int) or n < 0 for n in shape)
+                or len(shape) != len(spec["dims"])
+                or spec["order"] != "C"
+            ):
                 raise ValueError("Invalid array shape, dimensions, or order")
             expected = math.prod(shape) * dtype.itemsize
             if consolidated:
                 offset = spec["offset"]
-                if (not isinstance(offset, int) or offset < node_start
-                        or offset + expected > node_start + node_size):
+                if (
+                    not isinstance(offset, int)
+                    or offset < node_start
+                    or offset + expected > node_start + node_size
+                ):
                     raise ValueError("Variable byte range is outside its node")
             else:
                 file = (directory / spec["file"]).resolve()
@@ -212,10 +251,13 @@ def load_xarray(
                     raise ValueError(f"Wrong byte size for {file}: expected {expected}")
             if expected:
                 if consolidated:
-                    array = np.ndarray(shape, dtype=dtype, buffer=shared,
-                                       offset=offset, order="C")
+                    array = np.ndarray(
+                        shape, dtype=dtype, buffer=shared, offset=offset, order="C"
+                    )
                 else:
-                    array = np.memmap(file, dtype=dtype, mode=mode, shape=shape, order="C")
+                    array = np.memmap(
+                        file, dtype=dtype, mode=mode, shape=shape, order="C"
+                    )
             else:
                 array = np.empty(shape, dtype=dtype)
                 if mode == "r":
@@ -225,8 +267,11 @@ def load_xarray(
             )
         # Supplying Coordinates preserves existing indexes, including no-index
         # dimension coordinates, instead of asking xarray to infer new indexes.
-        data_vars = {name: variables[name] for name in node["variable_order"]
-                     if name not in ds.coords}
+        data_vars = {
+            name: variables[name]
+            for name in node["variable_order"]
+            if name not in ds.coords
+        }
         restored = xr.Dataset(data_vars=data_vars, coords=ds.coords, attrs=ds.attrs)
         restored.encoding = ds.encoding
         datasets[node["path"]] = restored

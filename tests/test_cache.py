@@ -10,7 +10,12 @@ import numpy as np
 import pytest
 
 from ctapdash.io.cache import (
-    CacheHurrier, CacheWarmer, JobQueue, REGISTERED, job_key, scan_dataset,
+    CacheHurrier,
+    CacheWarmer,
+    JobQueue,
+    REGISTERED,
+    job_key,
+    scan_dataset,
 )
 from ctapdash.io.paths import DatasetPaths, ObservationData
 from ctapdash.io.recording import RecordingData
@@ -26,9 +31,15 @@ def test_recording_paths_and_observation(tmp_path, monkeypatch):
     dataset = DatasetPaths(tmp_path)
     recording = dataset.recording("nested/1_load/p.set")
     assert dataset.recording(recording.set) == recording
-    assert recording.transpose == tmp_path / ".ctapdash_cache/nested/1_load/p.ctapdash_order"
+    assert (
+        recording.transpose
+        == tmp_path / ".ctapdash_cache/nested/1_load/p.ctapdash_order"
+    )
     assert recording.pyramid == tmp_path / ".ctapdash_cache/nested/1_load/p.pyramid"
-    assert recording.rangepyramid == tmp_path / ".ctapdash_cache/nested/1_load/p.rangepyramid"
+    assert (
+        recording.rangepyramid
+        == tmp_path / ".ctapdash_cache/nested/1_load/p.rangepyramid"
+    )
     assert recording.metadata == tmp_path / "nested/1_load/.p.pkl"
     assert dataset.stats == tmp_path / ".ctapdash_cache/stats.xm"
     monkeypatch.chdir(tmp_path.parent)
@@ -39,7 +50,10 @@ def test_recording_paths_and_observation(tmp_path, monkeypatch):
         ObservationData(tmp_path).get_recording(1)
     (tmp_path / "1_load").mkdir()
     (tmp_path / "1_load/p.set").touch()
-    assert ObservationData(tmp_path, "p").get_recording("1").paths.set == tmp_path / "1_load/p.set"
+    assert (
+        ObservationData(tmp_path, "p").get_recording("1").paths.set
+        == tmp_path / "1_load/p.set"
+    )
     with pytest.raises(ValueError, match="Unknown"):
         ObservationData(tmp_path, "p").get_recording(2)
     with pytest.raises(FileNotFoundError, match="not ready"):
@@ -80,14 +94,17 @@ def test_queue_dedup_priorities_and_failure(tmp_path, monkeypatch):
     assert queue.pending == pending
     target = job_key("pyramid", (tmp_path, second))
     queue.prioritize(target)
-    assert queue.pending[:3] == [job_key(kind, (tmp_path, second))
-                                 for kind in ("metadata", "transpose", "pyramid")]
+    assert queue.pending[:3] == [
+        job_key(kind, (tmp_path, second))
+        for kind in ("metadata", "transpose", "pyramid")
+    ]
     built = []
 
     def build(job):
         built.append(job.key)
         if job.key == job_key("metadata", (tmp_path, second)):
             raise ValueError("bad metadata")
+
     monkeypatch.setattr("ctapdash.io.cache.build_job", build)
     messages = []
     while queue.pending:
@@ -118,7 +135,7 @@ async def test_dispatch_concurrent_waiters_and_failure(tmp_path):
             group.start_soon(hurrier.dispatch)
             first = asyncio.create_task(hurrier.hurry("stats", tmp_path))
             second = asyncio.create_task(hurrier.hurry("stats", tmp_path))
-            await anyio.sleep(.1)
+            await anyio.sleep(0.1)
             assert not first.done() and not second.done()
             worker.send(("job", key, "running", None))
             worker.send(("job", key, "ready", None))
@@ -152,7 +169,9 @@ async def test_real_worker_builds_and_reuses_raw_and_epoch_caches(tmp_path):
         assert warmer.status()["state"] == "idle"
         assert warmer.status()["completed"] == warmer.status()["total"] == 9
         recording = ObservationData(tmp_path, "raw").get_recording(1)
-        np.testing.assert_array_equal(recording.open_transpose(), recording.read_metadata().mmap())
+        np.testing.assert_array_equal(
+            recording.open_transpose(), recording.read_metadata().mmap()
+        )
         tree, groups = recording.open_pyramid()
         assert groups == ("/factor_8", "/factor_64")
         tree.close()
@@ -192,7 +211,7 @@ async def test_empty_dataset_and_worker_death(tmp_path):
         warmer.warmer.process.terminate()
         with anyio.fail_after(3):
             while warmer.worker_error is None:
-                await anyio.sleep(.05)
+                await anyio.sleep(0.05)
         with pytest.raises(RuntimeError):
             await warmer.hurry("stats", tmp_path)
         assert warmer.status()["state"] == "failed"
@@ -205,10 +224,15 @@ def test_setup_registers_manual_and_picked_sources(tmp_path, monkeypatch):
     from ctapdash import setup_ui
     from ctapdash.config import SETTINGS
     from unittest.mock import Mock
+
     warmer = Mock()
-    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=warmer)))
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=warmer))
+    )
     monkeypatch.setattr(SETTINGS, "sources", {})
-    monkeypatch.setattr(setup_ui, "_read_form", AsyncMock(return_value={"path": str(tmp_path)}))
+    monkeypatch.setattr(
+        setup_ui, "_read_form", AsyncMock(return_value={"path": str(tmp_path)})
+    )
     monkeypatch.setattr(setup_ui, "_render", lambda *args, **kwargs: kwargs)
     asyncio.run(setup_ui.setup_add(request))
     warmer.add_dataset.assert_called_once_with(str(tmp_path))
@@ -236,6 +260,7 @@ def test_newest_relevant_set_and_single_mtime_pass(tmp_path, monkeypatch):
         if path.suffix == ".set":
             counts[path] = counts.get(path, 0) + 1
         return original(path, *args, **kwargs)
+
     monkeypatch.setattr(Path, "stat", count_stat)
     snapshot = scan_dataset(tmp_path)
     assert counts == {first: 1, second: 1}
@@ -249,6 +274,7 @@ def test_newest_relevant_set_and_single_mtime_pass(tmp_path, monkeypatch):
 @pytest.mark.anyio
 async def test_registered_reads_require_readiness_and_skip_stat(tmp_path, monkeypatch):
     from ctapdash.io.eeglab import read_eeglab
+
     path = write_eeglab(tmp_path / "1_load")
     read_eeglab(path)
     recording = ObservationData(tmp_path, "raw").get_recording(1)
@@ -260,7 +286,10 @@ async def test_registered_reads_require_readiness_and_skip_stat(tmp_path, monkey
             recording.read_metadata()
         hurrier.jobs = scan_dataset(tmp_path)
         assert hurrier.ready("metadata", (tmp_path, path))
-        with patch("ctapdash.io.eeglab.porcelain.os.stat", side_effect=AssertionError("Repeated stat")):
+        with patch(
+            "ctapdash.io.eeglab.porcelain.os.stat",
+            side_effect=AssertionError("Repeated stat"),
+        ):
             assert recording.read_metadata().ch_names == ["A", "B"]
     finally:
         REGISTERED.pop(str(tmp_path), None)
@@ -270,6 +299,7 @@ async def test_registered_reads_require_readiness_and_skip_stat(tmp_path, monkey
 
 def test_atomic_replacement_preserves_previous_output_on_failure(tmp_path):
     from ctapdash.io.utils import atomic_write
+
     destination = tmp_path / "artifact"
     destination.write_text("old")
     with pytest.raises(ValueError):
@@ -298,6 +328,7 @@ def test_stats_requires_metadata_even_with_ready_transpose(tmp_path, monkeypatch
     def fail(job):
         built.append(job.key)
         raise ValueError("cannot read metadata")
+
     monkeypatch.setattr("ctapdash.io.cache.build_job", fail)
     while queue.pending:
         queue.run_next(lambda message: None)
@@ -305,28 +336,42 @@ def test_stats_requires_metadata_even_with_ready_transpose(tmp_path, monkeypatch
     assert queue.jobs[stats].state == "failed"
 
 
-@pytest.mark.parametrize("state,operation,total,completed,visible", [
-    ("scanning", None, 5, 0, False),
-    ("idle", None, 5, 5, False),
-    ("failed", None, 5, 2, False),
-    ("warming", None, 5, 2, False),
-    ("warming", "transpose", 0, 0, False),
-    ("warming", "transpose", 5, 5, False),
-    ("warming", "transpose", 5, 2, True),
-])
-def test_progress_template_only_shows_actual_progress(state, operation, total, completed, visible):
+@pytest.mark.parametrize(
+    "state,operation,total,completed,visible",
+    [
+        ("scanning", None, 5, 0, False),
+        ("idle", None, 5, 5, False),
+        ("failed", None, 5, 2, False),
+        ("warming", None, 5, 2, False),
+        ("warming", "transpose", 0, 0, False),
+        ("warming", "transpose", 5, 5, False),
+        ("warming", "transpose", 5, 2, True),
+    ],
+)
+def test_progress_template_only_shows_actual_progress(
+    state, operation, total, completed, visible
+):
     from ctapdash.webapp import templates
     from html.parser import HTMLParser
 
     class Indicator(HTMLParser):
         attributes = None
+
         def handle_starttag(self, tag, attrs):
             if tag == "aside":
                 self.attributes = dict(attrs)
 
     template = templates.env.get_template("_cache_progress.html")
-    html = template.render(status=dict(state=state, operation=operation, total=total,
-                                       completed=completed, dataset="<example>", error="failure"))
+    html = template.render(
+        status=dict(
+            state=state,
+            operation=operation,
+            total=total,
+            completed=completed,
+            dataset="<example>",
+            error="failure",
+        )
+    )
     indicator = Indicator()
     indicator.feed(html)
     assert ("hidden" not in indicator.attributes) == visible

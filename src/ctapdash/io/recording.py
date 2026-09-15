@@ -1,4 +1,5 @@
 """A recording and its derived artifacts, independent of MNE's object model."""
+
 from dataclasses import dataclass
 
 from ctapdash.io.paths import RecordingPaths
@@ -11,6 +12,7 @@ class RecordingData:
 
     def read_metadata(self):
         from ctapdash.io.eeglab import read_eeglab
+
         validated = self.metadata_validated or self._registered_ready("metadata")
         return read_eeglab(self.paths.set, validated=validated)
 
@@ -25,6 +27,7 @@ class RecordingData:
 
     def open_pyramid(self, range=False):
         from ctapdash.io.pyramid import load_pyramid
+
         self._registered_ready("rangepyramid" if range else "pyramid")
         path = self.paths.rangepyramid if range else self.paths.pyramid
         self._require(path)
@@ -34,6 +37,7 @@ class RecordingData:
         if self.metadata_validated:
             return True
         from ctapdash.io.cache import REGISTERED
+
         warmer = REGISTERED.get(str(self.paths.dataset.root))
         if warmer is None:
             return False

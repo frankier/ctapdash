@@ -12,7 +12,9 @@ def _sample_interval(times: NDArray[np.float64], identity: str) -> float:
         raise ValueError(f"{identity} must contain at least two samples")
     if not np.all(np.isfinite(times)):
         index = int(np.flatnonzero(~np.isfinite(times))[0])
-        raise ValueError(f"{identity} has a non-finite time coordinate at index {index}")
+        raise ValueError(
+            f"{identity} has a non-finite time coordinate at index {index}"
+        )
     deltas = np.diff(times)
     if np.any(deltas <= 0):
         index = int(np.flatnonzero(deltas <= 0)[0] + 1)
@@ -37,7 +39,9 @@ def resolve_channel(channel_names: Sequence[str], requested: str) -> tuple[int, 
         index = -1
     if not 0 <= index < len(channel_names):
         available = ", ".join(channel_names)
-        raise ValueError(f"unknown channel {requested!r}; available channels: {available}")
+        raise ValueError(
+            f"unknown channel {requested!r}; available channels: {available}"
+        )
     return index, channel_names[index]
 
 
@@ -138,7 +142,9 @@ class ArrayRangeSeries:
 class RecordingRangeSeries:
     """Lazy RangeSeries adapter for one channel of an EEGLAB recording."""
 
-    def __init__(self, path: Path, requested_channel: str, *, recording=None, recording_data=None) -> None:
+    def __init__(
+        self, path: Path, requested_channel: str, *, recording=None, recording_data=None
+    ) -> None:
         from ctapdash.io.paths import DatasetPaths
         from ctapdash.io.recording import RecordingData
 
@@ -154,7 +160,9 @@ class RecordingRangeSeries:
             raise ValueError(
                 f"{self.path} is epoched; directly addressable epoch selection is not implemented"
             )
-        channel_index, channel_name = resolve_channel(recording.ch_names, requested_channel)
+        channel_index, channel_name = resolve_channel(
+            recording.ch_names, requested_channel
+        )
         raw_array = recording.mmap(return_xarray=True)
         self._raw = raw_array.isel(ch=channel_index)
         self._times = np.asarray(raw_array["time"].data, dtype=np.float64)
@@ -165,7 +173,9 @@ class RecordingRangeSeries:
         self.dtype = np.dtype(self._raw.dtype)
         self._extrema_cache: dict[int, tuple[float, float]] = {}
         stat = self.path.stat()
-        self.dataset_version = f"{self.path}:{stat.st_size}:{stat.st_mtime_ns}:{channel_name}"
+        self.dataset_version = (
+            f"{self.path}:{stat.st_size}:{stat.st_mtime_ns}:{channel_name}"
+        )
         self._levels: dict[int, object] = {}
         pyramid_path = recording_data.paths.rangepyramid
         try:
@@ -248,9 +258,13 @@ class RecordingTileSource:
         if recording is None:
             recording = recording_data.read_metadata()
         if not hasattr(recording, "mmap"):
-            raise ValueError(f"{self.path} does not support bounded memory-mapped reads")
+            raise ValueError(
+                f"{self.path} does not support bounded memory-mapped reads"
+            )
         if "epoch" in recording.__class__.__name__.lower():
-            raise ValueError(f"{self.path} is epoched; the comparison viewer supports continuous data only")
+            raise ValueError(
+                f"{self.path} is epoched; the comparison viewer supports continuous data only"
+            )
 
         # Only external .fdt recordings provide directly mapped samples.
         filenames = [Path(name) for name in getattr(recording, "filenames", ()) if name]
@@ -271,13 +285,17 @@ class RecordingTileSource:
         except FileNotFoundError:
             self.raw = recording.mmap(return_xarray=True)
         else:
-            self.raw = recording.mmap(return_xarray=True,
-                                      data_fname=recording_data.paths.transpose,
-                                      ctapdash_order=True)
+            self.raw = recording.mmap(
+                return_xarray=True,
+                data_fname=recording_data.paths.transpose,
+                ctapdash_order=True,
+            )
         if self.raw.dims != ("ch", "time"):
             raise ValueError(f"{self.path} is not a continuous channel/time recording")
         self.channels = tuple(str(value) for value in self.raw["ch"].values)
-        self.channel_index = {channel: index for index, channel in enumerate(self.channels)}
+        self.channel_index = {
+            channel: index for index, channel in enumerate(self.channels)
+        }
         self.times = np.asarray(self.raw["time"].values, dtype=np.float64)
         identity = str(self.path)
         self.sample_interval = _sample_interval(self.times, identity)
@@ -294,7 +312,11 @@ class RecordingTileSource:
             (False, "line_tree", "line_groups"),
             (True, "range_tree", "range_groups"),
         ):
-            pyramid_path = recording_data.paths.rangepyramid if is_range else recording_data.paths.pyramid
+            pyramid_path = (
+                recording_data.paths.rangepyramid
+                if is_range
+                else recording_data.paths.pyramid
+            )
             try:
                 tree, groups = recording_data.open_pyramid(range=is_range)
             except FileNotFoundError:
@@ -342,11 +364,15 @@ class RecordingTileSource:
         if factor == 1 or factor not in self.range_groups:
             raw_start, raw_stop = start * factor, min(stop * factor, self.sample_count)
             values = np.asarray(
-                self.raw.isel(ch=list(channel_indices), time=slice(raw_start, raw_stop)).data
+                self.raw.isel(
+                    ch=list(channel_indices), time=slice(raw_start, raw_stop)
+                ).data
             )
             if factor != 1:
                 count = (values.shape[1] + factor - 1) // factor
-                ranges = np.full((values.shape[0], count, 2), np.nan, dtype=values.dtype)
+                ranges = np.full(
+                    (values.shape[0], count, 2), np.nan, dtype=values.dtype
+                )
                 for index in range(count):
                     block = values[:, index * factor : (index + 1) * factor]
                     ranges[:, index, 0] = np.nanmin(block, axis=1)
@@ -354,7 +380,9 @@ class RecordingTileSource:
                 return ranges
             return np.stack((values, values), axis=-1)
         array = self._sole_array(self.range_tree, self.range_groups[factor])
-        return np.asarray(array.isel(ch=list(channel_indices), time=slice(start, stop)).data)
+        return np.asarray(
+            array.isel(ch=list(channel_indices), time=slice(start, stop)).data
+        )
 
     def slice_lines(
         self, factor: int, channel_indices: Sequence[int], start: int, stop: int
@@ -362,11 +390,15 @@ class RecordingTileSource:
         if factor == 1 or factor not in self.line_groups:
             raw_start, raw_stop = start * factor, min(stop * factor, self.sample_count)
             positions = np.arange(raw_start, raw_stop, factor, dtype=np.int64)
-            values = np.asarray(self.raw.isel(ch=list(channel_indices), time=positions).data)
+            values = np.asarray(
+                self.raw.isel(ch=list(channel_indices), time=positions).data
+            )
             return self.times[positions], values
         array = self._sole_array(self.line_tree, self.line_groups[factor])
         selected = array.isel(ch=list(channel_indices), time=slice(start, stop))
-        return np.asarray(selected["time"].values, dtype=np.float64), np.asarray(selected.data)
+        return np.asarray(selected["time"].values, dtype=np.float64), np.asarray(
+            selected.data
+        )
 
     def finite_extrema(
         self, channel_indices: Sequence[int], stop: int | None = None
@@ -400,7 +432,9 @@ class RecordingTileSource:
         return output
 
 
-def validate_tile_source_alignment(a: RecordingTileSource, b: RecordingTileSource) -> int:
+def validate_tile_source_alignment(
+    a: RecordingTileSource, b: RecordingTileSource
+) -> int:
     """Validate two recordings once and return their common sample count."""
     common = min(a.sample_count, b.sample_count)
     if common < 2:

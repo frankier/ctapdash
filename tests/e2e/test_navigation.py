@@ -1,4 +1,5 @@
 """Check actual track geometry and range linking, including responsive layout."""
+
 import pytest
 from bokeh.embed import file_html
 from bokeh.models import FixedTicker, Range1d
@@ -57,16 +58,38 @@ def test_navigation_tracks_match_plot_and_keep_full_ranges(page):
     ensure_extension_built()
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
-    labels = {i + 0.5: name for i, name in enumerate([
-        "A888", "A1", "LongChannelName", "ExtremelyLongChannelNameToAbbreviate",
-        "Fp1", "ReferenceLeft", "A88", "EMG",
-    ])}
-    plot = figure(name="navigation-test", height=520, min_height=300,
-                  sizing_mode="stretch_both", x_range=Range1d(2, 5),
-                  y_range=Range1d(2, 6))
+    labels = {
+        i + 0.5: name
+        for i, name in enumerate(
+            [
+                "A888",
+                "A1",
+                "LongChannelName",
+                "ExtremelyLongChannelNameToAbbreviate",
+                "Fp1",
+                "ReferenceLeft",
+                "A88",
+                "EMG",
+            ]
+        )
+    }
+    plot = figure(
+        name="navigation-test",
+        height=520,
+        min_height=300,
+        sizing_mode="stretch_both",
+        x_range=Range1d(2, 5),
+        y_range=Range1d(2, 6),
+    )
     plot.left.remove(plot.yaxis[0])
-    plot.add_layout(ChannelAxis(ticker=FixedTicker(ticks=list(labels)),
-                               major_label_overrides=labels, channel_labels=labels), "left")
+    plot.add_layout(
+        ChannelAxis(
+            ticker=FixedTicker(ticks=list(labels)),
+            major_label_overrides=labels,
+            channel_labels=labels,
+        ),
+        "left",
+    )
     plot.line([0, 10], [0, 8])
     layout = navigation_frame(plot, (0, 10), (0, 8))
     page.set_content(file_html(layout, INLINE))
@@ -74,27 +97,36 @@ def test_navigation_tracks_match_plot_and_keep_full_ranges(page):
     page.wait_for_function("window.Bokeh?.documents[0]?.is_idle")
     original = assert_aligned(page)
     for orientation in ("horizontal", "vertical"):
-        handle = page.evaluate("""orientation => {
+        handle = page.evaluate(
+            """orientation => {
             const m = Bokeh.documents[0].get_model_by_name(orientation+'-range-scrollbar');
             const el = Bokeh.index.find_one(m).shadow_el.querySelectorAll('.noUi-handle')[1];
             return el.getBoundingClientRect().toJSON();
-        }""", orientation)
+        }""",
+            orientation,
+        )
         x, y = handle["x"] + handle["width"] / 2, handle["y"] + handle["height"] / 2
         page.mouse.move(x, y)
         page.mouse.down()
-        page.mouse.move(x + (30 if orientation == "horizontal" else 0),
-                        y - (30 if orientation == "vertical" else 0), steps=5)
+        page.mouse.move(
+            x + (30 if orientation == "horizontal" else 0),
+            y - (30 if orientation == "vertical" else 0),
+            steps=5,
+        )
         page.mouse.up()
         current = assert_aligned(page)
         axis = "x" if orientation == "horizontal" else "y"
         assert current[axis][1] > original[axis][1]
 
     page.set_viewport_size({"width": 980, "height": 820})
-    page.wait_for_function("""oldRight => {
+    page.wait_for_function(
+        """oldRight => {
         const p = Bokeh.documents[0].get_model_by_name('navigation-test');
         const v = Bokeh.index.find_one(p);
         return v.el.getBoundingClientRect().left + v.frame.bbox.right !== oldRight;
-    }""", arg=original["plot"]["right"])
+    }""",
+        arg=original["plot"]["right"],
+    )
     resized = assert_aligned(page)
     assert resized["plot"]["right"] != original["plot"]["right"]
     page.evaluate("""() => {

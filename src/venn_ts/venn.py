@@ -68,7 +68,9 @@ class VennManifest:
     shader_schema_version: int = SHADER_SCHEMA_VERSION
 
 
-def parse_series_args(values: Sequence[Sequence[str]]) -> tuple[SeriesSelection, SeriesSelection]:
+def parse_series_args(
+    values: Sequence[Sequence[str]],
+) -> tuple[SeriesSelection, SeriesSelection]:
     """Validate values collected by repeatable ``--series PATH CHANNEL``."""
     if len(values) != 2:
         raise ValueError(f"--series must be supplied exactly twice (got {len(values)})")
@@ -134,7 +136,9 @@ def build_manifest(
         padding = max(abs(y_start) * 0.05, 1.0)
         y_start -= padding
         y_end += padding
-    counts = tuple((common // factor + page_size - 1) // page_size for factor in factors)
+    counts = tuple(
+        (common // factor + page_size - 1) // page_size for factor in factors
+    )
     version_text = "|".join((a.dataset_version, b.dataset_version, str(common)))
     version = sha256(version_text.encode()).hexdigest()[:20]
     return VennManifest(
@@ -163,7 +167,9 @@ def load_page(
     """Load a page with a one-entry gutter on each available side."""
     if source_factor not in series.source_factors:
         raise ValueError(f"source factor {source_factor} is unavailable")
-    level_length = min(series.level_length(source_factor), common_length // source_factor)
+    level_length = min(
+        series.level_length(source_factor), common_length // source_factor
+    )
     page_count = (level_length + page_size - 1) // page_size
     if not 0 <= page_index < page_count:
         raise IndexError(f"page {page_index} outside [0, {page_count})")
@@ -191,13 +197,16 @@ def load_page(
         length=len(ranges),
         core_start=core_start - data_start,
         core_length=core_stop - core_start,
-        time_start=series.time_start + data_start * source_factor * series.sample_interval,
+        time_start=series.time_start
+        + data_start * source_factor * series.sample_interval,
         time_step=source_factor * series.sample_interval,
     )
     return RangePage(metadata, minimum, maximum, valid.astype(np.uint8))
 
 
-def pack_pages(pages: Iterable[RangePage]) -> tuple[dict[str, NDArray], dict[str, NDArray]]:
+def pack_pages(
+    pages: Iterable[RangePage],
+) -> tuple[dict[str, NDArray], dict[str, NDArray]]:
     """Pack pages into separate equal-length data and metadata columns."""
     page_list = list(pages)
     minima: list[NDArray[np.float32]] = []
@@ -268,8 +277,12 @@ def reference_raster(
             continue
         av = a[start:stop][finite_a[start:stop]]
         bv = b[start:stop][finite_b[start:stop]]
-        amin, amax = (float(av[:, 0].min()), float(av[:, 1].max())) if len(av) else (0, 0)
-        bmin, bmax = (float(bv[:, 0].min()), float(bv[:, 1].max())) if len(bv) else (0, 0)
+        amin, amax = (
+            (float(av[:, 0].min()), float(av[:, 1].max())) if len(av) else (0, 0)
+        )
+        bmin, bmax = (
+            (float(bv[:, 0].min()), float(bv[:, 1].max())) if len(bv) else (0, 0)
+        )
         for y in range(height):
             top = y_start + (y_end - y_start) * (1 - y / height)
             bottom = y_start + (y_end - y_start) * (1 - (y + 1) / height)

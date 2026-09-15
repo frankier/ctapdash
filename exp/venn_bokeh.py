@@ -57,10 +57,14 @@ def build_document(document: Document, argv: list[str]) -> None:
         padding = abs(y_start) * 0.05 or 1.0
         y_start -= padding
         y_end += padding
-    factors = tuple(sorted(set(sources[0].range_factors) & set(sources[1].range_factors)))
+    factors = tuple(
+        sorted(set(sources[0].range_factors) & set(sources[1].range_factors))
+    )
     page_size = 2048
     manifest = VennManifest(
-        dataset_version=sha256("|".join(source.dataset_version for source in sources).encode()).hexdigest()[:20],
+        dataset_version=sha256(
+            "|".join(source.dataset_version for source in sources).encode()
+        ).hexdigest()[:20],
         sample_count=common,
         time_start=sources[0].time_start,
         time_end=sources[0].times[common - 1],
@@ -68,7 +72,12 @@ def build_document(document: Document, argv: list[str]) -> None:
         source_factors=factors,
         page_size=page_size,
         page_counts=tuple(
-            (min(source.level_length("venn", factor) for source in sources) + page_size - 1) // page_size
+            (
+                min(source.level_length("venn", factor) for source in sources)
+                + page_size
+                - 1
+            )
+            // page_size
             for factor in factors
         ),
         initial_y_start=y_start,
@@ -110,6 +119,7 @@ def build_document(document: Document, argv: list[str]) -> None:
         renderer.channel_names,
         source_channels=source_channels,
     )
+
     def close_session(_context):
         mailbox.close()
 

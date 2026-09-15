@@ -55,7 +55,9 @@ def sources_context(request):
     return ctx
 
 
-templates = Jinja2Templates(directory=TEMPLATES_DIR, context_processors=[sources_context])
+templates = Jinja2Templates(
+    directory=TEMPLATES_DIR, context_processors=[sources_context]
+)
 
 
 def _observation_count(instance):
@@ -70,7 +72,9 @@ def _participant_step_rows(root_path, steps, participant):
     rows = []
     for step_num, step_path in steps:
         path = step_path / (participant + ".set")
-        instance = RecordingData(DatasetPaths(root_path).recording(path)).read_metadata()
+        instance = RecordingData(
+            DatasetPaths(root_path).recording(path)
+        ).read_metadata()
         rows.append(
             {
                 "number": step_num,
@@ -84,24 +88,28 @@ def _participant_step_rows(root_path, steps, participant):
 async def index(request):
     return templates.TemplateResponse(
         request,
-        'index.html',
+        "index.html",
         context={
             "sources": SETTINGS.sources,
-        }
+        },
     )
 
 
 def participant_context(request, default_participant=None):
-    dataset = ObservationData.from_request(request, default_participant=default_participant)
+    dataset = ObservationData.from_request(
+        request, default_participant=default_participant
+    )
     result = {
         "source": dataset.source,
     }
     if dataset.participant is not None:
         steps = dataset.get_steps()
-        result.update({
-            "participant": dataset.participant,
-            "steps": steps,
-        })
+        result.update(
+            {
+                "participant": dataset.participant,
+                "steps": steps,
+            }
+        )
     return result
 
 
@@ -110,7 +118,7 @@ async def dataset_overview(request):
     context["view"] = "dataset-overview"
     return templates.TemplateResponse(
         request,
-        'dataset_overview.html',
+        "dataset_overview.html",
         context=context,
     )
 
@@ -120,7 +128,7 @@ async def participant_select(request):
     context["view"] = "participant-select"
     return templates.TemplateResponse(
         request,
-        'participant_select.html',
+        "participant_select.html",
         context=context,
     )
 
@@ -129,11 +137,7 @@ async def participant_steps_fragment(request):
     context = participant_context(request)
     context["view"] = "steps"
     yaxis = request.query_params.get("yaxis", "overdraw")
-    context = {
-        **context,
-        "yaxis": yaxis,
-        "yaxis_options": []
-    }
+    context = {**context, "yaxis": yaxis, "yaxis_options": []}
     participant = context["participant"]
     steps = context["steps"]
     step = request.query_params.get("step", "")
@@ -166,11 +170,13 @@ async def participant_steps_fragment(request):
             else:
                 clipping = None
             fig = eeg.plot(show=False, scalings=scalings, clipping=clipping)
-        context["eeg_fig"] = safe_html.figure_html(fig, on_close="msg_discrete", prevent_default_navigation=True)
+        context["eeg_fig"] = safe_html.figure_html(
+            fig, on_close="msg_discrete", prevent_default_navigation=True
+        )
         context["current_step"] = step
     return templates.TemplateResponse(
         request,
-        'participant_steps.html',
+        "participant_steps.html",
         context=context,
     )
 
@@ -189,9 +195,13 @@ async def venn_time_series(request):
     default_participant = None
     if not request.query_params.get("participant"):
         dataset = ObservationData.from_request(request)
-        default_participant = dataset.get_all_steps().get("participants", [[None]])[0][0]
+        default_participant = dataset.get_all_steps().get("participants", [[None]])[0][
+            0
+        ]
     context = participant_context(request, default_participant=default_participant)
-    dataset = ObservationData.from_request(request, default_participant=default_participant)
+    dataset = ObservationData.from_request(
+        request, default_participant=default_participant
+    )
     await _wait_metadata(request, dataset, dataset.get_steps())
     await DATASET_STATS.get(dataset.source_path)
     context["view"] = "venn_time_series"
@@ -288,30 +298,33 @@ async def participant_peeks_fragment(request):
     if peek_param:
         groups, rest = tree.get(peek_param, {}).get(set_param, ({}, {}))
         if bit_param in groups:
-            context.update({
-                "qc_type": "eeg",
-                "eeg": map_encode_qc(dataset.source_path, groups[bit_param]),
-            })
+            context.update(
+                {
+                    "qc_type": "eeg",
+                    "eeg": map_encode_qc(dataset.source_path, groups[bit_param]),
+                }
+            )
         elif bit_param in rest:
             path = rest[bit_param]
-            context.update({
-                "qc_type": "image",
-                "path": str(path),
-                "encoded_string": encode_qc(dataset.source_path, path),
-            })
+            context.update(
+                {
+                    "qc_type": "image",
+                    "path": str(path),
+                    "encoded_string": encode_qc(dataset.source_path, path),
+                }
+            )
         elif "set" in request.query_params and "bit" in request.query_params:
             raise HTTPException(status_code=404)
     return templates.TemplateResponse(
-        request,
-        'participant_peeks.html',
-        context=context
+        request, "participant_peeks.html", context=context
     )
 
 
 async def _wait_metadata(request, dataset, steps):
     for _number, directory in steps:
         await request.app.state.cache_hurrier.hurry(
-            "metadata", (dataset.source_path, directory / (dataset.participant + ".set"))
+            "metadata",
+            (dataset.source_path, directory / (dataset.participant + ".set")),
         )
 
 
@@ -320,11 +333,12 @@ async def cache_status(websocket):
     template = templates.env.get_template("_cache_progress.html")
     warmer = websocket.app.state.cache_hurrier
     async with anyio.create_task_group() as group:
+
         async def send_progress():
             try:
                 async for status in warmer.statuses():
                     await websocket.send_text(template.render(status=status))
-            except (WebSocketDisconnect, OSError):
+            except WebSocketDisconnect, OSError:
                 pass
             finally:
                 group.cancel_scope.cancel()
@@ -345,13 +359,14 @@ async def participant_overview_fragment(request):
     steps = dataset.get_steps()
     await _wait_metadata(request, dataset, steps)
     from ctapdash.channels import participant_channel_metadata
+
     channel_metadata = await run_in_threadpool(participant_channel_metadata, dataset)
     step_rows = await run_in_threadpool(
         _participant_step_rows, dataset.source_path, steps, dataset.participant
     )
     return templates.TemplateResponse(
         request,
-        'participant_overview.html',
+        "participant_overview.html",
         context={
             "view": "overview",
             "logs": logs,
@@ -359,12 +374,13 @@ async def participant_overview_fragment(request):
             "steps": steps,
             "step_rows": step_rows,
             "channel_metadata": channel_metadata,
-        }
+        },
     )
 
 
 async def participant_statistics_fragment(request):
     from ctapdash.plotting.stats_heatmap import participant_descriptive_heatmap
+
     dataset = ObservationData.from_request(request)
     steps = dataset.get_steps()
     selected_step = request.query_params.get("step", "all")
@@ -380,18 +396,27 @@ async def participant_statistics_fragment(request):
         selected_steps = [(step_num, steps_by_number[step_num])]
     stats = await DATASET_STATS.get(dataset.source_path)
     import json
+
     channels = None
     if "channels" in request.query_params:
         try:
             channels = json.loads(request.query_params["channels"])
-            if not isinstance(channels, list) or not all(isinstance(name, str) for name in channels):
+            if not isinstance(channels, list) or not all(
+                isinstance(name, str) for name in channels
+            ):
                 raise ValueError("Expected channel names")
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="channels must be a JSON list of names")
+        except ValueError, TypeError:
+            raise HTTPException(
+                status_code=400, detail="channels must be a JSON list of names"
+            )
     descriptive_heatmap = None
     if selected_steps:
         descriptive_heatmap = await run_in_threadpool(
-            participant_descriptive_heatmap, selected_steps, dataset.participant, stats, channels
+            participant_descriptive_heatmap,
+            selected_steps,
+            dataset.participant,
+            stats,
+            channels,
         )
     return templates.TemplateResponse(
         request,
@@ -415,24 +440,24 @@ async def participant_log(request):
         log_path = dataset.source_path / log
         with open(log_path) as f:
             content = f.read()
-        ctx.update({
-            "current_log_file": log,
-            "content": content,
-        })
-    return templates.TemplateResponse(
-        request,
-        'participant_log.html',
-        context=ctx
-    )
+        ctx.update(
+            {
+                "current_log_file": log,
+                "content": content,
+            }
+        )
+    return templates.TemplateResponse(request, "participant_log.html", context=ctx)
 
 
 def create_app(debug=False):
     from ctapdash.setup_ui import RequireConfigMiddleware, setup_routes
     from venn_ts import venn_time_series_bokeh
 
-    bokeh_application = BokehASGI({
-        "/venn-time-series": venn_time_series_bokeh,
-    })
+    bokeh_application = BokehASGI(
+        {
+            "/venn-time-series": venn_time_series_bokeh,
+        }
+    )
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
@@ -451,17 +476,37 @@ def create_app(debug=False):
     app = Starlette(
         debug=debug,
         routes=[
-            Route('/', index, name="index"),
-            WebSocketRoute('/cache-status', cache_status, name='cache_status'),
-            Mount('/static', app=StaticFiles(directory=STATIC_DIR), name="static"),
-            Route('/overview', dataset_overview, name="dataset_overview"),
-            Route('/participant', participant_select, name="participant_select"),
-            Route('/participant/overview', participant_overview_fragment, name="participant_overview"),
-            Route('/participant/statistics', participant_statistics_fragment, name="participant_statistics"),
-            Route('/participant/steps', participant_steps_fragment, name="participant_steps"),
-            Route('/participant/venn-time-series', venn_time_series, name="venn_time_series"),
-            Route('/participant/peeks', participant_peeks_fragment, name="participant_peeks"),
-            Route('/participant/log', participant_log, name="participant_log"),
+            Route("/", index, name="index"),
+            WebSocketRoute("/cache-status", cache_status, name="cache_status"),
+            Mount("/static", app=StaticFiles(directory=STATIC_DIR), name="static"),
+            Route("/overview", dataset_overview, name="dataset_overview"),
+            Route("/participant", participant_select, name="participant_select"),
+            Route(
+                "/participant/overview",
+                participant_overview_fragment,
+                name="participant_overview",
+            ),
+            Route(
+                "/participant/statistics",
+                participant_statistics_fragment,
+                name="participant_statistics",
+            ),
+            Route(
+                "/participant/steps",
+                participant_steps_fragment,
+                name="participant_steps",
+            ),
+            Route(
+                "/participant/venn-time-series",
+                venn_time_series,
+                name="venn_time_series",
+            ),
+            Route(
+                "/participant/peeks",
+                participant_peeks_fragment,
+                name="participant_peeks",
+            ),
+            Route("/participant/log", participant_log, name="participant_log"),
             *setup_routes(),
             Mount("/bokeh", bokeh_application, name="bokeh"),
         ],
@@ -470,7 +515,7 @@ def create_app(debug=False):
             Middleware(HtmxMiddleware),
             Middleware(GlobalRequestMiddleware),
         ],
-        lifespan=lifespan
+        lifespan=lifespan,
     )
     # Installs MplbedMiddleware (which does its own /webagg routing), registers
     # the mplbed_head context processor, and selects the webaggext backend.

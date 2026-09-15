@@ -1,4 +1,5 @@
 """Deterministic synthetic CTAP files; no participant data is copied."""
+
 import json
 from pathlib import Path
 
@@ -11,9 +12,9 @@ def write_eeglab(tmp_path, n_epochs=1, *, stem=None, n_times=4):
     """Write external float32 samples and top-level EEGLAB MAT metadata."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     n_channels = 2
-    data = np.arange(
-        n_epochs * n_channels * n_times, dtype=np.float32
-    ).reshape(n_epochs, n_channels, n_times)
+    data = np.arange(n_epochs * n_channels * n_times, dtype=np.float32).reshape(
+        n_epochs, n_channels, n_times
+    )
     stem = stem or ("epochs" if n_epochs > 1 else "raw")
     fdt_path = tmp_path / f"{stem}.fdt"
     data.transpose(1, 2, 0).ravel(order="F").tofile(fdt_path)
@@ -34,9 +35,7 @@ def write_eeglab(tmp_path, n_epochs=1, *, stem=None, n_times=4):
             [np.arange(n_epochs) * n_times + 1.0, ["event"] * n_epochs],
             names=["latency", "type"],
         )
-        eeg["epoch"] = np.rec.fromarrays(
-            [["event"] * n_epochs], names=["eventtype"]
-        )
+        eeg["epoch"] = np.rec.fromarrays([["event"] * n_epochs], names=["eventtype"])
     else:
         eeg["event"] = np.empty(0)
         eeg["epoch"] = np.empty(0)
@@ -57,16 +56,23 @@ def write_dataset(directory):
     write_eeglab(root / "3_fine_clean", 2, stem="1002P_dummy_intake", n_times=100)
     log = root / "logs" / "CTAP_load_data" / f"{participant}.log"
     log.parent.mkdir(parents=True)
-    log.write_text("Dummy CTAP pipeline\nLoaded 2 channels and 500 samples.\nProcessing completed.\n")
+    log.write_text(
+        "Dummy CTAP pipeline\nLoaded 2 channels and 500 samples.\nProcessing completed.\n"
+    )
     for folder, names in {
-        "CTAP_peek_data/set1_fun1": [f"{participant}-badChan-scalp.png", f"{participant}-chs1-2.png"],
+        "CTAP_peek_data/set1_fun1": [
+            f"{participant}-badChan-scalp.png",
+            f"{participant}-chs1-2.png",
+        ],
         "CTAP_blink2event/set3_fun1": [f"{participant}_blink_ERP.png"],
     }.items():
         target = root / "quality_control" / folder
         target.mkdir(parents=True)
         for name in names:
             image = Image.new("RGB", (160, 80), "white")
-            ImageDraw.Draw(image).line([(10, 40), (40, 15), (80, 65), (150, 40)], fill="navy", width=3)
+            ImageDraw.Draw(image).line(
+                [(10, 40), (40, 15), (80, 65), (150, 40)], fill="navy", width=3
+            )
             image.save(target / name)
     config = directory / "conf.toml"
     config.write_text('[sources]\n"dummy" = ' + json.dumps(str(root)) + "\n")
