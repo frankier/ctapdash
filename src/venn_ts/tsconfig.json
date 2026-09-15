@@ -28,18 +28,12 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "target": "ES2024",
-    "lib": [
-      "es2022",
-      "dom",
-      "dom.iterable"
-    ],
+    "lib": ["es2022", "dom", "dom.iterable"],
     "outDir": "./dist/lib",
     "baseUrl": ".",
     "paths": {
       "@bokehjs/*": ["./node_modules/@bokeh/bokehjs/build/js/lib/*"]
     }
   },
-  "include": [
-    "./**/*.ts"
-  ]
+  "include": ["./**/*.ts"]
 }

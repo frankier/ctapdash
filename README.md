@@ -16,7 +16,7 @@ The builds are not code-signed, so:
   xattr -dr com.apple.quarantine "/Applications/CTAP Dashboard.app"
   ```
 - **Windows**: SmartScreen shows "Windows protected your PC". Choose
-  *More info* → *Run anyway*.
+  _More info_ → _Run anyway_.
 
 On Windows and macOS the dashboard opens in its own window. On Linux it starts
 a local server and opens your usual browser, because the native window there
@@ -43,17 +43,17 @@ wins if both are given).
 
 If you give neither, the dashboard opens on a setup page where you can add
 directories interactively. Sources added that way last only for that run —
-use *Save configuration* to write them to a file you can pass with `--config`
+use _Save configuration_ to write them to a file you can pass with `--config`
 next time. There is deliberately no automatic config location.
 
 ### Other options
 
-| Option | Effect |
-|---|---|
-| `--port N` | Serve on a fixed port instead of a free one |
-| `--no-window` | Serve only; don't open a window or a browser |
-| `--no-browser` | Don't open a browser |
-| `--debug` | Show tracebacks in the browser |
+| Option         | Effect                                       |
+| -------------- | -------------------------------------------- |
+| `--port N`     | Serve on a fixed port instead of a free one  |
+| `--no-window`  | Serve only; don't open a window or a browser |
+| `--no-browser` | Don't open a browser                         |
+| `--debug`      | Show tracebacks in the browser               |
 
 The dashboard warms metadata, transposed samples, pyramids, and statistics when
 sources are loaded or added in Setup. A bottom-right indicator shows the active
