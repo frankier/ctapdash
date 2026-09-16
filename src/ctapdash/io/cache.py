@@ -53,6 +53,10 @@ def scan_dataset(directory):
             fresh = output.stat().st_mtime_ns >= mtime
         except FileNotFoundError:
             fresh = False
+        if fresh and kind in ("pyramid", "rangepyramid"):
+            from ctapdash.io.pyramid import grid_cache_current
+
+            fresh = grid_cache_current(output)
         jobs[key] = Job(
             key,
             output,

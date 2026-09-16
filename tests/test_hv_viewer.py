@@ -9,8 +9,6 @@ from bokeh.models import (
     CheckboxButtonGroup,
     CustomAction,
     Dialog,
-    MultiChoice,
-    HoverTool,
     PanTool,
     RangeSlider,
     Select as BkSelect,
@@ -160,7 +158,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
     assert len(custom) == 1
     assert custom[0].channel_tile_size == 1
     assert custom[0].amplitude_scales == pytest.approx([0.2] * 8)
-    assert custom[0].sample_count == 1401
+    assert custom[0].sample_count == 1402
     assert len(glyphs) == 3
     overlay_glyphs = [glyph for glyph in glyphs if glyph.name is not None]
     assert all(
@@ -200,7 +198,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
         "horizontal",
         "vertical",
     }
-    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.4))
+    assert scrollbars_by_orientation["horizontal"].value == pytest.approx((0, 1.402))
     assert scrollbars_by_orientation["vertical"].value == (0, 8)
     assert scrollbars_by_orientation["vertical"].direction == "rtl"
     assert scrollbars_by_orientation["vertical"].sizing_mode == "fixed"
@@ -213,7 +211,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
     assert channel_minimap.yaxis[0].avoid_overlap is True
     assert channel_minimap.y_range is not figure.y_range
     assert (time_minimap.x_range.start, time_minimap.x_range.end) == pytest.approx(
-        (0, 1.4)
+        (0, 1.402)
     )
     assert (channel_minimap.y_range.start, channel_minimap.y_range.end) == (0, 8)
     assert not list(figure.select({"type": PanTool}))

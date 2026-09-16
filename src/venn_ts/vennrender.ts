@@ -4,7 +4,45 @@ import type {Context2d} from "@bokehjs/core/util/canvas"
 import type {Color} from "@bokehjs/core/types"
 import * as p from "@bokehjs/core/properties"
 
+type EpochPager = {
+    segment: number
+    side: number
+    index: number
+    count: number
+    start: number
+    end: number
+}
+
+type EpochFragment = {
+    segment: number
+    segment_start: number
+    count: number
+    start: number
+    end: number
+    time: number
+    options: [number, number][][] // per side: [block offset, channel stride]
+}
+type EpochTile = {
+    layer: string
+    factor: number
+    page: number
+    channel_page: number
+    channel_start: number
+    channel_count: number
+    start: number
+    end: number
+    step: number
+    fragments: EpochFragment[]
+    values: Float32Array
+    bytes: number
+    used: number
+}
+type SelectedRanges = {signature: string; parts: [string, RangeTile][]; bytes: number}
+
 type RangeTile = {
+    edges?: Float32Array
+    clip_start: number
+    clip_end: number
     factor: number
     x_page: number
     channel_page: number
@@ -35,6 +73,10 @@ type LineTile = {
 }
 
 type GpuTile = {
+    lookup_signature: string
+    lookup_width: number
+    lookup_height: number
+    edges: WebGLTexture
     ranges: WebGLTexture
     valid: WebGLTexture
     bytes: number
@@ -58,6 +100,9 @@ const fragment_source = `
 precision highp float;
 uniform sampler2D u_ranges;
 uniform sampler2D u_valid;
+uniform sampler2D u_edges;
+uniform bool u_irregular;
+uniform vec2 u_lookup_size;
 uniform vec2 u_texture_size;
 uniform float u_entry_count;
 uniform float u_channel_row;
@@ -92,13 +137,23 @@ void main() {
   first = clamp(first, 0.0, u_entry_count);
   last = clamp(last, first, u_entry_count);
 
+  if (u_irregular) {
+    // The CPU caches the clipped bucket span for each screen column. Keeping
+    // binary searches out of the fragment shader also makes software WebGL fast.
+    float column = floor(local_x);
+    vec2 position = vec2(mod(column, u_lookup_size.x) + 0.5,
+                         floor(column / u_lookup_size.x) + 0.5) / u_lookup_size;
+    vec4 span = texture2D(u_edges, position);
+    first = span.r;
+    last = span.a;
+  }
   float amin = 3.402823466e38;
   float amax = -3.402823466e38;
   float bmin = 3.402823466e38;
   float bmax = -3.402823466e38;
   bool has_a = false;
   bool has_b = false;
-  for (int offset = 0; offset < 1024; offset++) {
+  for (int offset = 0; offset < 2048; offset++) {
     float index = first + float(offset);
     if (index >= last) break;
     vec2 position = texel_position(index);
@@ -166,6 +221,13 @@ function css_color(color: Color): [number, number, number, number] {
 
 export class VennTimeSeriesRendererView extends RendererView {
     declare model: VennTimeSeriesRenderer
+    private pager_elements: {el: HTMLDivElement; item: EpochPager}[] | null = null
+    private status_element: HTMLDivElement | null = null
+    private pagers_dirty = true
+    private epoch_tiles = new Map<string, EpochTile>()
+    private selected_ranges = new Map<string, SelectedRanges>()
+    private selection_serial = 0
+    private epoch_chunks: Uint8Array[] = []
     private resources: GLResources | null = null
     private range_tiles = new Map<string, RangeTile>()
     private line_tiles = new Map<string, LineTile>()
@@ -188,7 +250,13 @@ export class VennTimeSeriesRendererView extends RendererView {
         const {x_source, y_source} = this.coordinates
         this.connect(x_source.change, () => this.schedule())
         this.connect(y_source.change, () => this.schedule())
-        this.connect(this.model.properties.response_seq.change, () => this.consume_response())
+        this.connect(this.model.properties.response_generation.change, () =>
+            this.consume_response(),
+        )
+        this.connect(this.model.properties.epoch_pagers.change, () => {
+            this.pagers_dirty = true
+            this.schedule()
+        })
         for (const property of [
             this.model.properties.venn_visible,
             this.model.properties.lines_visible,
@@ -203,7 +271,35 @@ export class VennTimeSeriesRendererView extends RendererView {
             this.model.properties.rendered_cache_bytes,
         ])
             this.connect(property.change, () => this.schedule())
+        for (const property of [
+            this.model.properties.ready,
+            this.model.properties.error,
+            this.model.properties.status,
+        ])
+            this.connect(property.change, () => this.update_status())
         this.schedule()
+    }
+
+    private update_status(): void {
+        if (this.status_element == null) {
+            const el = document.createElement("div")
+            el.className = "comparison-status"
+            el.setAttribute("role", "status")
+            el.style.cssText =
+                "position:absolute;z-index:10;height:26px;box-sizing:border-box;background:white;font:13px sans-serif;line-height:26px;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            this.plot_view.shadow_el.append(el)
+            this.status_element = el
+        }
+        const el = this.status_element,
+            bbox = this.plot_view.frame.bbox
+        const message =
+            this.model.error || this.model.status || (this.model.ready ? "" : "Loading...")
+        el.textContent = message
+        el.title = message
+        el.style.display = message ? "block" : "none"
+        el.style.left = `${bbox.x}px`
+        el.style.top = `${Math.max(0, bbox.y - 26)}px`
+        el.style.width = `${bbox.width}px`
     }
 
     private schedule(): void {
@@ -212,8 +308,108 @@ export class VennTimeSeriesRendererView extends RendererView {
             this.frame_request = null
             this.plan_requests()
             this.update_lines()
+            this.update_pagers()
             this.request_paint()
         })
+    }
+
+    private update_pagers(): void {
+        this.update_status()
+        if (this.pager_elements == null || this.pagers_dirty) {
+            this.pagers_dirty = false
+            const existing = new Map(
+                (this.pager_elements ?? []).map((p) => [`${p.item.segment}:${p.item.side}`, p]),
+            )
+            this.pager_elements = []
+            const items: EpochPager[] = JSON.parse(this.model.epoch_pagers)
+            for (const item of items) {
+                const key = `${item.segment}:${item.side}`
+                const previous = existing.get(key)
+                if (previous != null) {
+                    existing.delete(key)
+                    if (previous.item.index != item.index || previous.item.count != item.count) {
+                        Object.assign(previous.item, item)
+                        previous.el.querySelector("span")!.textContent =
+                            `${item.side == 0 ? "A" : "B"} ${item.index + 1}/${item.count}`
+                        const buttons = previous.el.querySelectorAll("button")
+                        buttons[0].disabled = item.index == 0
+                        buttons[1].disabled = item.index + 1 >= item.count
+                    } else Object.assign(previous.item, item)
+                    this.pager_elements.push(previous)
+                    continue
+                }
+                const el = document.createElement("div")
+                el.className = "epoch-pager"
+                el.style.cssText =
+                    "position:absolute;z-index:5;white-space:nowrap;font:11px sans-serif;background:white;border:1px solid #ddd;border-radius:3px;padding:1px"
+                // Later controls overlap earlier controls; hover priority is temporary.
+                el.addEventListener("mouseenter", () => {
+                    el.style.zIndex = "6"
+                })
+                el.addEventListener("mouseleave", () => {
+                    el.style.zIndex = "5"
+                })
+                const label = item.side == 0 ? "A" : "B"
+                el.style.color = item.side == 0 ? "#c00" : "#00c"
+                for (const direction of [-1, 0, 1]) {
+                    if (direction == 0) {
+                        const text = document.createElement("span")
+                        text.textContent = `${label} ${item.index + 1}/${item.count}`
+                        el.append(text)
+                    } else {
+                        const button = document.createElement("button")
+                        button.textContent = direction == -1 ? "‹" : "›"
+                        button.style.cssText =
+                            "font:14px sans-serif;padding:0 4px;background:transparent;border:0;cursor:pointer;color:inherit"
+                        button.disabled =
+                            item.index + direction < 0 || item.index + direction >= item.count
+                        button.setAttribute(
+                            "aria-label",
+                            `${direction == -1 ? "Previous" : "Next"} epoch ${label}, region ${item.segment + 1}`,
+                        )
+                        button.addEventListener("click", () => {
+                            const items = JSON.parse(this.model.epoch_pagers)
+                            for (const pager of items)
+                                if (pager.segment == item.segment && pager.side == item.side)
+                                    pager.index = item.index + direction
+                            this.model.epoch_pagers = JSON.stringify(items)
+                            this.model.ready = false
+                            this.model.epoch_selection = [
+                                item.segment,
+                                item.side,
+                                item.index + direction,
+                            ]
+                        })
+                        el.append(button)
+                    }
+                }
+                this.plot_view.shadow_el.append(el)
+                this.pager_elements.push({el, item})
+            }
+            for (const pager of existing.values()) pager.el.remove()
+        }
+        const range = this.coordinates.x_source,
+            bbox = this.plot_view.frame.bbox
+        // Batch layout reads before position writes. Hundreds of overlapping
+        // epoch controls otherwise force a browser layout for every indicator.
+        for (const {el, item} of this.pager_elements)
+            el.style.display =
+                Math.min(item.end, range.end) <= Math.max(item.start, range.start)
+                    ? "none"
+                    : "block"
+        const widths = this.pager_elements.map((p) => p.el.offsetWidth)
+        for (let i = 0; i < this.pager_elements.length; i++) {
+            const {el, item} = this.pager_elements[i]
+            const low = Math.max(item.start, range.start),
+                high = Math.min(item.end, range.end)
+            if (high <= low) continue
+            const center =
+                bbox.x + (((low + high) / 2 - range.start) / (range.end - range.start)) * bbox.width
+            const width = widths[i]
+            const left = Math.min(bbox.right - width, Math.max(bbox.x, center - width / 2))
+            el.style.left = `${left}px`
+            el.style.top = `${Math.max(0, bbox.y - 26)}px`
+        }
     }
 
     private choose_factor(factors: number[]): number {
@@ -232,6 +428,8 @@ export class VennTimeSeriesRendererView extends RendererView {
         const factors = layer == "venn" ? this.model.range_factors : this.model.line_factors
         const counts = layer == "venn" ? this.model.range_page_counts : this.model.line_page_counts
         const index = factors.indexOf(factor)
+        if (this.model.segment_counts.length != 0)
+            return Math.ceil(this.model.sample_count / (factor * this.model.page_size))
         return index < 0 ? 0 : counts[index]
     }
 
@@ -280,11 +478,21 @@ export class VennTimeSeriesRendererView extends RendererView {
     }
 
     private tile_key(layer: string, factor: number, x_page: number, channel_page: number): string {
-        return `${this.model.dataset_version}:${layer}:${factor}:${x_page}:${channel_page}`
+        return `${this.model.dataset_version}:${layer}:${factor}:${this.model.page_size}:${x_page}:${channel_page}`
+    }
+
+    private response_key(
+        layer: string,
+        factor: number,
+        x_page: number,
+        channel_page: number,
+    ): string {
+        return this.tile_key(layer, factor, x_page, channel_page)
     }
 
     private has_tile(layer: string, factor: number, x_page: number, channel_page: number): boolean {
         const key = this.tile_key(layer, factor, x_page, channel_page)
+        if (this.epoch_tiles.has(key)) return true
         return layer == "venn"
             ? this.range_tiles.has(key)
             : this.has_line_page(factor, x_page, channel_page)
@@ -364,28 +572,255 @@ export class VennTimeSeriesRendererView extends RendererView {
         try {
             if (failed) this.model.error = this.model.response_error
             else {
-                this.consume_ranges()
-                this.consume_lines()
+                if (this.model.segment_counts.length != 0) this.consume_epoch_chunk()
+                else {
+                    this.consume_ranges()
+                    this.consume_lines()
+                }
+                if (!this.model.response_final) return
                 this.evict_cpu_cache()
                 this.model.error = ""
             }
         } catch (error) {
             this.model.error = `Venn tile protocol error: ${error}`
         } finally {
-            for (const [layer, factor, x_page, channel_page] of response_tiles) {
-                const key = this.tile_key(layer, factor, x_page, channel_page)
-                const succeeded = !failed && this.has_tile(layer, factor, x_page, channel_page)
-                if (succeeded) this.failure_counts.delete(key)
-                else this.failure_counts.set(key, (this.failure_counts.get(key) ?? 0) + 1)
-                const requested = this.requested_at.get(key)
-                if (requested != null)
-                    this.model.last_tile_latency_ms = performance.now() - requested
-                this.requested_at.delete(key)
-                this.in_flight.delete(key)
-            }
-            this.model.response_ack = this.model.response_seq
+            if (this.model.response_final)
+                for (const [layer, factor, x_page, channel_page] of response_tiles) {
+                    const key = this.response_key(layer, factor, x_page, channel_page)
+                    const current = key == this.tile_key(layer, factor, x_page, channel_page)
+                    const succeeded = !failed && this.has_tile(layer, factor, x_page, channel_page)
+                    if (succeeded) this.failure_counts.delete(key)
+                    else if (current)
+                        this.failure_counts.set(key, (this.failure_counts.get(key) ?? 0) + 1)
+                    const requested = this.requested_at.get(key)
+                    if (requested != null)
+                        this.model.last_tile_latency_ms = performance.now() - requested
+                    this.requested_at.delete(key)
+                    this.in_flight.delete(key)
+                }
+            if (failed) this.epoch_chunks = []
+            this.model.response_ack = this.model.response_generation
             this.schedule()
         }
+    }
+
+    private consume_epoch_chunk(): void {
+        const payload = numeric_column(this.model.epoch_batch_source, "payload")
+        this.epoch_chunks.push(Uint8Array.from(payload))
+        if (!this.model.response_final) return
+        const packet = new Uint8Array(this.epoch_chunks.reduce((n, p) => n + p.length, 0))
+        let offset = 0
+        for (const chunk of this.epoch_chunks) {
+            packet.set(chunk, offset)
+            offset += chunk.length
+        }
+        this.epoch_chunks = []
+        const header_size = new DataView(packet.buffer).getUint32(0, true)
+        const headers = JSON.parse(new TextDecoder().decode(packet.subarray(4, 4 + header_size)))
+        const values = new Float32Array(packet.buffer, 4 + header_size)
+        for (const header of headers) {
+            const key = this.tile_key(header.layer, header.factor, header.page, header.channel_page)
+            const data = values.slice(header.offset, header.offset + header.length)
+            this.drop_selected(key)
+            this.epoch_tiles.set(key, {
+                ...header,
+                values: data,
+                bytes: data.byteLength + JSON.stringify(header).length * 2,
+                used: ++this.use_counter,
+            })
+        }
+    }
+
+    private choices(): Map<number, [number, number]> {
+        const selections = new Map<number, [number, number]>()
+        for (const item of JSON.parse(this.model.epoch_pagers)) {
+            const pair = selections.get(item.segment) ?? [0, 0]
+            pair[item.side] = item.index
+            selections.set(item.segment, pair)
+        }
+        return selections
+    }
+
+    private drop_selected(key: string): void {
+        for (const [draw_key] of this.selected_ranges.get(key)?.parts ?? []) {
+            const gpu = this.gpu_tiles.get(draw_key)
+            if (gpu != null && this.resources != null) {
+                const gl = this.resources.gl
+                gl.deleteTexture(gpu.ranges)
+                gl.deleteTexture(gpu.valid)
+                gl.deleteTexture(gpu.edges)
+                this.gpu_tiles.delete(draw_key)
+            }
+        }
+        this.selected_ranges.delete(key)
+    }
+
+    private range_parts(key: string): [string, RangeTile][] {
+        const batch = this.epoch_tiles.get(key)
+        if (batch == null) {
+            const tile = this.range_tiles.get(key)
+            return tile == null ? [] : [[key, tile]]
+        }
+        batch.used = ++this.use_counter
+        const choices = this.choices()
+        const signature = batch.fragments
+            .map((f) => (choices.get(f.segment) ?? [0, 0]).join(","))
+            .join(";")
+        const previous = this.selected_ranges.get(key)
+        if (previous?.signature == signature) return previous.parts
+        this.drop_selected(key)
+        const parts: [string, RangeTile][] = []
+        // Only selected choices reach the GPU. Pack adjacent segment pieces into
+        // bounded textures; explicit endpoints retain exact clipping and gaps.
+        let entries: {fragment: EpochFragment; index: number; start: number; end: number}[] = []
+        const flush = () => {
+            if (entries.length == 0) return
+            const count = entries.length,
+                origin = entries[0].start
+            const ranges = new Float32Array(count * batch.channel_count * 4)
+            const valid = new Uint8Array(count * batch.channel_count * 2)
+            const edges = new Float32Array(count * 2)
+            for (let i = 0; i < count; i++) {
+                const entry = entries[i],
+                    f = entry.fragment
+                edges[i * 2] = entry.start - origin
+                edges[i * 2 + 1] = entry.end - origin
+                const selected = choices.get(f.segment) ?? [0, 0]
+                for (let side = 0; side < 2; side++) {
+                    const option = f.options[side][selected[side]]
+                    if (option == null) continue
+                    for (let ch = 0; ch < batch.channel_count; ch++) {
+                        const source = option[0] + ch * option[1] + entry.index * 2
+                        const lo = batch.values[source],
+                            hi = batch.values[source + 1]
+                        if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) continue
+                        const target = ch * count + i
+                        ranges[target * 4 + side * 2] = lo
+                        ranges[target * 4 + side * 2 + 1] = hi
+                        valid[target * 2 + side] = 1
+                    }
+                }
+            }
+            const tile: RangeTile = {
+                factor: batch.factor,
+                x_page: batch.page,
+                channel_page: batch.channel_page,
+                channel_start: batch.channel_start,
+                channel_count: batch.channel_count,
+                entry_count: count,
+                data_start: 0,
+                core_start: 0,
+                core_length: count,
+                clip_start: origin,
+                clip_end: entries[count - 1].end,
+                time_start: origin,
+                time_step: batch.step,
+                ranges,
+                valid,
+                edges,
+                bytes: ranges.byteLength + valid.byteLength + edges.byteLength,
+                used: ++this.use_counter,
+            }
+            parts.push([`${key}:selected:${++this.selection_serial}`, tile])
+            entries = []
+        }
+        for (const f of batch.fragments) {
+            for (let i = 0; i < f.count; i++) {
+                const start = Math.max(f.start, f.time + i * batch.step)
+                const end = Math.min(f.end, f.time + (i + 1) * batch.step)
+                if (end <= start) continue
+                entries.push({fragment: f, index: i, start, end})
+                if (entries.length == 2048) flush()
+            }
+        }
+        flush()
+        this.selected_ranges.set(key, {
+            signature,
+            parts,
+            bytes: parts.reduce((n, p) => n + p[1].bytes, 0),
+        })
+        return parts
+    }
+
+    private epoch_lines(batch: EpochTile, channel: number): LineTile[] {
+        batch.used = ++this.use_counter
+        const choices = this.choices(),
+            rows: LineTile[] = []
+        for (const f of batch.fragments) {
+            const selected = choices.get(f.segment) ?? [0, 0]
+            const times = Array.from({length: f.count}, (_, i) =>
+                Math.max(f.segment_start, f.time + i * batch.step),
+            )
+            const points: [number, number, number][] = []
+            // Clip interpolated lines at page edges, sharing an identical endpoint
+            // with the adjacent page. Segment boundaries always remain separate.
+            for (let i = 0; i < times.length; i++) {
+                if (i > 0)
+                    for (const edge of [f.start, f.end]) {
+                        if (times[i - 1] < edge && edge < times[i])
+                            points.push([
+                                edge,
+                                i - 1,
+                                (edge - times[i - 1]) / (times[i] - times[i - 1]),
+                            ])
+                    }
+                if (times[i] >= f.start && times[i] <= f.end) points.push([times[i], i, 0])
+            }
+            const time = Float64Array.from(points, (p) => p[0])
+            const a = new Float32Array(points.length).fill(NaN),
+                b = new Float32Array(points.length).fill(NaN)
+            for (let side = 0; side < 2; side++) {
+                const option = f.options[side][selected[side]]
+                if (option == null) continue
+                const offset = option[0] + (channel - batch.channel_start) * option[1]
+                const output = side == 0 ? a : b
+                for (let i = 0; i < points.length; i++) {
+                    const [, index, fraction] = points[i]
+                    const value = batch.values[offset + index]
+                    output[i] =
+                        fraction == 0
+                            ? value
+                            : value + fraction * (batch.values[offset + index + 1] - value)
+                }
+            }
+            rows.push({
+                factor: batch.factor,
+                x_page: batch.page,
+                channel_page: batch.channel_page,
+                channel_index: channel,
+                time,
+                a,
+                b,
+                bytes: time.byteLength + a.byteLength + b.byteLength,
+                used: batch.used,
+            })
+        }
+        // One polyline per tile/channel. NaN separators retain epoch/gap breaks
+        // without creating hundreds of tiny Bokeh glyph rows per channel.
+        const count = rows.reduce((n, row) => n + row.time.length + 1, 0)
+        const time = new Float64Array(count).fill(NaN)
+        const a = new Float32Array(count).fill(NaN),
+            b = new Float32Array(count).fill(NaN)
+        let offset = 0
+        for (const row of rows) {
+            time.set(row.time, offset)
+            a.set(row.a, offset)
+            b.set(row.b, offset)
+            offset += row.time.length + 1
+        }
+        return [
+            {
+                factor: batch.factor,
+                x_page: batch.page,
+                channel_page: batch.channel_page,
+                channel_index: channel,
+                time,
+                a,
+                b,
+                used: batch.used,
+                bytes: time.byteLength + a.byteLength + b.byteLength,
+            },
+        ]
     }
 
     private consume_ranges(): void {
@@ -410,6 +845,8 @@ export class VennTimeSeriesRendererView extends RendererView {
         const corelengths = numeric_column(metadata, "core_length"),
             tstarts = numeric_column(metadata, "time_start")
         const tsteps = numeric_column(metadata, "time_step")
+        const clip_starts = numeric_column(metadata, "clip_start"),
+            clip_ends = numeric_column(metadata, "clip_end")
         for (let row = 0; row < factors.length; row++) {
             const length = lengths[row],
                 offset = offsets[row]
@@ -423,7 +860,8 @@ export class VennTimeSeriesRendererView extends RendererView {
                 valid[index * 2] = va[offset + index]
                 valid[index * 2 + 1] = vb[offset + index]
             }
-            const key = this.tile_key("venn", factors[row], xpages[row], cpages[row])
+            const key = this.response_key("venn", factors[row], xpages[row], cpages[row])
+            if (key != this.tile_key("venn", factors[row], xpages[row], cpages[row])) continue
             this.range_tiles.set(key, {
                 factor: factors[row],
                 x_page: xpages[row],
@@ -434,6 +872,8 @@ export class VennTimeSeriesRendererView extends RendererView {
                 data_start: dstarts[row],
                 core_start: corestarts[row],
                 core_length: corelengths[row],
+                clip_start: clip_starts[row],
+                clip_end: clip_ends[row],
                 time_start: tstarts[row],
                 time_step: tsteps[row],
                 ranges,
@@ -467,7 +907,8 @@ export class VennTimeSeriesRendererView extends RendererView {
                 av[index] = a[offset + index]
                 bv[index] = b[offset + index]
             }
-            const page_key = this.tile_key("lines", factors[row], xpages[row], cpages[row])
+            const page_key = this.response_key("lines", factors[row], xpages[row], cpages[row])
+            if (page_key != this.tile_key("lines", factors[row], xpages[row], cpages[row])) continue
             this.line_tiles.set(`${page_key}:${channels[row]}`, {
                 factor: factors[row],
                 x_page: xpages[row],
@@ -486,14 +927,22 @@ export class VennTimeSeriesRendererView extends RendererView {
         let bytes = 0
         for (const tile of this.range_tiles.values()) bytes += tile.bytes
         for (const tile of this.line_tiles.values()) bytes += tile.bytes
-        const entries: [string, RangeTile | LineTile, "range" | "line"][] = []
+        for (const tile of this.epoch_tiles.values()) bytes += tile.bytes
+        for (const tile of this.selected_ranges.values()) bytes += tile.bytes
+        const entries: [string, RangeTile | LineTile | EpochTile, "range" | "line" | "epoch"][] = []
         for (const [key, tile] of this.range_tiles) entries.push([key, tile, "range"])
         for (const [key, tile] of this.line_tiles) entries.push([key, tile, "line"])
+        for (const [key, tile] of this.epoch_tiles) entries.push([key, tile, "epoch"])
         entries.sort((a, b) => a[1].used - b[1].used)
         for (const [key, tile, kind] of entries) {
             if (bytes <= this.model.data_cache_bytes) break
             if (kind == "range") this.range_tiles.delete(key)
-            else this.line_tiles.delete(key)
+            else if (kind == "line") this.line_tiles.delete(key)
+            else {
+                this.epoch_tiles.delete(key)
+                bytes -= this.selected_ranges.get(key)?.bytes ?? 0
+                this.drop_selected(key)
+            }
             bytes -= tile.bytes
         }
         this.model.cpu_cache_bytes = bytes
@@ -525,21 +974,29 @@ export class VennTimeSeriesRendererView extends RendererView {
                     this.model.channel_names.length,
                 )
                 for (let channel = start; channel < stop; channel++) {
-                    const tile = this.line_tiles.get(`${page_key}:${channel}`)
-                    if (tile == null) continue
-                    tile.used = ++this.use_counter
-                    const ay = new Float32Array(tile.a.length),
-                        by = new Float32Array(tile.b.length)
-                    const scale = this.model.amplitude_scales[channel],
-                        offset = this.model.amplitude_offsets[channel]
-                    for (let index = 0; index < tile.a.length; index++) {
-                        ay[index] = tile.a[index] * scale + offset
-                        by[index] = tile.b[index] * scale + offset
+                    const epoch = this.epoch_tiles.get(page_key)
+                    const legacy = this.line_tiles.get(`${page_key}:${channel}`)
+                    const rows =
+                        epoch != null
+                            ? this.epoch_lines(epoch, channel)
+                            : legacy == null
+                              ? []
+                              : [legacy]
+                    for (const tile of rows) {
+                        tile.used = ++this.use_counter
+                        const ay = new Float32Array(tile.a.length),
+                            by = new Float32Array(tile.b.length)
+                        const scale = this.model.amplitude_scales[channel],
+                            offset = this.model.amplitude_offsets[channel]
+                        for (let index = 0; index < tile.a.length; index++) {
+                            ay[index] = tile.a[index] * scale + offset
+                            by[index] = tile.b[index] * scale + offset
+                        }
+                        xs.push(tile.time)
+                        ays.push(ay)
+                        bys.push(by)
+                        names.push(this.model.channel_names[channel])
                     }
-                    xs.push(tile.time)
-                    ays.push(ay)
-                    bys.push(by)
-                    names.push(this.model.channel_names[channel])
                 }
             }
         this.model.line_source_a.data = {xs, ys: ays, channel: names}
@@ -614,8 +1071,9 @@ export class VennTimeSeriesRendererView extends RendererView {
         }
         const {gl} = resources
         const ranges = gl.createTexture(),
-            valid = gl.createTexture()
-        if (ranges == null || valid == null)
+            valid = gl.createTexture(),
+            edges = gl.createTexture()
+        if (ranges == null || valid == null || edges == null)
             throw new Error("Bokeh WebGL could not allocate tile textures")
         gl.bindTexture(gl.TEXTURE_2D, ranges)
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
@@ -650,15 +1108,85 @@ export class VennTimeSeriesRendererView extends RendererView {
             gl.UNSIGNED_BYTE,
             tile.valid,
         )
-        const gpu = {
+        gl.bindTexture(gl.TEXTURE_2D, edges)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.LUMINANCE_ALPHA,
+            1,
+            1,
+            0,
+            gl.LUMINANCE_ALPHA,
+            gl.FLOAT,
+            new Float32Array(2),
+        )
+        const gpu: GpuTile = {
+            lookup_signature: "",
+            lookup_width: 1,
+            lookup_height: 1,
             ranges,
             valid,
-            bytes: tile.ranges.byteLength + tile.valid.byteLength,
+            edges,
+            bytes: tile.ranges.byteLength + tile.valid.byteLength + 8,
             used: ++this.use_counter,
         }
         this.gpu_tiles.set(key, gpu)
         this.evict_gpu_cache(gl)
         return gpu
+    }
+
+    private update_lookup(
+        tile: RangeTile,
+        gpu: GpuTile,
+        gl: WebGLRenderingContext,
+        width: number,
+    ): void {
+        if (tile.edges == null) return
+        const range = this.coordinates.x_source
+        const signature = `${range.start}:${range.end}:${width}`
+        if (gpu.lookup_signature == signature) return
+        const texture_width = Math.min(width, gl.getParameter(gl.MAX_TEXTURE_SIZE) as number)
+        const height = Math.ceil(width / texture_width)
+        const lookup = new Float32Array(texture_width * height * 2)
+        const edges = tile.edges,
+            n = tile.entry_count
+        let first = 0,
+            last = 0
+        for (let pixel = 0; pixel < width; pixel++) {
+            const x0 = range.start + (pixel / width) * (range.end - range.start) - tile.time_start
+            const x1 =
+                range.start + ((pixel + 1) / width) * (range.end - range.start) - tile.time_start
+            if (range.end < range.start) {
+                first = 0
+                last = 0
+            }
+            while (first < n && edges[first * 2 + 1] <= Math.min(x0, x1)) first++
+            last = Math.max(first, last)
+            while (last < n && edges[last * 2] < Math.max(x0, x1)) last++
+            lookup[pixel * 2] = first
+            lookup[pixel * 2 + 1] = last
+        }
+        gl.activeTexture(gl.TEXTURE2)
+        gl.bindTexture(gl.TEXTURE_2D, gpu.edges)
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.LUMINANCE_ALPHA,
+            texture_width,
+            height,
+            0,
+            gl.LUMINANCE_ALPHA,
+            gl.FLOAT,
+            lookup,
+        )
+        gpu.bytes += lookup.byteLength - gpu.lookup_width * gpu.lookup_height * 8
+        gpu.lookup_width = texture_width
+        gpu.lookup_height = height
+        gpu.lookup_signature = signature
     }
 
     private evict_gpu_cache(gl: WebGLRenderingContext): void {
@@ -669,6 +1197,7 @@ export class VennTimeSeriesRendererView extends RendererView {
             if (bytes <= this.model.rendered_cache_bytes) break
             gl.deleteTexture(tile.ranges)
             gl.deleteTexture(tile.valid)
+            gl.deleteTexture(tile.edges)
             this.gpu_tiles.delete(key)
             bytes -= tile.bytes
         }
@@ -704,6 +1233,7 @@ export class VennTimeSeriesRendererView extends RendererView {
     }
 
     protected override _paint(_ctx: Context2d): void {
+        this.update_pagers()
         if (!this.model.venn_visible) return
         const paint_started = performance.now()
         try {
@@ -761,59 +1291,64 @@ export class VennTimeSeriesRendererView extends RendererView {
                         x_page,
                         channel_page,
                     )
-                    const tile = this.range_tiles.get(key)
-                    if (tile == null) continue
-                    tile.used = ++this.use_counter
-                    const gpu = this.upload_tile(key, tile, resources)
-                    gl.activeTexture(gl.TEXTURE0)
-                    gl.bindTexture(gl.TEXTURE_2D, gpu.ranges)
-                    gl.activeTexture(gl.TEXTURE1)
-                    gl.bindTexture(gl.TEXTURE_2D, gpu.valid)
-                    gl.uniform2f(
-                        gl.getUniformLocation(program, "u_texture_size"),
-                        tile.entry_count,
-                        tile.channel_count,
-                    )
-                    uniform1f("u_entry_count", tile.entry_count)
-                    uniform1f("u_source_time_start", tile.time_start)
-                    uniform1f("u_source_time_step", tile.time_step)
-                    const x0 =
-                        this.model.time_start +
-                        x_page * this.model.page_size * tile.factor * this.model.sample_interval
-                    const x1 = Math.min(
-                        this.model.time_end,
-                        x0 + tile.core_length * tile.factor * this.model.sample_interval,
-                    )
-                    for (let local = 0; local < tile.channel_count; local++) {
-                        const channel = tile.channel_start + local
-                        const y0 = this.model.channel_y_mins[channel],
-                            y1 = this.model.channel_y_maxs[channel]
-                        const left = this.clip_x(x0, canvas.width, origin_x, frame_width),
-                            right = this.clip_x(x1, canvas.width, origin_x, frame_width)
-                        const bottom = this.clip_y(y0, canvas.height, origin_y, frame_height),
-                            top = this.clip_y(y1, canvas.height, origin_y, frame_height)
-                        gl.bufferData(
-                            gl.ARRAY_BUFFER,
-                            new Float32Array([
-                                left,
-                                bottom,
-                                right,
-                                bottom,
-                                left,
-                                top,
-                                left,
-                                top,
-                                right,
-                                bottom,
-                                right,
-                                top,
-                            ]),
-                            gl.DYNAMIC_DRAW,
+                    for (const [draw_key, tile] of this.range_parts(key)) {
+                        tile.used = ++this.use_counter
+                        const gpu = this.upload_tile(draw_key, tile, resources)
+                        this.update_lookup(tile, gpu, gl, frame_width)
+                        gl.activeTexture(gl.TEXTURE0)
+                        gl.bindTexture(gl.TEXTURE_2D, gpu.ranges)
+                        gl.activeTexture(gl.TEXTURE1)
+                        gl.bindTexture(gl.TEXTURE_2D, gpu.valid)
+                        gl.activeTexture(gl.TEXTURE2)
+                        gl.bindTexture(gl.TEXTURE_2D, gpu.edges)
+                        uniform1i("u_edges", 2)
+                        gl.uniform2f(
+                            gl.getUniformLocation(program, "u_lookup_size"),
+                            gpu.lookup_width,
+                            gpu.lookup_height,
                         )
-                        uniform1f("u_channel_row", local)
-                        uniform1f("u_amplitude_scale", this.model.amplitude_scales[channel])
-                        uniform1f("u_amplitude_offset", this.model.amplitude_offsets[channel])
-                        gl.drawArrays(gl.TRIANGLES, 0, 6)
+                        uniform1i("u_irregular", tile.edges == null ? 0 : 1)
+                        gl.uniform2f(
+                            gl.getUniformLocation(program, "u_texture_size"),
+                            tile.entry_count,
+                            tile.channel_count,
+                        )
+                        uniform1f("u_entry_count", tile.entry_count)
+                        uniform1f("u_source_time_start", tile.time_start)
+                        uniform1f("u_source_time_step", tile.time_step)
+                        const x0 = tile.clip_start
+                        const x1 = tile.clip_end
+                        for (let local = 0; local < tile.channel_count; local++) {
+                            const channel = tile.channel_start + local
+                            const y0 = this.model.channel_y_mins[channel],
+                                y1 = this.model.channel_y_maxs[channel]
+                            const left = this.clip_x(x0, canvas.width, origin_x, frame_width),
+                                right = this.clip_x(x1, canvas.width, origin_x, frame_width)
+                            const bottom = this.clip_y(y0, canvas.height, origin_y, frame_height),
+                                top = this.clip_y(y1, canvas.height, origin_y, frame_height)
+                            gl.bufferData(
+                                gl.ARRAY_BUFFER,
+                                new Float32Array([
+                                    left,
+                                    bottom,
+                                    right,
+                                    bottom,
+                                    left,
+                                    top,
+                                    left,
+                                    top,
+                                    right,
+                                    bottom,
+                                    right,
+                                    top,
+                                ]),
+                                gl.DYNAMIC_DRAW,
+                            )
+                            uniform1f("u_channel_row", local)
+                            uniform1f("u_amplitude_scale", this.model.amplitude_scales[channel])
+                            uniform1f("u_amplitude_offset", this.model.amplitude_offsets[channel])
+                            gl.drawArrays(gl.TRIANGLES, 0, 6)
+                        }
                     }
                 }
             gl.disableVertexAttribArray(position)
@@ -835,6 +1370,7 @@ export class VennTimeSeriesRendererView extends RendererView {
             for (const tile of this.gpu_tiles.values()) {
                 gl.deleteTexture(tile.ranges)
                 gl.deleteTexture(tile.valid)
+                gl.deleteTexture(tile.edges)
             }
             gl.deleteBuffer(buffer)
             gl.deleteProgram(program)
@@ -848,9 +1384,14 @@ export class VennTimeSeriesRendererView extends RendererView {
         if (this.frame_request != null) cancelAnimationFrame(this.frame_request)
         this.context_canvas?.removeEventListener("webglcontextlost", this.context_lost)
         this.context_canvas?.removeEventListener("webglcontextrestored", this.context_restored)
+        for (const pager of this.pager_elements ?? []) pager.el.remove()
+        this.status_element?.remove()
         this.delete_resources()
         this.range_tiles.clear()
         this.line_tiles.clear()
+        this.epoch_tiles.clear()
+        this.selected_ranges.clear()
+        this.epoch_chunks = []
         this.in_flight.clear()
         super.remove()
     }
@@ -867,6 +1408,8 @@ export namespace VennTimeSeriesRenderer {
         response_generation: p.Property<number>
         response_tiles: p.Property<[string, number, number, number][]>
         response_error: p.Property<string>
+        response_final: p.Property<boolean>
+        epoch_batch_source: p.Property<ColumnDataSource>
         page_source: p.Property<ColumnDataSource>
         page_metadata_source: p.Property<ColumnDataSource>
         range_tile_source: p.Property<ColumnDataSource>
@@ -876,6 +1419,13 @@ export namespace VennTimeSeriesRenderer {
         line_source_a: p.Property<ColumnDataSource>
         line_source_b: p.Property<ColumnDataSource>
         dataset_version: p.Property<string>
+        status: p.Property<string>
+        epoch_pagers: p.Property<string>
+        epoch_selection: p.Property<number[]>
+        segment_revisions: p.Property<number[]>
+        segment_starts: p.Property<number[]>
+        segment_counts: p.Property<number[]>
+        segment_sample_starts: p.Property<number[]>
         sample_count: p.Property<number>
         time_start: p.Property<number>
         time_end: p.Property<number>
@@ -938,6 +1488,8 @@ export class VennTimeSeriesRenderer extends Renderer {
                 response_generation: [Int, 0],
                 response_tiles: [List(Tuple(Str, Int, Int, Int)), []],
                 response_error: [Str, ""],
+                response_final: [Bool, true],
+                epoch_batch_source: [Ref(ColumnDataSource)],
                 page_source: [Ref(ColumnDataSource)],
                 page_metadata_source: [Ref(ColumnDataSource)],
                 range_tile_source: [Ref(ColumnDataSource)],
@@ -947,6 +1499,13 @@ export class VennTimeSeriesRenderer extends Renderer {
                 line_source_a: [Ref(ColumnDataSource)],
                 line_source_b: [Ref(ColumnDataSource)],
                 dataset_version: [Str, ""],
+                status: [Str, ""],
+                epoch_pagers: [Str, "[]"],
+                epoch_selection: [List(Int), []],
+                segment_revisions: [List(Int), []],
+                segment_starts: [List(Float), []],
+                segment_counts: [List(Int), []],
+                segment_sample_starts: [List(Int), []],
                 sample_count: [Int, 0],
                 time_start: [Float, 0],
                 time_end: [Float, 0],
@@ -964,7 +1523,7 @@ export class VennTimeSeriesRenderer extends Renderer {
                 channel_y_mins: [List(Float), []],
                 channel_y_maxs: [List(Float), []],
                 channel_tile_size: [Int, 1],
-                shader_schema_version: [Int, 2],
+                shader_schema_version: [Int, 3],
                 color_a: [Color, "red"],
                 color_b: [Color, "blue"],
                 color_overlap: [Color, "black"],

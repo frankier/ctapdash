@@ -1,7 +1,6 @@
 import xarray as xr
 import numpy as np
 from tsdownsample import MinMaxLTTBDownsampler
-import numba
 from pathlib import Path
 
 from ctapdash.io.xarray import load_xarray, save_xarray
@@ -24,115 +23,118 @@ def help_downsample(data, time, n_out):
     return data[indices]
 
 
-def apply_downsample(arr, factor):
+GRID_VERSION = "1"
+
+
+def grid_cache_current(path):
+    try:
+        return (Path(path) / "sample-grid-version").read_text() == GRID_VERSION
+    except FileNotFoundError, NotADirectoryError:
+        return False
+
+
+def _aligned_pyramid(arr, destination, factors, *, ranges):
+    """Reduce on the sample-zero grid, retaining each epoch's partial buckets.
+
+    Epochs remain separate even when they overlap. A level stores the first
+    global bucket's sample offset and the number of valid buckets per epoch;
+    unused slots in the rectangular backing array are NaN.
     """
-    Apply downsampling to a time series dataset.
-    """
-    n_out = arr.shape[-1] // factor
-    downsampled = xr.apply_ufunc(
-        help_downsample,
-        arr,
-        arr["time"],
-        kwargs=dict(n_out=n_out),
-        input_core_dims=[["time"], ["time"]],
-        output_core_dims=[["time"]],
-        exclude_dims=set(("time",)),
-        vectorize=True,
+    epoched = "epoch" in arr.dims
+    if epoched and "epoch_sample_start" not in arr.coords:
+        raise ValueError("Epoched pyramids require epoch_sample_start coordinates")
+    rate = arr.attrs.get("sample_rate")
+    if rate is None:
+        rate = 1 / float(arr.time[1] - arr.time[0])
+    rate = float(rate)
+    starts = (
+        np.asarray(arr.epoch_sample_start.values, dtype=np.int64)
+        if epoched
+        else np.array([round(float(arr.time[0]) * rate)], dtype=np.int64)
     )
-    slicer = slice(0, n_out * factor, factor)
-    new_time = arr["time"].isel(time=slicer).copy()
-    downsampled["time"] = new_time
-    return downsampled
+    levels = {}
+    effective = 1
+    # Work one epoch at a time; do not copy the complete raw recording.
+    current = [
+        arr.isel(epoch=i).values if epoched else arr.values for i in range(len(starts))
+    ]
+    for factor in factors:
+        if factor < 2:
+            raise ValueError("Pyramid factors must be at least two")
+        effective *= factor
+        reduced = []
+        for epoch, values in enumerate(current):
+            phase = int(starts[epoch] % factor)
+            length = values.shape[1]
+            boundaries = np.arange(-phase, length, factor)
+            boundaries[0] = 0
+            if ranges:
+                lower = values[..., 0] if values.ndim == 3 else values
+                upper = values[..., 1] if values.ndim == 3 else values
+                result = np.stack(
+                    (
+                        np.fmin.reduceat(lower, boundaries, axis=1),
+                        np.fmax.reduceat(upper, boundaries, axis=1),
+                    ),
+                    axis=-1,
+                )
+            else:
+                # Keep the existing LTTB line reduction, with bucket slots
+                # aligned by extending the two endpoint values for partial bins.
+                count = len(boundaries)
+                padded = np.pad(
+                    values,
+                    ((0, 0), (phase, count * factor - phase - length)),
+                    mode="edge",
+                )
+                times = np.arange(padded.shape[1], dtype=np.float64)
+                result = np.stack(
+                    [
+                        help_downsample(np.ascontiguousarray(row), times, count)
+                        for row in padded
+                    ]
+                )
+            reduced.append(result)
+        starts = starts // factor
+        counts = np.array([v.shape[1] for v in reduced], dtype=np.int64)
+        shape = (arr.sizes["ch"], len(starts), int(counts.max()))
+        if ranges:
+            shape += (2,)
+        output = np.full(shape, np.nan, dtype=arr.dtype)
+        for epoch, values in enumerate(reduced):
+            output[:, epoch, : counts[epoch]] = values
+        coords = dict(ch=arr.ch, time=np.arange(counts.max()) * effective / rate)
+        dims = ("ch", "epoch", "time")
+        if epoched:
+            coords.update(
+                epoch=arr.epoch,
+                bucket_sample_start=("epoch", starts * effective),
+                bucket_count=("epoch", counts),
+            )
+        else:
+            output = output[:, 0]
+            dims = ("ch", "time")
+            coords["time"] += starts[0] * effective / rate
+            coords.update(
+                bucket_sample_start=int(starts[0] * effective),
+                bucket_count=int(counts[0]),
+            )
+        if ranges:
+            dims += ("range",)
+            coords["range"] = ["min", "max"]
+        level = xr.DataArray(output, dims=dims, coords=coords, name=_LEVEL_VARIABLE)
+        levels[f"factor_{effective}"] = level.to_dataset()
+        current = reduced
+    save_xarray(xr.DataTree.from_dict(levels), destination)
+    (Path(destination) / "sample-grid-version").write_text(GRID_VERSION)
 
 
 def mne_to_pyramid(arr, pyramid_path, factors):
-    from shutil import rmtree
-
-    rmtree(pyramid_path, ignore_errors=True)
-
-    levels = {}
-    effective_factor = 1
-    cur_arr = arr
-    for factor in factors:
-        effective_factor *= factor
-        cur_arr = apply_downsample(cur_arr, factor=factor)
-        levels["factor_" + str(effective_factor)] = cur_arr.rename(
-            _LEVEL_VARIABLE
-        ).to_dataset()
-    save_xarray(xr.DataTree.from_dict(levels), pyramid_path)
-
-
-@numba.njit
-def _range_downsample(x, factor, res):
-    if x.ndim == 2:
-        for i in range(len(x)):
-            bucket = i // factor
-            if bucket >= len(res):
-                break
-            res[bucket, 0] = min(x[i, 0], res[bucket, 0])
-            res[bucket, 1] = max(x[i, 1], res[bucket, 1])
-        return res
-    else:
-        for i in range(len(x)):
-            bucket = i // factor
-            if bucket >= len(res):
-                break
-            res[bucket, 0] = min(x[i], res[bucket, 0])
-            res[bucket, 1] = max(x[i], res[bucket, 1])
-        return res
-
-
-@numba.njit(parallel=True, cache=True)
-def range_downsample_with_ch(x, factor, out):
-    for ch in numba.prange(x.shape[0]):
-        _range_downsample(x[ch], factor, out[ch])
-
-
-@numba.njit(parallel=True, cache=True)
-def range_downsample_with_epochs_ch(x, factor, out):
-    for epoch in numba.prange(x.shape[0]):
-        for ch in range(x.shape[1]):
-            _range_downsample(x[epoch, ch], factor, out[epoch, ch])
+    _aligned_pyramid(arr, pyramid_path, factors, ranges=False)
 
 
 def mne_to_rangepyramid(arr, rangepyramid_path, factors):
-    from shutil import rmtree
-
-    rmtree(rangepyramid_path, ignore_errors=True)
-
-    leading_shape = arr.shape[:-1]
-    leading_coords = list(arr.coords.values())[:-1]
-    leading_dims = arr.dims[:-1]
-    levels = {}
-    effective_factor = 1
-    cur_arr = arr.data
-    cur_len = arr.shape[-1]
-    for factor in factors:
-        effective_factor *= factor
-        cur_len = cur_len // factor
-        out = np.zeros((*leading_shape, cur_len, 2), dtype=arr.dtype)
-        out[..., 0] = np.inf
-        out[..., 1] = -np.inf
-        name = "factor_" + str(effective_factor)
-        if len(leading_dims) == 1:
-            range_downsample_with_ch(cur_arr, factor, out)
-        else:
-            assert len(leading_dims) == 2
-            range_downsample_with_epochs_ch(cur_arr, factor, out)
-        cur_arr = out
-        cur_xarr = xr.DataArray(
-            cur_arr,
-            coords=(
-                *leading_coords,
-                arr["time"].isel(
-                    time=slice(0, cur_len * effective_factor, effective_factor)
-                ),
-                ["min", "max"],
-            ),
-            dims=(*leading_dims, "time", "range"),
-        )
-        levels[name] = cur_xarr.rename(_LEVEL_VARIABLE).to_dataset()
-    save_xarray(xr.DataTree.from_dict(levels), rangepyramid_path)
+    _aligned_pyramid(arr, rangepyramid_path, factors, ranges=True)
 
 
 def _pyramid_groups(ts_dt):
@@ -160,6 +162,10 @@ def load_pyramid(base, range=False):
     if path.suffix not in (".pyramid", ".rangepyramid"):
         raise ValueError(
             "Pass a RecordingPaths handle or an explicit pyramid artifact path"
+        )
+    if not grid_cache_current(path):
+        raise FileNotFoundError(
+            f"Pyramid requires rebuilding on the sample grid: {path}"
         )
     dt = load_xarray(path)
     return dt, _pyramid_groups(dt)

@@ -121,5 +121,9 @@ def mmap_eeglab(eeg, *, return_xarray=False, data_fname=None, ctapdash_order=Fal
         else:
             dims = ("ch", "epoch", "time")
             coords = (eeg.ch_names, np.asarray(eeg.selection), eeg.times)
-        return xr.DataArray(data, coords=coords, dims=dims)
+        array = xr.DataArray(data, coords=coords, dims=dims)
+        array.attrs["sample_rate"] = eeg.info["sfreq"]
+        if isinstance(eeg, BaseEpochs):
+            array = array.assign_coords(epoch_sample_start=("epoch", eeg.events[:, 0]))
+        return array
     return data

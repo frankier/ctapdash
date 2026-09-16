@@ -4,4 +4,5 @@ import {ChannelSelector} from "./channel_selector"
 
 import {register_models} from "@bokehjs/base"
 import {ChannelAxis} from "./channel_axis"
-register_models({VennTimeSeriesRenderer, ChannelAxis, ChannelSelector})
+import {DomainMarkers} from "./domain_axis"
+register_models({VennTimeSeriesRenderer, ChannelAxis, ChannelSelector, DomainMarkers})

@@ -66,7 +66,7 @@ def read_eeglab(
         except Exception:
             pass
         invalid = True
-        cached.unlink()
+        cached.unlink(missing_ok=True)
     if not mmap and (use_cache or force_cache or warm):
         raise ValueError("Cache is not implemented for mmap=False")
     if not invalid:
