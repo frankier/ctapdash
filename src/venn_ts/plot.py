@@ -11,14 +11,15 @@ def _comparison_channel_geometry(extrema, mode):
         raise ValueError(f"Unknown plotting mode: {mode}")
 
     prepared = []
-    for a_min, a_max, b_min, b_max in extrema:
+    for bounds in extrema:
+        a_min, a_max = bounds[:2]
         nominal_min, nominal_max = float(a_min), float(a_max)
         if nominal_min == nominal_max:
             padding = abs(nominal_min) * 0.05 or 1.0
             nominal_min -= padding
             nominal_max += padding
-        actual_min = min(nominal_min, float(b_min))
-        actual_max = max(nominal_max, float(b_max))
+        actual_min = min(nominal_min, *map(float, bounds[::2]))
+        actual_max = max(nominal_max, *map(float, bounds[1::2]))
         prepared.append((nominal_min, nominal_max, actual_min, actual_max))
 
     geometry = [None] * len(prepared)
@@ -109,6 +110,7 @@ def _build_comparison(doc, dataset, stats):
 
     from bokeh.layouts import column, row
     from bokeh.models import (
+        Button,
         CheckboxButtonGroup,
         CheckboxGroup,
         CustomAction,
@@ -142,12 +144,52 @@ def _build_comparison(doc, dataset, stats):
 
     steps_by_number = dict(steps)
     step_values = [str(number) for number, _path in steps]
-    step_a = Select(title="Step A (red)", options=step_values, value=step_values[0])
-    step_b = Select(
-        title="Step B (blue)",
-        options=step_values,
-        value=step_values[1] if len(step_values) > 1 else step_values[0],
+    from venn_ts.palettes import PALETTES, PaletteSelector, hull_color
+
+    step_selectors = [
+        Select(
+            title=f"Step {'ABC'[i]}",
+            options=step_values,
+            value=step_values[min(i, len(step_values) - 1)],
+            name=f"step-{'abc'[i]}",
+            width=177,
+        )
+        for i in range(3)
+    ]
+    step_count = [2]
+    swatches = [Div(width=22, height=28, margin=(25, 0, 0, 0)) for _ in range(3)]
+    step_rows = [
+        row(swatch, selector, visible=i < 2)
+        for i, (swatch, selector) in enumerate(zip(swatches, step_selectors))
+    ]
+    remove_step = Button(
+        label="−",
+        name="remove-step",
+        width=45,
+        html_attributes={"title": "Remove step"},
     )
+    add_step = Button(
+        label="+", name="add-step", width=45, html_attributes={"title": "Add step"}
+    )
+    palette_select = PaletteSelector(name="palette-selector", width=210, height=78)
+    hull_toggle = CheckboxGroup(
+        labels=["Show min-max hull"], active=[0], name="hull-toggle"
+    )
+    original_theme = doc.theme
+
+    def colors():
+        return PALETTES[palette_select.value]
+
+    def style_selectors():
+        for i, swatch in enumerate(swatches):
+            swatch.text = (
+                f'<span title="Step {"ABC"[i]} color" style="display:inline-block;'
+                f"width:14px;height:14px;border-radius:50%;border:1px solid #888;"
+                f'background:{colors()[1 << i]}"></span>'
+            )
+        doc.theme = "contrast" if colors()[0] == "#000000" else original_theme
+
+    style_selectors()
     plotting_mode = Select(
         title="Plotting mode",
         options=["overplot", "stretch", "normalize"],
@@ -192,7 +234,7 @@ def _build_comparison(doc, dataset, stats):
         return source_cache[path]
 
     try:
-        initial_source = get_source(step_a.value)
+        initial_source = get_source(step_selectors[0].value)
         initial_channels = list(initial_source.channels)
     except Exception as error:
         doc.add_root(
@@ -265,8 +307,10 @@ def _build_comparison(doc, dataset, stats):
         name="sidebar-toggle",
     )
     controls_sidebar = column(
-        step_a,
-        step_b,
+        *step_rows,
+        row(remove_step, add_step),
+        palette_select,
+        hull_toggle,
         plotting_mode,
         domain_mode,
         epoch_toggle,
@@ -485,26 +529,27 @@ def _build_comparison(doc, dataset, stats):
         if active_renderer[0] is not None:
             active_renderer[0].status = "Loading..."
         try:
-            source_a, source_b = get_source(step_a.value), get_source(step_b.value)
-            pair = (step_a.value, step_b.value)
+            selected_steps = [
+                widget.value for widget in step_selectors[: step_count[0]]
+            ]
+            sources = tuple(get_source(step) for step in selected_steps)
+            pair = tuple(selected_steps)
             if current_pair[0] != pair:
                 epoch_choices.clear()
                 current_pair[0] = pair
-            epoch_toggle.visible = source_a.is_epoched or source_b.is_epoched
-            domain = ComparisonDomain(
-                (source_a, source_b), domain_mode.value, epoch_choices
-            )
+            epoch_toggle.visible = any(source.is_epoched for source in sources)
+            domain = ComparisonDomain(sources, domain_mode.value, epoch_choices)
             common = domain.sample_count
             common_channels = [
                 channel
-                for channel in source_a.channels
-                if channel in source_b.channel_index
+                for channel in sources[0].channels
+                if all(channel in source.channel_index for source in sources)
             ]
             channel_choice.available = common_channels
             channel_choice.bads_json = json.dumps(
                 {
                     step: channel_metadata["bads"].get(step, [])
-                    for step in dict.fromkeys((step_a.value, step_b.value))
+                    for step in dict.fromkeys(selected_steps)
                 }
             )
             selected_names = set(channel_choice.value)
@@ -517,13 +562,14 @@ def _build_comparison(doc, dataset, stats):
                 plot_holder.children = [Div(text="Select at least one channel.")]
                 return
 
-            extrema_a = _stats_extrema(
-                stats, dataset.participant, step_a.value, channels
-            )
-            extrema_b = _stats_extrema(
-                stats, dataset.participant, step_b.value, channels
-            )
-            extrema = [(*a, *b) for a, b in zip(extrema_a, extrema_b)]
+            step_extrema = [
+                _stats_extrema(stats, dataset.participant, step, channels)
+                for step in selected_steps
+            ]
+            extrema = [
+                tuple(value for bounds in channel for value in bounds)
+                for channel in zip(*step_extrema)
+            ]
             geometry, y_range = _comparison_channel_geometry(
                 extrema, plotting_mode.value
             )
@@ -536,16 +582,20 @@ def _build_comparison(doc, dataset, stats):
                 item["actual_max"] * item["scale"] + item["offset"] for item in geometry
             ]
             range_factors = sorted(
-                set(source_a.range_factors) & set(source_b.range_factors)
+                set.intersection(*(set(source.range_factors) for source in sources))
             )
             line_factors = sorted(
-                set(source_a.line_factors) & set(source_b.line_factors)
+                set.intersection(*(set(source.line_factors) for source in sources))
             )
             version = sha256(
-                f"{source_a.dataset_version}|{source_b.dataset_version}|{channels}|{domain.mode}|{domain.segments}".encode()
+                f"{[source.dataset_version for source in sources]}|{channels}|{domain.mode}|{domain.segments}".encode()
             ).hexdigest()[:20]
             renderer = VennTimeSeriesRenderer(
                 level="glyph",
+                step_count=len(sources),
+                palette=colors(),
+                hull_visible=bool(hull_toggle.active),
+                hull_color=hull_color(colors()[0]),
                 dataset_version=version,
                 sample_count=common,
                 time_start=domain.start,
@@ -567,14 +617,12 @@ def _build_comparison(doc, dataset, stats):
                             segment=i,
                             side=side,
                             count=len(segment.choices(side)),
-                            index=segment.selected_a
-                            if side == 0
-                            else segment.selected_b,
+                            index=segment.selection(side),
                             start=segment.display_start,
                             end=segment.display_start + segment.count * domain.interval,
                         )
                         for i, segment in enumerate(domain.segments)
-                        for side in (0, 1)
+                        for side in range(len(sources))
                         if domain.mode == "union" and len(segment.choices(side)) > 1
                     ]
                 ),
@@ -626,29 +674,33 @@ def _build_comparison(doc, dataset, stats):
                 active_drag="box_zoom",
                 output_backend="webgl",
                 min_border_top=29,
+                background_fill_color=colors()[0],
             )
             plot.renderers.append(renderer)
-            line_a = plot.multi_line(
-                xs="xs",
-                ys="ys",
-                source=renderer.line_source_a,
-                line_color="red",
-                line_width=1,
-                line_alpha=0.9,
-                name=f"step {step_a.value}",
-            )
-            line_b = plot.multi_line(
-                xs="xs",
-                ys="ys",
-                source=renderer.line_source_b,
-                line_color="blue",
-                line_width=1,
-                line_alpha=0.9,
-                name=f"step {step_b.value}",
-            )
+            line_renderers = [
+                plot.multi_line(
+                    xs="xs",
+                    ys="ys",
+                    source=source,
+                    line_color=colors()[1 << i],
+                    line_width=1,
+                    line_alpha=1,
+                    name=f"step {step}",
+                )
+                for i, (step, source) in enumerate(
+                    zip(
+                        selected_steps,
+                        (
+                            renderer.line_source_a,
+                            renderer.line_source_b,
+                            renderer.line_source_c,
+                        ),
+                    )
+                )
+            ]
             plot.add_tools(
                 HoverTool(
-                    renderers=[line_a, line_b],
+                    renderers=line_renderers,
                     tooltips=[("Step", "$name"), ("Channel", "@channel")],
                     mode="mouse",
                 )
@@ -659,12 +711,15 @@ def _build_comparison(doc, dataset, stats):
                     plot, domain, epoch_visible=bool(epoch_toggle.active)
                 )
             )
+            update_epoch_markers(
+                plot, domain, bool(epoch_toggle.active), epoch_markers, colors()
+            )
             plot.add_tools(
                 channel_count_action(plot.y_range, y_range, len(channels), -1),
                 channel_count_action(plot.y_range, y_range, len(channels), 1),
             )
             coordinator = TileCoordinator(
-                doc, renderer, (source_a, source_b), channels, domain=domain
+                doc, renderer, sources, channels, domain=domain
             )
 
             def select_epoch(_attr, _old, selection):
@@ -673,7 +728,7 @@ def _build_comparison(doc, dataset, stats):
                 segment, side, index = selection
                 if (
                     0 <= segment < len(domain.segments)
-                    and side in (0, 1)
+                    and 0 <= side < len(sources)
                     and 0 <= index < len(domain.segments[segment].choices(side))
                 ):
                     epoch_choices[(segment, side)] = index
@@ -684,7 +739,7 @@ def _build_comparison(doc, dataset, stats):
                             pager["index"] = index
                     renderer.epoch_pagers = json.dumps(pagers, separators=(",", ":"))
                     update_epoch_markers(
-                        plot, domain, bool(epoch_toggle.active), epoch_markers
+                        plot, domain, bool(epoch_toggle.active), epoch_markers, colors()
                     )
 
             renderer.on_change("epoch_selection", select_epoch)
@@ -764,7 +819,7 @@ def _build_comparison(doc, dataset, stats):
         rebuild(None, None, None)
 
     # Show feedback immediately in the existing strip while Python rebuilds.
-    for widget in (step_a, step_b, channel_choice, plotting_mode, domain_mode):
+    for widget in (*step_selectors, channel_choice, plotting_mode, domain_mode):
         widget.js_on_change(
             "value",
             CustomJS(
@@ -781,8 +836,29 @@ def _build_comparison(doc, dataset, stats):
     epoch_toggle.on_change("active", set_epochs)
     domain_mode.on_change("value", set_domain)
     layers.on_change("active", set_layers)
-    for widget in (step_a, step_b, channel_choice, plotting_mode):
+    for widget in (*step_selectors, channel_choice, plotting_mode):
         widget.on_change("value", rebuild)
+
+    def change_count(delta):
+        step_count[0] = max(1, min(3, step_count[0] + delta))
+        for i, step_row in enumerate(step_rows):
+            step_row.visible = i < step_count[0]
+        remove_step.disabled = step_count[0] == 1
+        add_step.disabled = step_count[0] == 3
+        rebuild(None, None, None)
+
+    def change_palette(_attr, _old, _new):
+        style_selectors()
+        rebuild(None, None, None)
+
+    def change_hull(_attr, _old, active):
+        if active_renderer[0] is not None:
+            active_renderer[0].hull_visible = bool(active)
+
+    remove_step.on_click(lambda: change_count(-1))
+    add_step.on_click(lambda: change_count(1))
+    palette_select.on_change("value", change_palette)
+    hull_toggle.on_change("active", change_hull)
 
     rebuild(None, None, None)
     doc.add_root(viewer_frame)

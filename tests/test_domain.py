@@ -297,3 +297,42 @@ def test_marker_models_are_bounded_and_update_in_place():
     update_epoch_markers(plot, domain, False, markers)
     assert plot.renderers == [breaks, epochs]
     assert not epochs.visible
+
+
+@pytest.mark.parametrize("mode", ["union", "intersection"])
+def test_one_and_three_step_domains(tmp_path, mode):
+    a = source(tmp_path, "a", count=400)
+    b = source(tmp_path, "b", starts=[50, 250])
+    c = source(tmp_path, "c", starts=[75, 275])
+    single = ComparisonDomain((b,), mode)
+    assert single.sample_count == 200
+    assert all(s.selected(0) is not None for s in single.segments)
+    triple = ComparisonDomain((a, b, c), mode)
+    assert triple.sample_count == (400 if mode == "union" else 150)
+    assert any(s.selected(2) is not None for s in triple.segments)
+    tiles = coordinator(triple)
+    try:
+        assert len(tiles.source_indices) == 3
+        tile = tiles._range_tile(1, 0, 0)
+        assert "valid_c" in tile
+        assert tile["valid_c"].all() == (mode == "intersection")
+    finally:
+        tiles.close()
+
+
+def test_third_step_epoch_selection_and_interval_validation(tmp_path):
+    a = source(tmp_path, "a", count=400)
+    c = source(tmp_path, "c", starts=[50, 75])
+    domain = ComparisonDomain((a, a, c))
+    region = next(i for i, s in enumerate(domain.segments) if len(s.choices(2)) == 2)
+    tiles = coordinator(domain)
+    tiles.renderer.segment_revisions = [0] * len(domain.segments)
+    try:
+        tiles.select_epoch(region, 2, 1)
+        assert domain.segments[region].selected(2) == 1
+        assert domain.segments[region].selected(0) == 0
+    finally:
+        tiles.close()
+    c.sample_interval *= 2
+    with pytest.raises(ValueError, match="sampling intervals"):
+        ComparisonDomain((a, a, c))

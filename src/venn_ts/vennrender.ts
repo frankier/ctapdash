@@ -55,6 +55,7 @@ type RangeTile = {
     time_start: number
     time_step: number
     ranges: Float32Array
+    ranges_c?: Float32Array
     valid: Uint8Array
     bytes: number
     used: number
@@ -68,6 +69,7 @@ type LineTile = {
     time: Float64Array
     a: Float32Array
     b: Float32Array
+    c?: Float32Array
     bytes: number
     used: number
 }
@@ -78,6 +80,7 @@ type GpuTile = {
     lookup_height: number
     edges: WebGLTexture
     ranges: WebGLTexture
+    ranges_c: WebGLTexture
     valid: WebGLTexture
     bytes: number
     used: number
@@ -99,6 +102,7 @@ void main() { gl_Position = vec4(a_position, 0.0, 1.0); }
 const fragment_source = `
 precision highp float;
 uniform sampler2D u_ranges;
+uniform sampler2D u_ranges_c;
 uniform sampler2D u_valid;
 uniform sampler2D u_edges;
 uniform bool u_irregular;
@@ -116,9 +120,9 @@ uniform vec2 u_frame_origin;
 uniform vec2 u_frame_size;
 uniform float u_amplitude_scale;
 uniform float u_amplitude_offset;
-uniform vec4 u_color_a;
-uniform vec4 u_color_b;
-uniform vec4 u_color_overlap;
+uniform vec4 u_palette[8];
+uniform vec4 u_hull_color;
+uniform bool u_hull_visible;
 
 vec2 texel_position(float index) {
   return (vec2(index + 0.5, u_channel_row + 0.5)) / u_texture_size;
@@ -151,6 +155,9 @@ void main() {
   float amax = -3.402823466e38;
   float bmin = 3.402823466e38;
   float bmax = -3.402823466e38;
+  float cmin = 3.402823466e38;
+  float cmax = -3.402823466e38;
+  bool has_c = false;
   bool has_a = false;
   bool has_b = false;
   for (int offset = 0; offset < 2048; offset++) {
@@ -159,6 +166,12 @@ void main() {
     vec2 position = texel_position(index);
     vec4 ranges = texture2D(u_ranges, position);
     vec4 validity = texture2D(u_valid, position);
+    vec4 c = texture2D(u_ranges_c, position);
+    if (c.b > 0.0) {
+      cmin = min(cmin, c.r);
+      cmax = max(cmax, c.g);
+      has_c = true;
+    }
     if (validity.r > 0.0) {
       amin = min(amin, ranges.r);
       amax = max(amax, ranges.g);
@@ -182,9 +195,19 @@ void main() {
   float v_hi = max(v0, v1);
   bool inside_a = has_a && amin <= v_hi && amax >= v_lo;
   bool inside_b = has_b && bmin <= v_hi && bmax >= v_lo;
-  if (inside_a && inside_b) gl_FragColor = u_color_overlap;
-  else if (inside_a) gl_FragColor = u_color_a;
-  else if (inside_b) gl_FragColor = u_color_b;
+  bool inside_c = has_c && cmin <= v_hi && cmax >= v_lo;
+  int bits = (inside_a ? 1 : 0) + (inside_b ? 2 : 0) + (inside_c ? 4 : 0);
+  // Constant indices keep this compatible with WebGL 1 uniform-array rules.
+  if (bits == 1) gl_FragColor = u_palette[1];
+  else if (bits == 2) gl_FragColor = u_palette[2];
+  else if (bits == 3) gl_FragColor = u_palette[3];
+  else if (bits == 4) gl_FragColor = u_palette[4];
+  else if (bits == 5) gl_FragColor = u_palette[5];
+  else if (bits == 6) gl_FragColor = u_palette[6];
+  else if (bits == 7) gl_FragColor = u_palette[7];
+  else if (u_hull_visible && (has_a || has_b || has_c) &&
+           min(amin, min(bmin, cmin)) <= v_hi && max(amax, max(bmax, cmax)) >= v_lo)
+    gl_FragColor = u_hull_color;
   else discard;
 }
 `
@@ -264,6 +287,9 @@ export class VennTimeSeriesRendererView extends RendererView {
             this.model.properties.amplitude_offsets,
             this.model.properties.channel_y_mins,
             this.model.properties.channel_y_maxs,
+            this.model.properties.palette,
+            this.model.properties.hull_visible,
+            this.model.properties.hull_color,
             this.model.properties.color_a,
             this.model.properties.color_b,
             this.model.properties.color_overlap,
@@ -330,7 +356,7 @@ export class VennTimeSeriesRendererView extends RendererView {
                     if (previous.item.index != item.index || previous.item.count != item.count) {
                         Object.assign(previous.item, item)
                         previous.el.querySelector("span")!.textContent =
-                            `${item.side == 0 ? "A" : "B"} ${item.index + 1}/${item.count}`
+                            `${"ABC"[item.side]} ${item.index + 1}/${item.count}`
                         const buttons = previous.el.querySelectorAll("button")
                         buttons[0].disabled = item.index == 0
                         buttons[1].disabled = item.index + 1 >= item.count
@@ -349,8 +375,10 @@ export class VennTimeSeriesRendererView extends RendererView {
                 el.addEventListener("mouseleave", () => {
                     el.style.zIndex = "5"
                 })
-                const label = item.side == 0 ? "A" : "B"
-                el.style.color = item.side == 0 ? "#c00" : "#00c"
+                const label = "ABC"[item.side]
+                el.style.color = String(
+                    this.model.palette[1 << item.side] ?? (item.side == 0 ? "#c00" : "#00c"),
+                )
                 for (const direction of [-1, 0, 1]) {
                     if (direction == 0) {
                         const text = document.createElement("span")
@@ -631,10 +659,10 @@ export class VennTimeSeriesRendererView extends RendererView {
         }
     }
 
-    private choices(): Map<number, [number, number]> {
-        const selections = new Map<number, [number, number]>()
+    private choices(): Map<number, number[]> {
+        const selections = new Map<number, number[]>()
         for (const item of JSON.parse(this.model.epoch_pagers)) {
-            const pair = selections.get(item.segment) ?? [0, 0]
+            const pair = selections.get(item.segment) ?? [0, 0, 0]
             pair[item.side] = item.index
             selections.set(item.segment, pair)
         }
@@ -647,6 +675,7 @@ export class VennTimeSeriesRendererView extends RendererView {
             if (gpu != null && this.resources != null) {
                 const gl = this.resources.gl
                 gl.deleteTexture(gpu.ranges)
+                gl.deleteTexture(gpu.ranges_c)
                 gl.deleteTexture(gpu.valid)
                 gl.deleteTexture(gpu.edges)
                 this.gpu_tiles.delete(draw_key)
@@ -664,7 +693,7 @@ export class VennTimeSeriesRendererView extends RendererView {
         batch.used = ++this.use_counter
         const choices = this.choices()
         const signature = batch.fragments
-            .map((f) => (choices.get(f.segment) ?? [0, 0]).join(","))
+            .map((f) => (choices.get(f.segment) ?? [0, 0, 0]).join(","))
             .join(";")
         const previous = this.selected_ranges.get(key)
         if (previous?.signature == signature) return previous.parts
@@ -678,6 +707,7 @@ export class VennTimeSeriesRendererView extends RendererView {
             const count = entries.length,
                 origin = entries[0].start
             const ranges = new Float32Array(count * batch.channel_count * 4)
+            const ranges_c = new Float32Array(count * batch.channel_count * 4)
             const valid = new Uint8Array(count * batch.channel_count * 2)
             const edges = new Float32Array(count * 2)
             for (let i = 0; i < count; i++) {
@@ -685,9 +715,9 @@ export class VennTimeSeriesRendererView extends RendererView {
                     f = entry.fragment
                 edges[i * 2] = entry.start - origin
                 edges[i * 2 + 1] = entry.end - origin
-                const selected = choices.get(f.segment) ?? [0, 0]
-                for (let side = 0; side < 2; side++) {
-                    const option = f.options[side][selected[side]]
+                const selected = choices.get(f.segment) ?? [0, 0, 0]
+                for (let side = 0; side < this.model.step_count; side++) {
+                    const option = f.options[side]?.[selected[side]]
                     if (option == null) continue
                     for (let ch = 0; ch < batch.channel_count; ch++) {
                         const source = option[0] + ch * option[1] + entry.index * 2
@@ -695,9 +725,15 @@ export class VennTimeSeriesRendererView extends RendererView {
                             hi = batch.values[source + 1]
                         if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) continue
                         const target = ch * count + i
-                        ranges[target * 4 + side * 2] = lo
-                        ranges[target * 4 + side * 2 + 1] = hi
-                        valid[target * 2 + side] = 1
+                        if (side == 2) {
+                            ranges_c[target * 4] = lo
+                            ranges_c[target * 4 + 1] = hi
+                            ranges_c[target * 4 + 2] = 1
+                        } else {
+                            ranges[target * 4 + side * 2] = lo
+                            ranges[target * 4 + side * 2 + 1] = hi
+                            valid[target * 2 + side] = 1
+                        }
                     }
                 }
             }
@@ -716,9 +752,11 @@ export class VennTimeSeriesRendererView extends RendererView {
                 time_start: origin,
                 time_step: batch.step,
                 ranges,
+                ranges_c,
                 valid,
                 edges,
-                bytes: ranges.byteLength + valid.byteLength + edges.byteLength,
+                bytes:
+                    ranges.byteLength + ranges_c.byteLength + valid.byteLength + edges.byteLength,
                 used: ++this.use_counter,
             }
             parts.push([`${key}:selected:${++this.selection_serial}`, tile])
@@ -747,7 +785,7 @@ export class VennTimeSeriesRendererView extends RendererView {
         const choices = this.choices(),
             rows: LineTile[] = []
         for (const f of batch.fragments) {
-            const selected = choices.get(f.segment) ?? [0, 0]
+            const selected = choices.get(f.segment) ?? [0, 0, 0]
             const times = Array.from({length: f.count}, (_, i) =>
                 Math.max(f.segment_start, f.time + i * batch.step),
             )
@@ -768,12 +806,13 @@ export class VennTimeSeriesRendererView extends RendererView {
             }
             const time = Float64Array.from(points, (p) => p[0])
             const a = new Float32Array(points.length).fill(NaN),
-                b = new Float32Array(points.length).fill(NaN)
-            for (let side = 0; side < 2; side++) {
-                const option = f.options[side][selected[side]]
+                b = new Float32Array(points.length).fill(NaN),
+                c = new Float32Array(points.length).fill(NaN)
+            for (let side = 0; side < this.model.step_count; side++) {
+                const option = f.options[side]?.[selected[side]]
                 if (option == null) continue
                 const offset = option[0] + (channel - batch.channel_start) * option[1]
-                const output = side == 0 ? a : b
+                const output = [a, b, c][side]
                 for (let i = 0; i < points.length; i++) {
                     const [, index, fraction] = points[i]
                     const value = batch.values[offset + index]
@@ -791,7 +830,8 @@ export class VennTimeSeriesRendererView extends RendererView {
                 time,
                 a,
                 b,
-                bytes: time.byteLength + a.byteLength + b.byteLength,
+                c,
+                bytes: time.byteLength + a.byteLength + b.byteLength + c.byteLength,
                 used: batch.used,
             })
         }
@@ -800,12 +840,14 @@ export class VennTimeSeriesRendererView extends RendererView {
         const count = rows.reduce((n, row) => n + row.time.length + 1, 0)
         const time = new Float64Array(count).fill(NaN)
         const a = new Float32Array(count).fill(NaN),
-            b = new Float32Array(count).fill(NaN)
+            b = new Float32Array(count).fill(NaN),
+            c = new Float32Array(count).fill(NaN)
         let offset = 0
         for (const row of rows) {
             time.set(row.time, offset)
             a.set(row.a, offset)
             b.set(row.b, offset)
+            if (row.c != null) c.set(row.c, offset)
             offset += row.time.length + 1
         }
         return [
@@ -817,8 +859,9 @@ export class VennTimeSeriesRendererView extends RendererView {
                 time,
                 a,
                 b,
+                c,
                 used: batch.used,
-                bytes: time.byteLength + a.byteLength + b.byteLength,
+                bytes: time.byteLength + a.byteLength + b.byteLength + c.byteLength,
             },
         ]
     }
@@ -952,11 +995,13 @@ export class VennTimeSeriesRendererView extends RendererView {
         if (!this.model.lines_visible) {
             this.model.line_source_a.data = {xs: [], ys: [], channel: []}
             this.model.line_source_b.data = {xs: [], ys: [], channel: []}
+            this.model.line_source_c.data = {xs: [], ys: [], channel: []}
             return
         }
         const xs: Float64Array[] = [],
             ays: Float32Array[] = [],
             bys: Float32Array[] = [],
+            cys: Float32Array[] = [],
             names: string[] = []
         const xpages = this.visible_x_pages("lines", this.selected_line_factor)
         const cpages = this.visible_channel_pages()
@@ -985,22 +1030,26 @@ export class VennTimeSeriesRendererView extends RendererView {
                     for (const tile of rows) {
                         tile.used = ++this.use_counter
                         const ay = new Float32Array(tile.a.length),
-                            by = new Float32Array(tile.b.length)
+                            by = new Float32Array(tile.b.length),
+                            cy = new Float32Array(tile.a.length).fill(NaN)
                         const scale = this.model.amplitude_scales[channel],
                             offset = this.model.amplitude_offsets[channel]
                         for (let index = 0; index < tile.a.length; index++) {
                             ay[index] = tile.a[index] * scale + offset
                             by[index] = tile.b[index] * scale + offset
+                            if (tile.c != null) cy[index] = tile.c[index] * scale + offset
                         }
                         xs.push(tile.time)
                         ays.push(ay)
                         bys.push(by)
+                        cys.push(cy)
                         names.push(this.model.channel_names[channel])
                     }
                 }
             }
         this.model.line_source_a.data = {xs, ys: ays, channel: names}
         this.model.line_source_b.data = {xs, ys: bys, channel: names}
+        this.model.line_source_c.data = {xs, ys: cys, channel: names}
     }
 
     private compile_shader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader {
@@ -1071,9 +1120,10 @@ export class VennTimeSeriesRendererView extends RendererView {
         }
         const {gl} = resources
         const ranges = gl.createTexture(),
+            ranges_c = gl.createTexture(),
             valid = gl.createTexture(),
             edges = gl.createTexture()
-        if (ranges == null || valid == null || edges == null)
+        if (ranges == null || ranges_c == null || valid == null || edges == null)
             throw new Error("Bokeh WebGL could not allocate tile textures")
         gl.bindTexture(gl.TEXTURE_2D, ranges)
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
@@ -1090,6 +1140,22 @@ export class VennTimeSeriesRendererView extends RendererView {
             gl.RGBA,
             gl.FLOAT,
             tile.ranges,
+        )
+        gl.bindTexture(gl.TEXTURE_2D, ranges_c)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            tile.entry_count,
+            tile.channel_count,
+            0,
+            gl.RGBA,
+            gl.FLOAT,
+            tile.ranges_c ?? new Float32Array(tile.ranges.length),
         )
         gl.bindTexture(gl.TEXTURE_2D, valid)
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
@@ -1129,9 +1195,10 @@ export class VennTimeSeriesRendererView extends RendererView {
             lookup_width: 1,
             lookup_height: 1,
             ranges,
+            ranges_c,
             valid,
             edges,
-            bytes: tile.ranges.byteLength + tile.valid.byteLength + 8,
+            bytes: tile.ranges.byteLength * 2 + tile.valid.byteLength + 8,
             used: ++this.use_counter,
         }
         this.gpu_tiles.set(key, gpu)
@@ -1196,6 +1263,7 @@ export class VennTimeSeriesRendererView extends RendererView {
         for (const [key, tile] of entries) {
             if (bytes <= this.model.rendered_cache_bytes) break
             gl.deleteTexture(tile.ranges)
+            gl.deleteTexture(tile.ranges_c)
             gl.deleteTexture(tile.valid)
             gl.deleteTexture(tile.edges)
             this.gpu_tiles.delete(key)
@@ -1269,18 +1337,29 @@ export class VennTimeSeriesRendererView extends RendererView {
             uniform1f("u_y_end", this.coordinates.y_source.end)
             gl.uniform2f(gl.getUniformLocation(program, "u_frame_origin"), origin_x, origin_y)
             gl.uniform2f(gl.getUniformLocation(program, "u_frame_size"), frame_width, frame_height)
+            const palette =
+                this.model.palette.length == 8
+                    ? this.model.palette
+                    : [
+                          "#ffffff",
+                          this.model.color_a,
+                          this.model.color_b,
+                          this.model.color_overlap,
+                          "#00ff00",
+                          "#ffff00",
+                          "#00ffff",
+                          "#ffffff",
+                      ]
             gl.uniform4fv(
-                gl.getUniformLocation(program, "u_color_a"),
-                css_color(this.model.color_a),
+                gl.getUniformLocation(program, "u_palette[0]"),
+                palette.flatMap(css_color),
             )
             gl.uniform4fv(
-                gl.getUniformLocation(program, "u_color_b"),
-                css_color(this.model.color_b),
+                gl.getUniformLocation(program, "u_hull_color"),
+                css_color(this.model.hull_color),
             )
-            gl.uniform4fv(
-                gl.getUniformLocation(program, "u_color_overlap"),
-                css_color(this.model.color_overlap),
-            )
+            uniform1i("u_hull_visible", this.model.hull_visible ? 1 : 0)
+            uniform1i("u_ranges_c", 3)
             const xpages = this.visible_x_pages("venn", this.selected_range_factor),
                 cpages = this.visible_channel_pages()
             for (const channel_page of cpages)
@@ -1299,6 +1378,8 @@ export class VennTimeSeriesRendererView extends RendererView {
                         gl.bindTexture(gl.TEXTURE_2D, gpu.ranges)
                         gl.activeTexture(gl.TEXTURE1)
                         gl.bindTexture(gl.TEXTURE_2D, gpu.valid)
+                        gl.activeTexture(gl.TEXTURE3)
+                        gl.bindTexture(gl.TEXTURE_2D, gpu.ranges_c)
                         gl.activeTexture(gl.TEXTURE2)
                         gl.bindTexture(gl.TEXTURE_2D, gpu.edges)
                         uniform1i("u_edges", 2)
@@ -1369,6 +1450,7 @@ export class VennTimeSeriesRendererView extends RendererView {
             const {gl, program, buffer} = this.resources
             for (const tile of this.gpu_tiles.values()) {
                 gl.deleteTexture(tile.ranges)
+                gl.deleteTexture(tile.ranges_c)
                 gl.deleteTexture(tile.valid)
                 gl.deleteTexture(tile.edges)
             }
@@ -1418,6 +1500,7 @@ export namespace VennTimeSeriesRenderer {
         line_tile_metadata_source: p.Property<ColumnDataSource>
         line_source_a: p.Property<ColumnDataSource>
         line_source_b: p.Property<ColumnDataSource>
+        line_source_c: p.Property<ColumnDataSource>
         dataset_version: p.Property<string>
         status: p.Property<string>
         epoch_pagers: p.Property<string>
@@ -1444,6 +1527,10 @@ export namespace VennTimeSeriesRenderer {
         channel_y_maxs: p.Property<number[]>
         channel_tile_size: p.Property<number>
         shader_schema_version: p.Property<number>
+        step_count: p.Property<number>
+        palette: p.Property<Color[]>
+        hull_visible: p.Property<boolean>
+        hull_color: p.Property<Color>
         color_a: p.Property<Color>
         color_b: p.Property<Color>
         color_overlap: p.Property<Color>
@@ -1498,6 +1585,7 @@ export class VennTimeSeriesRenderer extends Renderer {
                 line_tile_metadata_source: [Ref(ColumnDataSource)],
                 line_source_a: [Ref(ColumnDataSource)],
                 line_source_b: [Ref(ColumnDataSource)],
+                line_source_c: [Ref(ColumnDataSource)],
                 dataset_version: [Str, ""],
                 status: [Str, ""],
                 epoch_pagers: [Str, "[]"],
@@ -1524,6 +1612,10 @@ export class VennTimeSeriesRenderer extends Renderer {
                 channel_y_maxs: [List(Float), []],
                 channel_tile_size: [Int, 1],
                 shader_schema_version: [Int, 3],
+                step_count: [Int, 2],
+                palette: [List(Color), []],
+                hull_visible: [Bool, false],
+                hull_color: [Color, "#dddddd"],
                 color_a: [Color, "red"],
                 color_b: [Color, "blue"],
                 color_overlap: [Color, "black"],

@@ -110,6 +110,10 @@ class VennTimeSeriesRenderer(Renderer):
     page_size = Int(default=2048)
     page_counts = List(Int, default=[])
     shader_schema_version = Int(default=3)
+    step_count = Int(default=2)
+    palette = List(Color, default=[])
+    hull_visible = Bool(default=False)
+    hull_color = Color(default="#dddddd")
     color_a = Color(default="red")
     color_b = Color(default="blue")
     color_overlap = Color(default="black")
@@ -147,6 +151,7 @@ class VennTimeSeriesRenderer(Renderer):
     line_tile_metadata_source = Instance(ColumnDataSource)
     line_source_a = Instance(ColumnDataSource)
     line_source_b = Instance(ColumnDataSource)
+    line_source_c = Instance(ColumnDataSource)
     channel_names = List(String, default=[])
     amplitude_scales = List(Float, default=[])
     amplitude_offsets = List(Float, default=[])
@@ -188,6 +193,10 @@ class VennTimeSeriesRenderer(Renderer):
         )
         kwargs.setdefault(
             "line_source_b",
+            ColumnDataSource(data={"xs": [], "ys": [], "channel": []}, syncable=False),
+        )
+        kwargs.setdefault(
+            "line_source_c",
             ColumnDataSource(data={"xs": [], "ys": [], "channel": []}, syncable=False),
         )
         kwargs.setdefault("level", "image")
@@ -303,11 +312,11 @@ class TileCoordinator:
         self,
         document: Document,
         renderer: VennTimeSeriesRenderer,
-        sources: tuple[RecordingTileSource, RecordingTileSource],
+        sources: tuple[RecordingTileSource, ...],
         channels: list[str],
         *,
         domain=None,
-        source_channels: tuple[list[str], list[str]] | None = None,
+        source_channels: tuple[list[str], ...] | None = None,
         workers: int = 2,
     ) -> None:
         self.document = document
@@ -315,7 +324,7 @@ class TileCoordinator:
         self.sources = sources
         self.domain = domain
         self.channels = tuple(channels)
-        selections = source_channels or (channels, channels)
+        selections = source_channels or (channels,) * len(sources)
         self.source_indices = tuple(
             source.indices(selected) for source, selected in zip(sources, selections)
         )
@@ -336,7 +345,7 @@ class TileCoordinator:
         with self._lock:
             current = self.domain.segments[segment]
             self.domain.segments[segment] = replace(
-                current, **{"selected_a" if side == 0 else "selected_b": index}
+                current, **{("selected_a", "selected_b", "selected_c")[side]: index}
             )
         # Selection does not invalidate the selection-independent batch cache.
         revisions = list(self.renderer.segment_revisions)
@@ -497,7 +506,7 @@ class TileCoordinator:
                 bucket_start + core_stop * factor * dt,
             ),
         )
-        for label, array in zip(("a", "b"), arrays):
+        for label, array in zip(("a", "b", "c"), arrays):
             valid = np.isfinite(array).all(axis=-1) & (array[..., 0] <= array[..., 1])
             result[f"minimum_{label}"] = (
                 np.where(valid, array[..., 0], 0).astype(np.float32).ravel()
@@ -520,7 +529,6 @@ class TileCoordinator:
             for side, indices in enumerate(self.source_indices)
         ]
         times = arrays[0][0]
-        a, b = arrays[0][1], arrays[1][1]
         return [
             dict(
                 factor=factor,
@@ -528,8 +536,10 @@ class TileCoordinator:
                 channel_page=channel_page,
                 channel_index=channel,
                 time=times,
-                value_a=a[local].astype(np.float32),
-                value_b=b[local].astype(np.float32),
+                **{
+                    f"value_{label}": values[1][local].astype(np.float32)
+                    for label, values in zip("abc", arrays)
+                },
             )
             for local, channel in enumerate(range(ch_start, ch_stop))
         ]

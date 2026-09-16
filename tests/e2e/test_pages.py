@@ -70,8 +70,8 @@ def test_venndiff_eeg(page, dashboard_url):
     visit(page, dashboard_url, "/participant/overview" + QUERY)
     page.locator("#viewer").get_by_role("link", name="Venndiff EEG viewer").click()
     expect(page.locator(".bokeh-host canvas").first).to_be_visible(timeout=60000)
-    expect(page.get_by_text("Step A (red)", exact=True)).to_be_visible()
-    expect(page.get_by_text("Step B (blue)", exact=True)).to_be_visible()
+    expect(page.get_by_text("Step A", exact=True)).to_be_visible()
+    expect(page.get_by_text("Step B", exact=True)).to_be_visible()
     page.wait_for_function(
         """() => Bokeh.documents.some(doc =>
         [...doc.all_models].some(model =>
@@ -127,7 +127,7 @@ def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
     # At the floor the Venn layer alone still paints: with the line layer
     # off, every column shows the previous entry's degenerate value as a
     # step mark.  Both dummy steps carry identical values, so the marks use
-    # the black overlap color; compare against a Venn-off baseline to
+    # the magenta overlap color; compare against a Venn-off baseline to
     # cancel axes and grid.
     page.evaluate("""() => {
         const models = Bokeh.documents.flatMap(doc => [...doc.all_models])
@@ -149,19 +149,21 @@ def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
     page.wait_for_timeout(250)
     box = page.locator(".bk-Figure canvas").first.bounding_box()
 
-    def dark_pixel_count():
+    def overlap_pixel_count():
         shot = page.screenshot(clip=box)
         image = np.asarray(Image.open(BytesIO(shot)).convert("RGB"))
-        return int(((image < 100).all(axis=2)).sum())
+        return int(
+            ((image[..., 0] > 200) & (image[..., 1] < 60) & (image[..., 2] > 200)).sum()
+        )
 
-    with_venn = dark_pixel_count()
+    with_venn = overlap_pixel_count()
     page.evaluate("""() => {
         const renderer = Bokeh.documents.flatMap(doc => [...doc.all_models])
             .find(m => m.type === "venn_ts.renderer.VennTimeSeriesRenderer")
         renderer.venn_visible = false
     }""")
     page.wait_for_timeout(250)
-    without_venn = dark_pixel_count()
+    without_venn = overlap_pixel_count()
     assert with_venn - without_venn > 100
 
 

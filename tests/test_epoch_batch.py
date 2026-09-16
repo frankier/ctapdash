@@ -166,3 +166,28 @@ def test_epoch_switch_retains_unaffected_marker_models(tmp_path):
         assert all(not m.visible for m in markers)
     finally:
         tiles.close()
+
+
+@pytest.mark.parametrize("count", [1, 3])
+@pytest.mark.parametrize("layer", ["venn", "lines"])
+def test_variable_step_batches(tmp_path, count, layer):
+    sources = tuple(
+        cached_source(tmp_path, f"{i}_step", starts=[i * 4, 40], count=30)
+        for i in range(count)
+    )
+    domain = ComparisonDomain(sources)
+    tile, values = build_tile(domain, ([0],) * count, (0, 1), 1, 128, 0, 0, layer)
+    for fragment in tile["fragments"]:
+        assert len(fragment["options"]) == count
+        segment = domain.segments[fragment["segment"]]
+        first = round((fragment["time"] - segment.display_start) / domain.interval)
+        for side, options in enumerate(fragment["options"]):
+            if not options:
+                continue
+            offset, stride = options[0]
+            _, expected = domain.read(
+                segment, side, [0], 1, first, first + fragment["count"], layer
+            )
+            np.testing.assert_array_equal(
+                values[offset : offset + expected.size], expected.ravel()
+            )
