@@ -67,6 +67,36 @@ check it again after editing `.set` files; there is no filesystem watcher.
 
 `ctapdash-warm --config conf.toml` warms only the metadata pickle caches.
 
+## VennDiff domains and epochs
+
+VennDiff compares continuous and epoched EEGLab recordings on their original
+recording timeline. **Domain → Union** (the default) shows every time present in
+either file, including one-sided data. **Intersection** concatenates the shared
+intervals. Intervals absent from the selected domain take no horizontal space;
+ticks show original seconds, with `//` for forward jumps and `↶` for repeated time.
+
+In union, overlapping epochs have independent A/B `‹ 1/2 ›` controls above their
+intervals. In intersection, each overlapping epoch pair appears sequentially,
+sorted by original start time. **Show epoch starts** defaults off in union and
+on in intersection; each mode remembers its checkbox setting for the session.
+Red/blue dashed lines mark A/B starts, and purple marks coincident starts.
+
+Epoch starts come directly from the sample offsets in `recording.events[:, 0]`,
+converted to seconds using the recording's sampling rate. Continuous recordings
+use their sample timeline as one interval. Alignment requires compatible sampling
+grids; other event metadata and boundary deletions are not considered.
+Recordings use bounded reads from external `.fdt` files and pyramids.
+
+Pyramids use a shared sample-zero grid: factor 64 summarizes samples 0–63,
+64–127, and so on. Epoch offsets come from `recording.events[:, 0]`.
+Each epoch retains its own partial first/last buckets; overlapping epochs remain
+separate. At cached zoom levels, VennDiff slices these summaries directly and
+clips drawing to the selected intervals, without raw reads or boundary
+reaggregation. A clipped continuous bucket still summarizes its full source
+bucket. Line pyramids retain LTTB reduction with aligned bucket slots.
+Older pyramid caches rebuild automatically when the dataset is registered;
+raw data remains available while caches are being built.
+
 ## Developing
 
 ```bash

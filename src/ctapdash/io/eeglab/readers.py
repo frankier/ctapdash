@@ -35,9 +35,6 @@ def _get_info(eeg, *, eog, montage_units):
     """Keep EEGLAB type labels separately from MNE's restricted channel types."""
     eeg = copy(eeg)
     chanlocs = eeg.chanlocs
-    from pprint import pprint
-
-    pprint(chanlocs)
     if isinstance(chanlocs, dict):
         chanlocs = [chanlocs] if eeg.nbchan == 1 else _dol_to_lod(chanlocs)
     raw_ch_types = []

@@ -110,6 +110,7 @@ def _build_comparison(doc, dataset, stats):
     from bokeh.layouts import column, row
     from bokeh.models import (
         CheckboxButtonGroup,
+        CheckboxGroup,
         CustomAction,
         CustomJS,
         Dialog,
@@ -127,9 +128,10 @@ def _build_comparison(doc, dataset, stats):
 
     from venn_ts.range_series import (
         RecordingTileSource,
-        validate_tile_source_alignment,
     )
     from venn_ts.renderer import TileCoordinator, VennTimeSeriesRenderer
+    from venn_ts.domain import ComparisonDomain
+    from venn_ts.domain_axis import configure_domain_axis, update_epoch_markers
 
     steps = dataset.get_steps()
     if not steps:
@@ -151,10 +153,26 @@ def _build_comparison(doc, dataset, stats):
         options=["overplot", "stretch", "normalize"],
         value="overplot",
     )
+    domain_mode = Select(
+        title="Domain",
+        options=[("union", "Union"), ("intersection", "Intersection")],
+        value="union",
+        name="domain-mode",
+    )
+    epoch_toggle = CheckboxGroup(
+        labels=["Show epoch starts"],
+        active=[],
+        visible=False,
+        name="epoch-starts-toggle",
+    )
+    epoch_preferences = {"union": False, "intersection": True}
+    epoch_markers = []
+    epoch_choices = {}
+    current_pair = [None]
+    reset_domain_view = [False]
     layers = CheckboxButtonGroup(labels=["Venn", "Lines"], active=[0])
     guides_toggle = Toggle(label="Guides", active=True, name="guides-toggle")
     active_guides = [None]
-    status = Div(text="", sizing_mode="stretch_width")
     plot_holder = column(sizing_mode="stretch_both")
     source_cache = {}
     active_coordinator = [None]
@@ -250,6 +268,8 @@ def _build_comparison(doc, dataset, stats):
         step_a,
         step_b,
         plotting_mode,
+        domain_mode,
+        epoch_toggle,
         layers,
         guides_toggle,
         channel_toggle,
@@ -262,7 +282,7 @@ def _build_comparison(doc, dataset, stats):
         sizing_mode="stretch_height",
         styles={"padding-top": "10px", "padding-left": "10px"},
     )
-    plot_panel = column(status, plot_holder, sizing_mode="stretch_both")
+    plot_panel = column(plot_holder, sizing_mode="stretch_both")
     viewer_frame = column(
         row(sidebar_shell, plot_panel, sizing_mode="stretch_both"),
         min_height=695,
@@ -305,16 +325,6 @@ def _build_comparison(doc, dataset, stats):
         """,
         ),
     )
-
-    def page_counts(sources, layer, factors, common):
-        counts = []
-        for factor in factors:
-            length = min(
-                *(source.level_length(layer, factor) for source in sources),
-                common // factor,
-            )
-            counts.append((length + 2047) // 2048)
-        return counts
 
     def set_guides(_attr, _old, _new):
         if active_guides[0] is None:
@@ -468,10 +478,23 @@ def _build_comparison(doc, dataset, stats):
             active_coordinator[0].close()
             active_coordinator[0] = None
         active_guides[0] = None
-        status.text = "Loading..."
+        epoch_markers.clear()
+        if reset_domain_view[0]:
+            viewport["x"] = None
+            reset_domain_view[0] = False
+        if active_renderer[0] is not None:
+            active_renderer[0].status = "Loading..."
         try:
             source_a, source_b = get_source(step_a.value), get_source(step_b.value)
-            common = validate_tile_source_alignment(source_a, source_b)
+            pair = (step_a.value, step_b.value)
+            if current_pair[0] != pair:
+                epoch_choices.clear()
+                current_pair[0] = pair
+            epoch_toggle.visible = source_a.is_epoched or source_b.is_epoched
+            domain = ComparisonDomain(
+                (source_a, source_b), domain_mode.value, epoch_choices
+            )
+            common = domain.sample_count
             common_channels = [
                 channel
                 for channel in source_a.channels
@@ -492,7 +515,6 @@ def _build_comparison(doc, dataset, stats):
                 active_renderer[0] = None
                 active_plot[0] = None
                 plot_holder.children = [Div(text="Select at least one channel.")]
-                status.text = ""
                 return
 
             extrema_a = _stats_extrema(
@@ -520,27 +542,41 @@ def _build_comparison(doc, dataset, stats):
                 set(source_a.line_factors) & set(source_b.line_factors)
             )
             version = sha256(
-                f"{source_a.dataset_version}|{source_b.dataset_version}|{channels}|{common}".encode()
+                f"{source_a.dataset_version}|{source_b.dataset_version}|{channels}|{domain.mode}|{domain.segments}".encode()
             ).hexdigest()[:20]
             renderer = VennTimeSeriesRenderer(
                 level="glyph",
                 dataset_version=version,
                 sample_count=common,
-                time_start=max(source_a.time_start, source_b.time_start),
-                time_end=min(source_a.times[common - 1], source_b.times[common - 1]),
-                sample_interval=(source_a.sample_interval + source_b.sample_interval)
-                / 2,
+                time_start=domain.start,
+                time_end=domain.end,
+                sample_interval=domain.interval,
+                segment_starts=[s.display_start for s in domain.segments],
+                segment_counts=[s.count for s in domain.segments],
+                segment_sample_starts=[domain.sample_start(s) for s in domain.segments],
+                segment_revisions=[0] * len(domain.segments),
                 source_factors=range_factors,
-                page_counts=page_counts(
-                    (source_a, source_b), "venn", range_factors, common
-                ),
+                page_counts=domain.page_counts(range_factors, 2048),
                 range_factors=range_factors,
-                range_page_counts=page_counts(
-                    (source_a, source_b), "venn", range_factors, common
-                ),
+                range_page_counts=domain.page_counts(range_factors, 2048),
                 line_factors=line_factors,
-                line_page_counts=page_counts(
-                    (source_a, source_b), "line", line_factors, common
+                line_page_counts=domain.page_counts(line_factors, 2048),
+                epoch_pagers=json.dumps(
+                    [
+                        dict(
+                            segment=i,
+                            side=side,
+                            count=len(segment.choices(side)),
+                            index=segment.selected_a
+                            if side == 0
+                            else segment.selected_b,
+                            start=segment.display_start,
+                            end=segment.display_start + segment.count * domain.interval,
+                        )
+                        for i, segment in enumerate(domain.segments)
+                        for side in (0, 1)
+                        if domain.mode == "union" and len(segment.choices(side)) > 1
+                    ]
                 ),
                 channel_names=channels,
                 amplitude_scales=scales,
@@ -589,6 +625,7 @@ def _build_comparison(doc, dataset, stats):
                 tools="box_zoom,reset,save",
                 active_drag="box_zoom",
                 output_backend="webgl",
+                min_border_top=29,
             )
             plot.renderers.append(renderer)
             line_a = plot.multi_line(
@@ -617,24 +654,48 @@ def _build_comparison(doc, dataset, stats):
                 )
             )
             style_axes(plot, channels, geometry)
+            epoch_markers.extend(
+                configure_domain_axis(
+                    plot, domain, epoch_visible=bool(epoch_toggle.active)
+                )
+            )
             plot.add_tools(
                 channel_count_action(plot.y_range, y_range, len(channels), -1),
                 channel_count_action(plot.y_range, y_range, len(channels), 1),
             )
-            renderer.js_on_change(
-                "error",
-                CustomJS(
-                    args={"status": status},
-                    code="status.text = cb_obj.error ? `<strong>${cb_obj.error}</strong>` : ''",
-                ),
+            coordinator = TileCoordinator(
+                doc, renderer, (source_a, source_b), channels, domain=domain
             )
-            coordinator = TileCoordinator(doc, renderer, (source_a, source_b), channels)
+
+            def select_epoch(_attr, _old, selection):
+                if len(selection) != 3:
+                    return
+                segment, side, index = selection
+                if (
+                    0 <= segment < len(domain.segments)
+                    and side in (0, 1)
+                    and 0 <= index < len(domain.segments[segment].choices(side))
+                ):
+                    epoch_choices[(segment, side)] = index
+                    coordinator.select_epoch(segment, side, index)
+                    pagers = json.loads(renderer.epoch_pagers)
+                    for pager in pagers:
+                        if pager["segment"] == segment and pager["side"] == side:
+                            pager["index"] = index
+                    renderer.epoch_pagers = json.dumps(pagers, separators=(",", ":"))
+                    update_epoch_markers(
+                        plot, domain, bool(epoch_toggle.active), epoch_markers
+                    )
+
+            renderer.on_change("epoch_selection", select_epoch)
             from venn_ts.navigation import navigation_frame
 
             plot.name = "comparison-plot"
             plot_frame = navigation_frame(
                 plot, x_bounds, y_range, min_interval=x_floor or None
             )
+            minimap = plot_frame.select_one({"name": "time-minimap"})
+            configure_domain_axis(minimap, domain, epochs=False)
             plot.add_tools(
                 CustomAction(
                     description="Fullscreen",
@@ -682,7 +743,6 @@ def _build_comparison(doc, dataset, stats):
             active_coordinator[0] = coordinator
             active_plot[0] = plot
             plot_holder.children = [plot_frame]
-            status.text = ""
         except Exception as error:
             active_renderer[0] = None
             active_plot[0] = None
@@ -691,8 +751,35 @@ def _build_comparison(doc, dataset, stats):
                     text=f"<strong>Unable to build comparison:</strong> {escape(str(error))}"
                 )
             ]
-            status.text = ""
 
+    def set_epochs(_attr, _old, active):
+        epoch_preferences[domain_mode.value] = bool(active)
+        for marker in epoch_markers:
+            marker.visible = bool(active)
+
+    def set_domain(_attr, _old, mode):
+        epoch_toggle.active = [0] if epoch_preferences[mode] else []
+        epoch_choices.clear()
+        reset_domain_view[0] = True
+        rebuild(None, None, None)
+
+    # Show feedback immediately in the existing strip while Python rebuilds.
+    for widget in (step_a, step_b, channel_choice, plotting_mode, domain_mode):
+        widget.js_on_change(
+            "value",
+            CustomJS(
+                args=dict(holder=plot_holder),
+                code="""
+            for (const model of holder.references()) {
+                if (model.type === "venn_ts.renderer.VennTimeSeriesRenderer")
+                    model.status = "Loading..."
+            }
+        """,
+            ),
+        )
+
+    epoch_toggle.on_change("active", set_epochs)
+    domain_mode.on_change("value", set_domain)
     layers.on_change("active", set_layers)
     for widget in (step_a, step_b, channel_choice, plotting_mode):
         widget.on_change("value", rebuild)

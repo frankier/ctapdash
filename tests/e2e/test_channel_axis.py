@@ -1,7 +1,7 @@
 """Exercise text measurement and axis layout in a real canvas."""
 
 from bokeh.embed import file_html
-from bokeh.models import FixedTicker, Range1d
+from bokeh.models import Div, FixedTicker, Range1d
 from bokeh.plotting import figure
 from bokeh.resources import INLINE
 
@@ -46,7 +46,8 @@ def test_channel_labels_fit_without_moving_plot(page):
             return original.call(this, text, ...args);
         };
     }""")
-    page.set_content(file_html(plot, INLINE))
+    # The extension also exports a Widget; standalone pages need widget assets.
+    page.set_content(file_html([plot, Div(visible=False)], INLINE))
     page.wait_for_function("window.Bokeh?.documents[0]?.is_idle")
     draws = page.evaluate("window.labelDraws")
     assert any(
@@ -111,7 +112,8 @@ def test_dense_minimap_labels_keep_endpoints_and_do_not_overlap(page):
             return original.call(this, text, ...args);
         };
     }""")
-    page.set_content(file_html(plot, INLINE))
+    # The extension also exports a Widget; standalone pages need widget assets.
+    page.set_content(file_html([plot, Div(visible=False)], INLINE))
     page.wait_for_function("window.Bokeh?.documents[0]?.is_idle")
     draws = page.evaluate(
         "Array.from(new Map(window.draws.map(d => [d.text, d])).values())"
@@ -157,7 +159,8 @@ def test_guide_labels_yield_to_channels_and_each_other(page):
             return original.call(this, text, ...args);
         };
     }""")
-    page.set_content(file_html(plot, INLINE))
+    # The extension also exports a Widget; standalone pages need widget assets.
+    page.set_content(file_html([plot, Div(visible=False)], INLINE))
     page.wait_for_function("window.Bokeh?.documents[0]?.is_idle")
     draws = page.evaluate(
         "Array.from(new Map(window.guideDraws.map(d => [d.text, d])).values())"

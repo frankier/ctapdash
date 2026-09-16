@@ -71,7 +71,13 @@ def test_registration_freshness_snapshot(tmp_path):
     assert all(job.state == "pending" for job in snapshot.values())
     for job in snapshot.values():
         job.output.parent.mkdir(parents=True, exist_ok=True)
-        job.output.touch()
+        if job.key[0] in ("pyramid", "rangepyramid"):
+            from ctapdash.io.pyramid import GRID_VERSION
+
+            job.output.mkdir()
+            (job.output / "sample-grid-version").write_text(GRID_VERSION)
+        else:
+            job.output.touch()
         os.utime(job.output, ns=(timestamp, timestamp))
     assert all(job.state == "ready" for job in scan_dataset(tmp_path).values())
     os.utime(paths.set, ns=(timestamp + 1_000_000, timestamp + 1_000_000))
@@ -195,7 +201,9 @@ async def test_real_worker_builds_and_reuses_raw_and_epoch_caches(tmp_path):
         assert warmer.status()["completed"] == warmer.status()["total"] == 5
         assert recording.open_transpose().shape == (2, 100)
         tree, groups = recording.open_pyramid()
-        assert tree[groups[-1]].ds.sizes["time"] == 1
+        assert (
+            tree[groups[-1]].ds.sizes["time"] == 2
+        )  # Includes the final partial bucket.
         tree.close()
     assert not process.is_alive()
     assert str(tmp_path) not in REGISTERED

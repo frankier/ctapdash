@@ -8,7 +8,7 @@ from scipy.io import savemat
 from PIL import Image, ImageDraw
 
 
-def write_eeglab(tmp_path, n_epochs=1, *, stem=None, n_times=4):
+def write_eeglab(tmp_path, n_epochs=1, *, stem=None, n_times=4, epoch_starts=None):
     """Write external float32 samples and top-level EEGLAB MAT metadata."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     n_channels = 2
@@ -31,9 +31,15 @@ def write_eeglab(tmp_path, n_epochs=1, *, stem=None, n_times=4):
         "xmax": (n_times - 1) / 100.0 - (0.01 if n_epochs > 1 else 0),
     }
     if n_epochs > 1:
+        if epoch_starts is None:
+            epoch_starts = np.arange(n_epochs) * n_times
         eeg["event"] = np.rec.fromarrays(
-            [np.arange(n_epochs) * n_times + 1.0, ["event"] * n_epochs],
-            names=["latency", "type"],
+            [
+                np.asarray(epoch_starts) + 1.0,
+                ["event"] * n_epochs,
+                np.arange(n_epochs) + 1,
+            ],
+            names=["latency", "type", "epoch"],
         )
         eeg["epoch"] = np.rec.fromarrays([["event"] * n_epochs], names=["eventtype"])
     else:
@@ -54,6 +60,22 @@ def write_dataset(directory):
         write_eeglab(root / step, stem=participant, n_times=500)
     # Include epochs as well as continuous recordings in the real readers/viewers.
     write_eeglab(root / "3_fine_clean", 2, stem="1002P_dummy_intake", n_times=100)
+    # A separate participant exercises mixed domains and overlapping epochs.
+    write_eeglab(root / "1_load", stem="1003P_epochs_intake", n_times=500)
+    write_eeglab(
+        root / "2_rough_clean",
+        3,
+        stem="1003P_epochs_intake",
+        n_times=100,
+        epoch_starts=[50, 100, 300],
+    )
+    write_eeglab(
+        root / "3_fine_clean",
+        2,
+        stem="1003P_epochs_intake",
+        n_times=100,
+        epoch_starts=[75, 325],
+    )
     log = root / "logs" / "CTAP_load_data" / f"{participant}.log"
     log.parent.mkdir(parents=True)
     log.write_text(

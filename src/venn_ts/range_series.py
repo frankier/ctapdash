@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
+
+@dataclass(frozen=True)
+class RecordingSegment:
+    time_start: float
+    sample_count: int
+    source_start: int = 0
+    epoch: int | None = None
 
 
 def _sample_interval(times: NDArray[np.float64], identity: str) -> float:
@@ -261,10 +270,6 @@ class RecordingTileSource:
             raise ValueError(
                 f"{self.path} does not support bounded memory-mapped reads"
             )
-        if "epoch" in recording.__class__.__name__.lower():
-            raise ValueError(
-                f"{self.path} is epoched; the comparison viewer supports continuous data only"
-            )
 
         # Only external .fdt recordings provide directly mapped samples.
         filenames = [Path(name) for name in getattr(recording, "filenames", ()) if name]
@@ -290,8 +295,9 @@ class RecordingTileSource:
                 data_fname=recording_data.paths.transpose,
                 ctapdash_order=True,
             )
-        if self.raw.dims != ("ch", "time"):
-            raise ValueError(f"{self.path} is not a continuous channel/time recording")
+        if self.raw.dims not in (("ch", "time"), ("ch", "epoch", "time")):
+            raise ValueError(f"{self.path} has unsupported sample dimensions")
+        self.is_epoched = "epoch" in self.raw.dims
         self.channels = tuple(str(value) for value in self.raw["ch"].values)
         self.channel_index = {
             channel: index for index, channel in enumerate(self.channels)
@@ -301,6 +307,19 @@ class RecordingTileSource:
         self.sample_interval = _sample_interval(self.times, identity)
         self.sample_count = len(self.times)
         self.time_start = float(self.times[0])
+        if self.is_epoched:
+            # The first column gives each epoch's sample offset. Local epoch
+            # times (including a negative tmin) do not change that offset.
+            self.segments = tuple(
+                RecordingSegment(
+                    float(event[0]) / recording.info["sfreq"],
+                    self.sample_count,
+                    epoch=index,
+                )
+                for index, event in enumerate(recording.events)
+            )
+        else:
+            self.segments = (RecordingSegment(self.time_start, self.sample_count),)
         stat = self.path.stat()
         self.dataset_version = f"{self.path}:{stat.st_size}:{stat.st_mtime_ns}"
 
@@ -329,6 +348,51 @@ class RecordingTileSource:
             )
             pstat = pyramid_path.stat()
             self.dataset_version += f":{pstat.st_mtime_ns}"
+
+    def read_segment(
+        self, segment, channels, offset, count, factor, start, stop, layer
+    ):
+        """Slice shared-grid buckets, retaining source-boundary partial buckets.
+
+        Domain boundaries only clip drawing; they never rebuild a cached bucket.
+        At factor one (or without a cache) read the same grid from raw samples.
+        """
+        source_sample = round(segment.time_start / self.sample_interval)
+        first_bucket = (source_sample + offset) // factor
+        groups = self.range_groups if layer == "venn" else self.line_groups
+        tree = self.range_tree if layer == "venn" else self.line_tree
+        if factor in groups:
+            array = self._sole_array(tree, groups[factor])
+            if segment.epoch is not None:
+                array = array.isel(epoch=segment.epoch)
+            first = first_bucket - int(array.bucket_sample_start) // factor + start
+            last = first + stop - start
+            if first < 0 or last > int(array.bucket_count):
+                raise IndexError("Tile is outside the cached source buckets")
+            return np.asarray(array.data[list(channels), first:last])
+
+        raw = self.raw
+        if segment.epoch is not None:
+            raw = raw.isel(epoch=segment.epoch)
+        positions = (first_bucket + np.arange(start, stop)) * factor - source_sample
+        if layer != "venn" or factor == 1:
+            values = np.asarray(raw.data[np.ix_(channels, np.maximum(positions, 0))])
+            return np.stack((values, values), axis=-1) if layer == "venn" else values
+        result = []
+        for position in positions:
+            values = np.asarray(
+                raw.data[
+                    list(channels),
+                    max(0, position) : min(position + factor, self.sample_count),
+                ]
+            )
+            result.append(
+                np.stack(
+                    (np.fmin.reduce(values, axis=1), np.fmax.reduce(values, axis=1)),
+                    axis=-1,
+                )
+            )
+        return np.stack(result, axis=1)
 
     @property
     def line_factors(self) -> tuple[int, ...]:

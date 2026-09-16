@@ -46,6 +46,9 @@ EMPTY_RANGE_TILE_DATA = {
     "valid_b": [],
 }
 EMPTY_RANGE_TILE_METADATA = {
+    "segment_id": [],
+    "clip_start": [],
+    "clip_end": [],
     "factor": [],
     "x_page": [],
     "channel_page": [],
@@ -84,12 +87,21 @@ class VennTimeSeriesRenderer(Renderer):
         default=[],
         help="Tile keys covered by the current response, including failed tiles",
     )
+    response_final = Bool(default=True)
+    epoch_batch_source = Instance(ColumnDataSource)
     response_error = String(
         default="", help="Failure associated with the current response"
     )
     page_source = Instance(ColumnDataSource)
     page_metadata_source = Instance(ColumnDataSource)
     dataset_version = String(default="")
+    status = String(default="")
+    epoch_pagers = String(default="[]")
+    epoch_selection = List(Int, default=[])
+    segment_revisions = List(Int, default=[])
+    segment_starts = List(Float, default=[])
+    segment_counts = List(Int, default=[])
+    segment_sample_starts = List(Int, default=[])
     sample_count = Int(default=0)
     time_start = Float(default=0)
     time_end = Float(default=0)
@@ -97,7 +109,7 @@ class VennTimeSeriesRenderer(Renderer):
     source_factors = List(Int, default=[])
     page_size = Int(default=2048)
     page_counts = List(Int, default=[])
-    shader_schema_version = Int(default=2)
+    shader_schema_version = Int(default=3)
     color_a = Color(default="red")
     color_b = Color(default="blue")
     color_overlap = Color(default="black")
@@ -153,6 +165,7 @@ class VennTimeSeriesRenderer(Renderer):
     last_paint_ms = Float(default=0)
 
     def __init__(self, *, manifest: VennManifest | None = None, **kwargs) -> None:
+        kwargs.setdefault("epoch_batch_source", ColumnDataSource(data={"payload": []}))
         kwargs.setdefault("page_source", ColumnDataSource(data=EMPTY_PAGE_DATA))
         kwargs.setdefault("page_metadata_source", ColumnDataSource(data=EMPTY_METADATA))
         kwargs.setdefault(
@@ -293,12 +306,14 @@ class TileCoordinator:
         sources: tuple[RecordingTileSource, RecordingTileSource],
         channels: list[str],
         *,
+        domain=None,
         source_channels: tuple[list[str], list[str]] | None = None,
         workers: int = 2,
     ) -> None:
         self.document = document
         self.renderer = renderer
         self.sources = sources
+        self.domain = domain
         self.channels = tuple(channels)
         selections = source_channels or (channels, channels)
         self.source_indices = tuple(
@@ -314,6 +329,19 @@ class TileCoordinator:
         self._next_response_seq = renderer.request_seq + 1
         renderer.on_change("request_seq", self._request)
         renderer.on_change("response_ack", self._acknowledge)
+
+    def select_epoch(self, segment, side, index):
+        from dataclasses import replace
+
+        with self._lock:
+            current = self.domain.segments[segment]
+            self.domain.segments[segment] = replace(
+                current, **{"selected_a" if side == 0 else "selected_b": index}
+            )
+        # Selection does not invalidate the selection-independent batch cache.
+        revisions = list(self.renderer.segment_revisions)
+        revisions[segment] += 1
+        self.renderer.segment_revisions = revisions
 
     def _request(self, _attr: str, _old: int, seq: int) -> None:
         requests = tuple(tuple(item) for item in self.renderer.requested_tiles)
@@ -346,6 +374,8 @@ class TileCoordinator:
         channel_start, channel_stop = self._channel_slice(channel_page)
         if channel_start >= channel_stop:
             raise IndexError(f"channel page {channel_page} is outside the selection")
+        if self.domain is not None:
+            return self._domain_range_tile(factor, x_page, channel_page)
         bounds = self._bounds(self.sources[0], "venn", factor, x_page)
         data_start, data_stop, core_start, core_length = bounds
         arrays = []
@@ -367,6 +397,16 @@ class TileCoordinator:
         valid_a = np.isfinite(a).all(axis=-1) & (a[..., 0] <= a[..., 1])
         valid_b = np.isfinite(b).all(axis=-1) & (b[..., 0] <= b[..., 1])
         return {
+            "segment_id": -1,
+            "clip_start": self.renderer.time_start
+            + (data_start + core_start) * factor * self.renderer.sample_interval,
+            "clip_end": min(
+                self.renderer.time_end,
+                self.renderer.time_start
+                + (data_start + core_start + core_length)
+                * factor
+                * self.renderer.sample_interval,
+            ),
             "factor": factor,
             "x_page": x_page,
             "channel_page": channel_page,
@@ -388,6 +428,8 @@ class TileCoordinator:
         }
 
     def _line_tile(self, factor: int, x_page: int, channel_page: int):
+        if self.domain is not None:
+            return self._domain_line_tile(factor, x_page, channel_page)
         channel_start, channel_stop = self._channel_slice(channel_page)
         if channel_start >= channel_stop:
             raise IndexError(f"channel page {channel_page} is outside the selection")
@@ -421,6 +463,77 @@ class TileCoordinator:
             )
         return rows
 
+    def _domain_range_tile(self, factor, x_page, channel_page):
+        sid, segment, start, stop, core_start, core_stop = self.domain.page(
+            factor, self.renderer.page_size, x_page
+        )
+        ch_start, ch_stop = self._channel_slice(channel_page)
+        arrays = [
+            self.domain.read(
+                segment, side, indices[ch_start:ch_stop], factor, start, stop, "venn"
+            )[1]
+            for side, indices in enumerate(self.source_indices)
+        ]
+        dt = self.domain.interval
+        bucket_start, _ = self.domain.bucket_geometry(segment, factor)
+        result = dict(
+            segment_id=sid,
+            factor=factor,
+            x_page=x_page,
+            channel_page=channel_page,
+            channel_start=ch_start,
+            channel_count=ch_stop - ch_start,
+            entry_count=stop - start,
+            data_start=start,
+            core_start=core_start - start,
+            core_length=core_stop - core_start,
+            time_start=bucket_start + start * factor * dt,
+            time_step=factor * dt,
+            clip_start=max(
+                segment.display_start, bucket_start + core_start * factor * dt
+            ),
+            clip_end=min(
+                segment.display_start + segment.count * dt,
+                bucket_start + core_stop * factor * dt,
+            ),
+        )
+        for label, array in zip(("a", "b"), arrays):
+            valid = np.isfinite(array).all(axis=-1) & (array[..., 0] <= array[..., 1])
+            result[f"minimum_{label}"] = (
+                np.where(valid, array[..., 0], 0).astype(np.float32).ravel()
+            )
+            result[f"maximum_{label}"] = (
+                np.where(valid, array[..., 1], 0).astype(np.float32).ravel()
+            )
+            result[f"valid_{label}"] = valid.astype(np.uint8).ravel()
+        return result
+
+    def _domain_line_tile(self, factor, x_page, channel_page):
+        _sid, segment, start, stop, _cs, _ce = self.domain.page(
+            factor, self.renderer.page_size, x_page
+        )
+        ch_start, ch_stop = self._channel_slice(channel_page)
+        arrays = [
+            self.domain.read(
+                segment, side, indices[ch_start:ch_stop], factor, start, stop, "lines"
+            )
+            for side, indices in enumerate(self.source_indices)
+        ]
+        times = arrays[0][0]
+        a, b = arrays[0][1], arrays[1][1]
+        return [
+            dict(
+                factor=factor,
+                x_page=x_page,
+                channel_page=channel_page,
+                channel_index=channel,
+                time=times,
+                value_a=a[local].astype(np.float32),
+                value_b=b[local].astype(np.float32),
+            )
+            for local, channel in enumerate(range(ch_start, ch_stop))
+        ]
+
     @staticmethod
     def _pack_ranges(tiles):
         data = {name: [] for name in EMPTY_RANGE_TILE_DATA}
@@ -447,7 +560,9 @@ class TileCoordinator:
         packed_metadata = {
             name: np.asarray(
                 values,
-                dtype=np.float64 if name in {"time_start", "time_step"} else np.int32,
+                dtype=np.float64
+                if name in {"time_start", "time_step", "clip_start", "clip_end"}
+                else np.int32,
             )
             for name, values in metadata.items()
         }
@@ -479,6 +594,22 @@ class TileCoordinator:
         return packed_data, packed_metadata
 
     def _load(self, seq, requests):
+        if self.domain is not None:
+            from venn_ts.epoch_batch import build_tile, pack_tiles
+
+            return seq, pack_tiles(
+                build_tile(
+                    self.domain,
+                    self.source_indices,
+                    self._channel_slice(channel_page),
+                    factor,
+                    self.renderer.page_size,
+                    x_page,
+                    channel_page,
+                    layer,
+                )
+                for layer, factor, x_page, channel_page in requests
+            )
         ranges, lines = [], []
         for layer, factor, x_page, channel_page in requests:
             if layer == "venn":
@@ -490,33 +621,36 @@ class TileCoordinator:
         return seq, self._pack_ranges(ranges), self._pack_lines(lines)
 
     def _loaded(self, future: Future, seq: int, requests) -> None:
+        from collections import deque
+        from venn_ts.epoch_batch import TRANSPORT_BYTES
+
         try:
-            loaded_seq, (range_data, range_metadata), (line_data, line_metadata) = (
-                future.result()
-            )
-            if loaded_seq != seq:
+            result = future.result()
+            if result[0] != seq:
                 raise ValueError(
-                    f"tile response {loaded_seq} does not match request {seq}"
+                    f"tile response {result[0]} does not match request {seq}"
                 )
+            if self.domain is not None:
+                payload = result[1]
+                parts = deque(
+                    dict(
+                        payload=np.frombuffer(
+                            payload[start : start + TRANSPORT_BYTES], dtype=np.uint8
+                        )
+                    )
+                    for start in range(0, len(payload), TRANSPORT_BYTES)
+                )
+            else:
+                parts = deque([dict(ranges=result[1], lines=result[2])])
             error_message = ""
         except Exception as error:
-            range_data = {name: [] for name in EMPTY_RANGE_TILE_DATA}
-            range_metadata = {name: [] for name in EMPTY_RANGE_TILE_METADATA}
-            line_data = {name: [] for name in EMPTY_LINE_TILE_DATA}
-            line_metadata = {name: [] for name in EMPTY_LINE_TILE_METADATA}
+            parts = deque([{}])
             error_message = f"tile request failed: {error}"
 
         def enqueue() -> None:
             if self._closed:
                 return
-            self._pending_responses[seq] = (
-                tuple(requests),
-                range_data,
-                range_metadata,
-                line_data,
-                line_metadata,
-                error_message,
-            )
+            self._pending_responses[seq] = (tuple(requests), parts, error_message)
             self._publish_next_response()
 
         self.document.add_next_tick_callback(enqueue)
@@ -524,26 +658,39 @@ class TileCoordinator:
     def _publish_next_response(self) -> None:
         if self._closed or self._publishing_response is not None:
             return
-        response = self._pending_responses.pop(self._next_response_seq, None)
+        response = self._pending_responses.get(self._next_response_seq)
         if response is None:
             return
-        requests, range_data, range_metadata, line_data, line_metadata, error = response
-        seq = self._next_response_seq
-        self._publishing_response = seq
-        self.renderer.range_tile_source.data = range_data
-        self.renderer.range_tile_metadata_source.data = range_metadata
-        self.renderer.line_tile_source.data = line_data
-        self.renderer.line_tile_metadata_source.data = line_metadata
+        requests, parts, error = response
+        part = parts.popleft()
+        final = not parts
+        if final:
+            del self._pending_responses[self._next_response_seq]
+        token = self.renderer.response_generation + 1
+        self._publishing_response = token
+        if "ranges" in part:
+            (
+                self.renderer.range_tile_source.data,
+                self.renderer.range_tile_metadata_source.data,
+            ) = part["ranges"]
+            (
+                self.renderer.line_tile_source.data,
+                self.renderer.line_tile_metadata_source.data,
+            ) = part["lines"]
+        self.renderer.epoch_batch_source.data = {"payload": part.get("payload", [])}
         self.renderer.response_tiles = list(requests)
         self.renderer.response_error = error
-        self.renderer.response_generation = seq
-        self.renderer.response_seq = seq
+        self.renderer.response_final = final
+        self.renderer.response_seq = self._next_response_seq
+        # Publish last: the client sees an atomic frame and acknowledges its token.
+        self.renderer.response_generation = token
 
-    def _acknowledge(self, _attr: str, _old: int, seq: int) -> None:
-        if seq != self._publishing_response:
+    def _acknowledge(self, _attr: str, _old: int, token: int) -> None:
+        if token != self._publishing_response:
             return
         self._publishing_response = None
-        self._next_response_seq = seq + 1
+        if self.renderer.response_final:
+            self._next_response_seq += 1
         self._publish_next_response()
 
     def close(self) -> None:
