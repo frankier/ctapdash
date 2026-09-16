@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from bisect import bisect_right
+from itertools import product
 import numpy as np
 
 
@@ -15,27 +16,34 @@ class DomainSegment:
     selected_a: int = 0
     selected_b: int = 0
 
+    choices_c: tuple[int, ...] = ()
+    selected_c: int = 0
+
     def choices(self, side):
-        return self.choices_a if side == 0 else self.choices_b
+        return (self.choices_a, self.choices_b, self.choices_c)[side]
+
+    def selection(self, side):
+        return (self.selected_a, self.selected_b, self.selected_c)[side]
 
     def selected(self, side):
         choices = self.choices(side)
-        return (
-            choices[self.selected_a if side == 0 else self.selected_b]
-            if choices
-            else None
-        )
+        return choices[self.selection(side)] if choices else None
 
 
 class ComparisonDomain:
     def __init__(self, sources, mode="union", selections=None):
         if mode not in ("union", "intersection"):
             raise ValueError(f"Unknown domain mode: {mode}")
+        if not 1 <= len(sources) <= 3:
+            raise ValueError("Select one to three steps")
         self.mode = mode
         self.sources = sources
         self.interval = sources[0].sample_interval
         tolerance = abs(self.interval) * 1e-5
-        if abs(self.interval - sources[1].sample_interval) > tolerance:
+        if any(
+            abs(self.interval - source.sample_interval) > tolerance
+            for source in sources
+        ):
             raise ValueError("The selected steps have incompatible sampling intervals")
         for source in sources:
             if not source.segments:
@@ -57,12 +65,12 @@ class ComparisonDomain:
             intervals.append(rows)
         pieces = []
         if mode == "intersection":
-            for start_a, end_a, a in intervals[0]:
-                for start_b, end_b, b in intervals[1]:
-                    start, end = max(start_a, start_b), min(end_a, end_b)
-                    if start < end:
-                        pieces.append((start, end, (a,), (b,)))
-            pieces.sort(key=lambda p: (p[0], p[2], p[3]))
+            for combination in product(*intervals):
+                start = max(row[0] for row in combination)
+                end = min(row[1] for row in combination)
+                if start < end:
+                    pieces.append((start, end, *((row[2],) for row in combination)))
+            pieces.sort(key=lambda p: (p[0], *p[2:]))
         else:
             # Sweep endpoints rather than materializing a sample-sized time grid.
             events = {}
@@ -71,16 +79,16 @@ class ComparisonDomain:
                     events.setdefault(start, []).append((side, index, True))
                     events.setdefault(end, []).append((side, index, False))
             points = sorted(events)
-            active = [set(), set()]
+            active = [set() for _ in sources]
             for start, end in zip(points, points[1:]):
                 for side, index, add in events[start]:
                     if add:
                         active[side].add(index)
                     else:
                         active[side].discard(index)
-                if active[0] or active[1]:
+                if any(active):
                     pieces.append(
-                        (start, end, tuple(sorted(active[0])), tuple(sorted(active[1])))
+                        (start, end, *(tuple(sorted(side)) for side in active))
                     )
         if not pieces:
             raise ValueError(
@@ -89,7 +97,8 @@ class ComparisonDomain:
         self.segments = []
         display = origin
         selections = selections or {}
-        for i, (start, end, a, b) in enumerate(pieces):
+        for i, (start, end, *choices) in enumerate(pieces):
+            a, b, c = choices + [()] * (3 - len(choices))
             self.segments.append(
                 DomainSegment(
                     origin + start * self.interval,
@@ -99,6 +108,8 @@ class ComparisonDomain:
                     b,
                     min(selections.get((i, 0), 0), max(0, len(a) - 1)),
                     min(selections.get((i, 1), 0), max(0, len(b) - 1)),
+                    c,
+                    min(selections.get((i, 2), 0), max(0, len(c) - 1)),
                 )
             )
             display += (end - start) * self.interval
@@ -199,7 +210,7 @@ class ComparisonDomain:
     def epoch_starts(self):
         markers = {}
         for segment in self.segments:
-            for side in (0, 1):
+            for side in range(len(self.sources)):
                 selected = segment.selected(side)
                 if selected is None:
                     continue

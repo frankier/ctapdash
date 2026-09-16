@@ -40,7 +40,7 @@ def build_tile(
     spans = {}
     for _, segment, first, last, _, _ in fragments:
         bucket = domain.sample_start(segment) // factor
-        for side in (0, 1):
+        for side in range(len(domain.sources)):
             for selected in segment.choices(side):
                 key = side, selected
                 low, high = bucket + first, bucket + last
@@ -76,7 +76,7 @@ def build_tile(
     for sid, segment, first, last, local_low, local_high in fragments:
         bucket = domain.sample_start(segment) // factor + first
         options = []
-        for side in (0, 1):
+        for side in range(len(domain.sources)):
             choices = []
             for selected in segment.choices(side):
                 block = blocks[side, selected]

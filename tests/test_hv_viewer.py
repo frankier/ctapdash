@@ -285,7 +285,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
     step_a = next(
         select
         for select in doc.roots[0].select({"type": BkSelect})
-        if select.title == "Step A (red)"
+        if select.title == "Step A"
     )
     step_a.value = "2"
     rebuilt = doc.get_model_by_name("comparison-plot")

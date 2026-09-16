@@ -55,17 +55,29 @@ def configure_domain_axis(plot, domain, *, epoch_visible=False, epochs=True):
     return markers
 
 
-def update_epoch_markers(plot, domain, visible, markers):
+def update_epoch_markers(plot, domain, visible, markers, palette=None):
     """Update arrays without creating or removing annotation models."""
     positions = domain.epoch_starts()
     markers[0].update(
         positions=list(positions),
         labels=[
-            "AB" if len(sides) == 2 else ("A" if 0 in sides else "B")
+            "".join("ABC"[side] for side in sorted(sides))
             for sides in positions.values()
         ],
         colors=[
-            "#7b3294" if len(sides) == 2 else ("red" if 0 in sides else "blue")
+            (
+                palette
+                or [
+                    "white",
+                    "red",
+                    "blue",
+                    "#7b3294",
+                    "green",
+                    "orange",
+                    "cyan",
+                    "black",
+                ]
+            )[sum(1 << side for side in sides)]
             for sides in positions.values()
         ],
         visible=visible,
