@@ -116,6 +116,20 @@ def participant_context(request, default_participant=None):
 async def dataset_overview(request):
     context = participant_context(request)
     context["view"] = "dataset-overview"
+    dataset = ObservationData.from_request(request)
+    participant_steps = {}
+    participants = dataset.get_all_steps()["participants"]
+    for participant, _ in participants:
+        steps = dataset.with_participant(participant).get_steps()
+        step_rows = await run_in_threadpool(
+            _participant_step_rows, dataset.source_path, steps, participant
+        )
+        participant_steps[participant] = step_rows
+    context["participant_steps"] = participant_steps
+    context["participant_totals"] = {
+        participant: sum(row["observations"] for row in rows)
+        for participant, rows in participant_steps.items()
+    }
     return templates.TemplateResponse(
         request,
         "dataset_overview.html",
@@ -193,11 +207,6 @@ async def venn_time_series(request):
     """Serve the multichannel processing-step comparison viewer."""
     # If there's not participant, just pick the first one
     default_participant = None
-    if not request.query_params.get("participant"):
-        dataset = ObservationData.from_request(request)
-        default_participant = dataset.get_all_steps().get("participants", [[None]])[0][
-            0
-        ]
     context = participant_context(request, default_participant=default_participant)
     dataset = ObservationData.from_request(
         request, default_participant=default_participant
