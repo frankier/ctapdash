@@ -43,20 +43,6 @@
                 </select>
             </div>
         {% endif %}
-        {% if has_prev %}
-            <div class="text-nowrap mx-4">
-                <input
-                    name="onionskin"
-                    id="onionskin-checkbox"
-                    type="checkbox"
-                    value="onionskin"
-                    onchange="this.form.requestSubmit()"
-                    class="inline-block p-1"
-                    {% if onionskin %}checked{% endif %}
-                >
-                Onionskin
-            </div>
-        {% endif %}
     </form>
     <div class="m-4">
         <div id="mpl-warnings"></div>
