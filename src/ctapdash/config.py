@@ -6,6 +6,16 @@ from pathlib import Path
 
 
 ENV_VAR = "CTAPDASH_SETTINGS"
+DEBUG_ENV_VAR = "CTAPDASH_DEBUG"
+
+
+def debug_from_env():
+    """Read the debug flag from the environment.
+
+    uvicorn's reloader runs the application in a spawned subprocess, so the CLI
+    passes --debug on to it this way rather than as an argument.
+    """
+    return environ.get(DEBUG_ENV_VAR, "").lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass

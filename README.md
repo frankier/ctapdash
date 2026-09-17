@@ -48,12 +48,13 @@ next time. There is deliberately no automatic config location.
 
 ### Other options
 
-| Option         | Effect                                       |
-| -------------- | -------------------------------------------- |
-| `--port N`     | Serve on a fixed port instead of a free one  |
-| `--no-window`  | Serve only; don't open a window or a browser |
-| `--no-browser` | Don't open a browser                         |
-| `--debug`      | Show tracebacks in the browser               |
+| Option         | Effect                                             |
+| -------------- | -------------------------------------------------- |
+| `--port N`     | Serve on a fixed port instead of a free one        |
+| `--no-window`  | Serve only; don't open a window or a browser       |
+| `--no-browser` | Don't open a browser                               |
+| `--reload`     | Restart on source changes (browser only)           |
+| `--debug`      | Show tracebacks in the browser, implies `--reload` |
 
 The dashboard warms metadata, transposed samples, pyramids, and statistics when
 sources are loaded or added in Setup. A bottom-right indicator shows the active
@@ -105,6 +106,11 @@ npm ci
 uv run python -m ctapdash.build
 uv run ctapdash --config conf.toml
 ```
+
+`--debug` implies `--reload`, so `uv run ctapdash --config conf.toml --debug`
+restarts the server whenever you edit a source file. Both options serve in the
+browser: uvicorn's reloader runs the application in a subprocess, which cannot
+own the main thread as the native window needs. `--smoke-test` turns reload off.
 
 `uv run uvicorn ctapdash.webapp:create_app --factory` also works if you want a
 plain ASGI server. Build browser assets first when starting through ASGI directly.

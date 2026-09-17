@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -30,7 +31,14 @@ def build_parser():
         "--no-browser", action="store_true", help="Do not open the system browser"
     )
     parser.add_argument(
-        "--debug", action="store_true", help="Show tracebacks in the browser"
+        "--reload",
+        action="store_true",
+        help="Restart the server when source files change (browser only)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show tracebacks in the browser and enable --reload",
     )
     parser.add_argument(
         "--smoke-test",
@@ -51,11 +59,29 @@ def main(argv=None):
     else:
         config.load_from_env()
 
+    # --debug implies --reload: tracebacks are only useful while iterating.
+    # --smoke-test starts and exits, so reloading it would be pointless.
+    reload = (args.reload or args.debug) and not args.smoke_test
+
     # Compile shared browser components and the Bokeh extension before serving.
     # Frozen builds ship these assets (see rthook_extbuild.py).
     from ctapdash.build import ensure_built
 
     ensure_built()
+
+    if reload:
+        # The reloader re-imports the app in a subprocess, so pass the settings
+        # and debug flag on through the environment rather than directly.
+        if args.config:
+            os.environ[config.ENV_VAR] = str(args.config)
+        if args.debug:
+            os.environ[config.DEBUG_ENV_VAR] = "1"
+        desktop.run_reload(
+            args.host,
+            args.port,
+            open_browser=not args.no_browser,
+        )
+        return 0
 
     from ctapdash.webapp import create_app
 
