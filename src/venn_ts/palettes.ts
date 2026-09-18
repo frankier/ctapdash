@@ -87,7 +87,7 @@ export class PaletteSelector extends Widget {
     static {
         this.prototype.default_view = PaletteSelectorView
         this.define<PaletteSelector.Props>(({Str}) => ({
-            value: [Str, "rbg_add"],
+            value: [Str, "cym_paint"],
             options_json: [Str, "[]"],
         }))
     }
