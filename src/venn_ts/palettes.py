@@ -8,16 +8,6 @@ from bokeh.models import Widget
 
 # Copied from the local palette design file; no runtime file dependency.
 PALETTES = {
-    "rbg_add": [
-        "#000000",
-        "#ff0000",
-        "#0000ff",
-        "#ff00ff",
-        "#00ff00",
-        "#ffff00",
-        "#00ffff",
-        "#ffffff",
-    ],
     "cym_paint": [
         "#ffffff",
         "#00aeef",
@@ -37,6 +27,16 @@ PALETTES = {
         "#0000ff",
         "#ff0000",
         "#000000",
+    ],
+    "rbg_add": [
+        "#000000",
+        "#ff0000",
+        "#0000ff",
+        "#ff00ff",
+        "#00ff00",
+        "#ffff00",
+        "#00ffff",
+        "#ffffff",
     ],
 }
 
@@ -69,7 +69,7 @@ def palette_icon(colors):
 
 
 class PaletteSelector(Widget):
-    value = String(default="rbg_add")
+    value = String(default="cym_paint")
     options_json = String(default="[]")
 
     def __init__(self, **kwargs):

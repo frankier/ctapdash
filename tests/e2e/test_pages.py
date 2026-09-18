@@ -70,8 +70,12 @@ def test_venndiff_eeg(page, dashboard_url):
     visit(page, dashboard_url, "/participant/overview" + QUERY)
     page.locator("#viewer").get_by_role("link", name="Venndiff EEG viewer").click()
     expect(page.locator(".bokeh-host canvas").first).to_be_visible(timeout=60000)
-    expect(page.get_by_text("Step A", exact=True)).to_be_visible()
-    expect(page.get_by_text("Step B", exact=True)).to_be_visible()
+    step_selectors = page.locator("select:visible").filter(
+        has=page.locator('option[value="1"]')
+    )
+    expect(step_selectors).to_have_count(2)
+    expect(step_selectors.nth(0)).to_have_value("1")
+    expect(step_selectors.nth(1)).to_have_value("2")
     page.wait_for_function(
         """() => Bokeh.documents.some(doc =>
         [...doc.all_models].some(model =>
@@ -127,7 +131,7 @@ def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
     # At the floor the Venn layer alone still paints: with the line layer
     # off, every column shows the previous entry's degenerate value as a
     # step mark.  Both dummy steps carry identical values, so the marks use
-    # the magenta overlap color; compare against a Venn-off baseline to
+    # the active palette's overlap color; compare against a Venn-off baseline to
     # cancel axes and grid.
     page.evaluate("""() => {
         const models = Bokeh.documents.flatMap(doc => [...doc.all_models])
@@ -149,12 +153,17 @@ def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
     page.wait_for_timeout(250)
     box = page.locator(".bk-Figure canvas").first.bounding_box()
 
+    overlap_color = model_state("""
+        const renderer = models.find(
+            m => m.type === "venn_ts.renderer.VennTimeSeriesRenderer")
+        return renderer.palette[3]
+    """)
+    overlap_rgb = np.array([int(overlap_color[i : i + 2], 16) for i in (1, 3, 5)])
+
     def overlap_pixel_count():
         shot = page.screenshot(clip=box)
         image = np.asarray(Image.open(BytesIO(shot)).convert("RGB"))
-        return int(
-            ((image[..., 0] > 200) & (image[..., 1] < 60) & (image[..., 2] > 200)).sum()
-        )
+        return int((np.abs(image.astype(int) - overlap_rgb) < 30).all(axis=-1).sum())
 
     with_venn = overlap_pixel_count()
     page.evaluate("""() => {

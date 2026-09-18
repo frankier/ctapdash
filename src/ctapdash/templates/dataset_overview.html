@@ -3,6 +3,47 @@
 {% block dataset_content %}
     <div class="p-4">
         <h1 class="text-2xl font-bold">Dataset Overview</h1>
-        <p>This is the overview of the selected dataset.</p>
+
+        <h3 class="text-xl my-2 mt-4">Participants</h3>
+        <div class="max-w-full overflow-x-auto">
+            <table class="border-collapse text-sm">
+                <thead class="bg-slate-200">
+                    <tr>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-left">Participant</th>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-left">Step</th>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-left">Directory</th>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-right">Observations</th>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-right">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for participant, step_rows in participant_steps.items() %}
+                        {% for step in step_rows %}
+                            <tr>
+                                {% if loop.first %}
+                                    <th scope="row" class="border border-slate-300 px-3 py-2 text-left font-normal" rowspan="{{ step_rows|length }}">
+                                        <a
+                                            class="text-blue-800 hover:underline"
+                                            href="{{ url_for('participant_overview') }}{{ source_qs }}&participant={{ participant }}">
+                                            {{ participant }}
+                                        </a>
+                                    </th>
+                                {% endif %}
+                                <td class="border border-slate-300 px-3 py-2">{{ step.number }}</td>
+                                <td class="border border-slate-300 px-3 py-2">{{ step.directory }}</td>
+                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                    {{ "{:,}".format(step.observations) }}
+                                </td>
+                                {% if loop.first %}
+                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums" rowspan="{{ step_rows|length }}">
+                                        {{ "{:,}".format(participant_totals[participant]) }}
+                                    </td>
+                                {% endif %}
+                            </tr>
+                        {% endfor %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 {% endblock %}

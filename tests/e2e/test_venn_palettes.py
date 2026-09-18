@@ -8,14 +8,15 @@ def test_step_counts_palette_menu_and_hull(page, dashboard_url):
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     open_viewer(page, dashboard_url)
-    expect(page.get_by_text("Step A", exact=True)).to_be_visible()
-    expect(page.get_by_text("Step B", exact=True)).to_be_visible()
-    expect(page.get_by_text("Step C", exact=True)).not_to_be_visible()
-    expect(page.get_by_label("Show min-max hull", exact=True)).to_be_checked()
+    step_selectors = page.locator("select:visible").filter(
+        has=page.locator('option[value="1"]')
+    )
+    expect(step_selectors).to_have_count(2)
+    expect(page.get_by_label("Shade contained area", exact=True)).to_be_checked()
     previous = state(page)["version"]
     page.get_by_role("button", name="+", exact=True).click()
     ready(page, previous)
-    expect(page.get_by_text("Step C", exact=True)).to_be_visible()
+    expect(step_selectors).to_have_count(3)
     expect(page.get_by_role("button", name="+", exact=True)).to_be_disabled()
     page.evaluate(f"""() => {{
         const m = {MODELS}.find(m => m.type === 'venn_ts.renderer.VennTimeSeriesRenderer' && Bokeh.index.find_one(m) != null);
@@ -47,7 +48,7 @@ def test_step_counts_palette_menu_and_hull(page, dashboard_url):
         }}""",
             arg=[background, hull],
         )
-    page.get_by_label("Show min-max hull", exact=True).uncheck()
+    page.get_by_label("Shade contained area", exact=True).uncheck()
     page.wait_for_function(
         f"() => !{MODELS}.find(m => m.type === 'venn_ts.renderer.VennTimeSeriesRenderer' && Bokeh.index.find_one(m) != null).hull_visible"
     )
@@ -56,7 +57,7 @@ def test_step_counts_palette_menu_and_hull(page, dashboard_url):
         page.get_by_role("button", name="−", exact=True).click()
         ready(page, previous)
     expect(page.get_by_role("button", name="−", exact=True)).to_be_disabled()
-    expect(page.get_by_text("Step B", exact=True)).not_to_be_visible()
+    expect(step_selectors).to_have_count(1)
     assert state(page)["count"] == 500
     assert errors == []
 

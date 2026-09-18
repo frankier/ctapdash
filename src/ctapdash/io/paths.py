@@ -133,6 +133,9 @@ class ObservationData:
         self.participant = participant
         self.source = source
 
+    def with_participant(self, participant):
+        return ObservationData(self.source_path, participant, self.source)
+
     @classmethod
     def from_source(cls, source, participant=None):
         from ctapdash.config import SETTINGS

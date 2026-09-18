@@ -50,7 +50,9 @@ def open_viewer(page, dashboard_url):
         f"{dashboard_url}/participant/overview?source=dummy&participant={PARTICIPANT}"
     )
     page.locator("#viewer").get_by_role("link", name="Venndiff EEG viewer").click()
-    expect(page.get_by_text("Domain", exact=True)).to_be_visible(timeout=60000)
+    expect(page.get_by_text("Combine time axes using...", exact=True)).to_be_visible(
+        timeout=60000
+    )
     ready(page)
 
 
@@ -153,8 +155,8 @@ def test_two_epoched_domains_and_navigation(page, dashboard_url):
     previous = state(page)["version"]
     page.evaluate(f"""() => {{
         const models = {MODELS};
-        models.find(m => m.title === 'Step A').value = '2';
-        models.find(m => m.title === 'Step B').value = '3';
+        models.find(m => m.name === 'step-a').value = '2';
+        models.find(m => m.name === 'step-b').value = '3';
     }}""")
     ready(page, previous)
     page.wait_for_function(
@@ -346,8 +348,8 @@ def test_shared_marker_strip_and_loading_overlay(page, dashboard_url):
     # Comparing the continuous step with itself keeps the same reserved strip.
     page.evaluate(f"""() => {{
         const models = {MODELS};
-        const a = models.find(m => m.title === 'Step A');
-        models.find(m => m.title === 'Step B').value = a.value;
+        const a = models.find(m => m.name === 'step-a');
+        models.find(m => m.name === 'step-b').value = a.value;
     }}""")
     page.wait_for_function(f"""() => {{
         const m = {MODELS}.find(m => m.type === 'venn_ts.renderer.VennTimeSeriesRenderer' && Bokeh.index.find_one(m));
