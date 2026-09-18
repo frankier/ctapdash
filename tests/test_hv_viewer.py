@@ -188,10 +188,10 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
     assert layer_control.active == [0, 1]
     assert channel_dialog.visible is False
     assert channel_dialog.close_action == "hide"
-    assert channel_toggle.label == "Show channels"
+    assert channel_toggle.label == "Select channels"
     channel_toggle.active = True
     assert channel_dialog.visible is True
-    assert channel_toggle.label == "Hide channels"
+    assert channel_toggle.label == "Select channels"
     channel_dialog.visible = False
     assert channel_toggle.active is False
     assert {scrollbar.orientation for scrollbar in scrollbars} == {
@@ -267,7 +267,11 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
     plotting_mode = next(
         select
         for select in doc.roots[0].select({"type": BkSelect})
-        if select.title == "Plotting mode"
+        if "normalize"
+        in {
+            option[0] if isinstance(option, tuple) else option
+            for option in select.options
+        }
     )
     guide_toggle.active = False
     plotting_mode.value = "normalize"
@@ -282,11 +286,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
     assert (rebuilt.x_range.start, rebuilt.x_range.end) == pytest.approx((0.4, 1.2))
     assert (rebuilt.y_range.start, rebuilt.y_range.end) == pytest.approx((3.0, 7.0))
 
-    step_a = next(
-        select
-        for select in doc.roots[0].select({"type": BkSelect})
-        if select.title == "Step A"
-    )
+    step_a = doc.get_model_by_name("step-a")
     step_a.value = "2"
     rebuilt = doc.get_model_by_name("comparison-plot")
     assert (rebuilt.x_range.start, rebuilt.x_range.end) == pytest.approx((0.4, 1.2))
