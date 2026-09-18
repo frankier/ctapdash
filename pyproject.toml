@@ -48,6 +48,7 @@ build = [
 test = [
     "pytest>=8",
     "pytest-playwright>=0.7",
+    "watchfiles>=1.0",
 ]
 
 [build-system]
