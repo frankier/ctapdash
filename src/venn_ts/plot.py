@@ -111,7 +111,7 @@ def circle(color):
         width:14px;
         height:14px;
         border-radius:50%;
-        vertical-align:center;
+        vertical-align:middle;
         background:{color}"></span>
     """.strip()
 
@@ -244,8 +244,8 @@ def _build_comparison(doc, dataset, stats):
                 + "<dt>Stretch</dt>"
                 + "<dd>Stretch the amount of Y-axis space reserved for the high-range EEG trace</dd>"
                 + "<dt>Normalize</dt>"
-                + "<dd>Reserve the same amount of space for each trace, but plot each trace on a different scale so using min-max scaling for each trace</dd>"
-                + "</ul>"
+                + "<dd>Reserve the same amount of space for each trace, but plot each trace on a different scale; Scales are normalized using min-max scaling.</dd>"
+                + "</dl>"
             ),
             position="right",
             stylesheets=[
