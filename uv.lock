@@ -298,6 +298,7 @@ devserver = [
 test = [
     { name = "pytest" },
     { name = "pytest-playwright" },
+    { name = "watchfiles" },
 ]
 
 [package.metadata]
@@ -334,6 +335,7 @@ devserver = [{ name = "watchfiles", specifier = ">=1.0" }]
 test = [
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-playwright", specifier = ">=0.7" },
+    { name = "watchfiles", specifier = ">=1.0" },
 ]
 
 [[package]]
