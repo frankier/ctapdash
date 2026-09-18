@@ -108,9 +108,13 @@ uv run ctapdash --config conf.toml
 ```
 
 `--debug` implies `--reload`, so `uv run ctapdash --config conf.toml --debug`
-restarts the server whenever you edit a source file. Both options serve in the
-browser: uvicorn's reloader runs the application in a subprocess, which cannot
-own the main thread as the native window needs. `--smoke-test` turns reload off.
+restarts the server whenever you edit a source file. Python changes restart the
+server directly; edits to the TypeScript sources of the Bokeh extension and the
+shared browser components restart the server and recompile their bundles first,
+so `src/venn_ts` is picked up without a manual `ctapdash.build` run. Both options
+serve in the browser: uvicorn's reloader runs the application in a subprocess,
+which cannot own the main thread as the native window needs. `--smoke-test`
+turns reload off.
 
 `uv run uvicorn ctapdash.webapp:create_app --factory` also works if you want a
 plain ASGI server. Build browser assets first when starting through ASGI directly.
