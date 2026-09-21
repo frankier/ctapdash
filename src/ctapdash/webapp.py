@@ -120,9 +120,11 @@ async def dataset_overview(request):
     participant_steps = {}
     participants = dataset.get_all_steps()["participants"]
     for participant, _ in participants:
-        steps = dataset.with_participant(participant).get_steps()
+        participant_dataset = dataset.with_participant(participant)
+        steps = participant_dataset.get_steps()
+        await _wait_metadata(request, participant_dataset, steps)
         step_rows = await run_in_threadpool(
-            _participant_step_rows, dataset.source_path, steps, participant
+            _participant_step_rows, participant_dataset.source_path, steps, participant
         )
         participant_steps[participant] = step_rows
     context["participant_steps"] = participant_steps
