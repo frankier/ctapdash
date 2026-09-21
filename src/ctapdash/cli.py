@@ -1,4 +1,5 @@
 import argparse
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -30,16 +31,18 @@ def build_parser():
     parser.add_argument(
         "--no-browser", action="store_true", help="Do not open the system browser"
     )
-    parser.add_argument(
-        "--reload",
-        action="store_true",
-        help="Restart the server when source files change (browser only)",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Show tracebacks in the browser and enable --reload",
-    )
+    parser.set_defaults(reload=False, debug=False)
+    if importlib.util.find_spec("watchfiles") is not None:
+        parser.add_argument(
+            "--reload",
+            action="store_true",
+            help="Restart the server when source files change (browser only)",
+        )
+        parser.add_argument(
+            "--debug",
+            action="store_true",
+            help="Show tracebacks in the browser and enable --reload",
+        )
     parser.add_argument(
         "--smoke-test",
         action="store_true",
