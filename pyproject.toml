@@ -38,6 +38,9 @@ ctapdash = "ctapdash.cli:main"
 ctapdash-warm = "ctapdash.warm:main"
 
 [dependency-groups]
+devserver = [
+    "watchfiles>=1.0",
+]
 build = [
     "pyinstaller>=6.21.0",
     "pyinstaller-hooks-contrib",
@@ -45,6 +48,7 @@ build = [
 test = [
     "pytest>=8",
     "pytest-playwright>=0.7",
+    "watchfiles>=1.0",
 ]
 
 [build-system]

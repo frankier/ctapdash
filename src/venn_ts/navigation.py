@@ -145,6 +145,16 @@ def navigation_frame(plot, x_bounds, y_bounds, min_interval=None):
         "right",
     )
     channel_axis.grid.visible = False
+    # Keep navigation scales readable when the document uses the contrast theme.
+    for overview in (time_axis, channel_axis):
+        overview.background_fill_color = "white"
+        overview.border_fill_color = "white"
+        # Bokeh ignores assignments equal to the current default. Set each
+        # alpha away from its default first so 1 is stored as an override.
+        for alpha in (0, 1):
+            overview.axis.major_tick_line_alpha = alpha
+            overview.axis.minor_tick_line_alpha = alpha
+            overview.axis.axis_line_alpha = alpha
     # A fixed side strip and bottom strip cannot change the viewport's size
     # in response to the measurements we copy back into their children.
     side = row(

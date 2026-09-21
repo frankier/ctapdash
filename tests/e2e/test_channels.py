@@ -150,7 +150,7 @@ def test_heatmap_empty_selection_navigation_and_venndiff(page, dashboard_url):
         """() => window.Bokeh?.documents.some(doc => [...doc.all_models].some(m => m.type === 'venn_ts.channel_selector.ChannelSelector' && JSON.stringify(m.value) === '["A"]'))""",
         timeout=60000,
     )
-    page.get_by_role("button", name="Show channels", exact=True).click()
+    page.get_by_role("button", name="Select channels", exact=True).click()
     expect(
         page.locator("channel-selector").get_by_role("checkbox", name="B", exact=True)
     ).not_to_be_checked()
@@ -160,11 +160,11 @@ def test_heatmap_empty_selection_navigation_and_venndiff(page, dashboard_url):
     page.wait_for_function(
         """() => Bokeh.documents.some(doc => [...doc.all_models].some(m => m.type === 'venn_ts.renderer.VennTimeSeriesRenderer' && m.channel_names.length === 2))"""
     )
-    page.get_by_role("button", name="Hide channels", exact=True).click()
+    page.get_by_role("button", name="Select channels", exact=True).click()
     page.get_by_title("Fullscreen", exact=True).click()
     page.wait_for_function("document.fullscreenElement !== null")
     page.get_by_role("button", name="»", exact=True).click()
-    page.get_by_role("button", name="Show channels", exact=True).click()
+    page.get_by_role("button", name="Select channels", exact=True).click()
     expect(
         page.locator("channel-selector").get_by_role("checkbox", name="B", exact=True)
     ).to_be_visible()

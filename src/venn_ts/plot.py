@@ -103,6 +103,22 @@ def floored_range(viewport, floor, bounds):
     return start, end
 
 
+def circle(color):
+    return f"""
+    <span style="
+        display:inline-block;
+        margin:5px;
+        width:14px;
+        height:14px;
+        border-radius:50%;
+        vertical-align:middle;
+        background:{color}"></span>
+    """.strip()
+
+
+SIDEBAR_WIDTH_FULL = 200
+
+
 def _build_comparison(doc, dataset, stats):
     """Build one WebGL figure containing Venn and line comparison layers."""
     from base64 import b64encode
@@ -118,22 +134,25 @@ def _build_comparison(doc, dataset, stats):
         Dialog,
         Div,
         FixedTicker,
-        HoverTool,
+        GroupBox,
         InlineStyleSheet,
         Range1d,
         Select,
         Toggle,
+        Tooltip,
         WheelZoomTool,
     )
     from bokeh.plotting import figure
     from markupsafe import escape
+    from bokeh.models.dom import HTML
 
+    from venn_ts.domain import ComparisonDomain
+    from venn_ts.domain_axis import configure_domain_axis, update_epoch_markers
+    from venn_ts.help_icon import HelpIcon
     from venn_ts.range_series import (
         RecordingTileSource,
     )
     from venn_ts.renderer import TileCoordinator, VennTimeSeriesRenderer
-    from venn_ts.domain import ComparisonDomain
-    from venn_ts.domain_axis import configure_domain_axis, update_epoch_markers
 
     steps = dataset.get_steps()
     if not steps:
@@ -148,18 +167,21 @@ def _build_comparison(doc, dataset, stats):
 
     step_selectors = [
         Select(
-            title=f"Step {'ABC'[i]}",
+            title="",
             options=step_values,
             value=step_values[min(i, len(step_values) - 1)],
             name=f"step-{'abc'[i]}",
-            width=177,
+            width_policy="max",
+            margin=(2, 0, 0, 0),
         )
         for i in range(3)
     ]
     step_count = [2]
-    swatches = [Div(width=22, height=28, margin=(25, 0, 0, 0)) for _ in range(3)]
+    swatches = [
+        Div(margin=(0, 0, 0, 0), styles={"align-content": "center"}) for _ in range(3)
+    ]
     step_rows = [
-        row(swatch, selector, visible=i < 2)
+        row(swatch, selector, visible=i < 2, width_policy="max")
         for i, (swatch, selector) in enumerate(zip(swatches, step_selectors))
     ]
     remove_step = Button(
@@ -169,11 +191,30 @@ def _build_comparison(doc, dataset, stats):
         html_attributes={"title": "Remove step"},
     )
     add_step = Button(
-        label="+", name="add-step", width=45, html_attributes={"title": "Add step"}
+        label="+",
+        name="add-step",
+        width=45,
+        html_attributes={"title": "Add step"},
+        styles={"margin-right": "0"},
     )
-    palette_select = PaletteSelector(name="palette-selector", width=210, height=78)
+    palette_select = PaletteSelector(
+        name="palette-selector",
+    )
+    palette_help = HelpIcon(
+        tooltip=Tooltip(
+            content="Use the palette selector to choose a set of primary colors then assign them to steps. The Venn diagram shows the colors which their intersections will be plotted with.",
+            position="bottom",
+            stylesheets=[
+                """
+                .bk-tooltip-content {
+                    width: 280px;
+                }
+            """
+            ],
+        )
+    )
     hull_toggle = CheckboxGroup(
-        labels=["Show min-max hull"], active=[0], name="hull-toggle"
+        labels=["Shade contained area"], active=[0], name="hull-toggle"
     )
     original_theme = doc.theme
 
@@ -182,24 +223,85 @@ def _build_comparison(doc, dataset, stats):
 
     def style_selectors():
         for i, swatch in enumerate(swatches):
-            swatch.text = (
-                f'<span title="Step {"ABC"[i]} color" style="display:inline-block;'
-                f"width:14px;height:14px;border-radius:50%;border:1px solid #888;"
-                f'background:{colors()[1 << i]}"></span>'
-            )
+            swatch.text = circle(colors()[1 << i])
         doc.theme = "contrast" if colors()[0] == "#000000" else original_theme
 
     style_selectors()
     plotting_mode = Select(
-        title="Plotting mode",
-        options=["overplot", "stretch", "normalize"],
+        title="When trace exceeds bounds...",
+        options=[
+            ("overplot", "...overplot"),
+            ("stretch", "...stretch"),
+            ("normalize", "...normalize"),
+        ],
         value="overplot",
+        description=Tooltip(
+            content=HTML(
+                html="When the EEG trace exceeds its nominal bounds:"
+                + "<dl>"
+                + "<dt>Overplot</dt>"
+                + "<dd>Allow the EEG trace to draw into space belonging to neighbouring traces</dd>"
+                + "<dt>Stretch</dt>"
+                + "<dd>Stretch the amount of Y-axis space reserved for the high-range EEG trace</dd>"
+                + "<dt>Normalize</dt>"
+                + "<dd>Reserve the same amount of space for each trace, but plot each trace on a different scale; Scales are normalized using min-max scaling.</dd>"
+                + "</dl>"
+            ),
+            position="right",
+            stylesheets=[
+                """
+            .bk-tooltip-content {
+                width: 280px;
+            }
+            dt {
+                font-style: italic;
+            }
+            dd {
+                padding-left: 1em;
+            }
+            """
+            ],
+        ),
+        width_policy="max",
+        min_width=0,
+        stylesheets=[
+            """
+        .bk-input-group {
+            white-space: wrap;
+        }
+        """
+        ],
     )
     domain_mode = Select(
-        title="Domain",
-        options=[("union", "Union"), ("intersection", "Intersection")],
+        title="Combine time axes using...",
+        options=[("union", "...union"), ("intersection", "...intersection")],
         value="union",
         name="domain-mode",
+        description=Tooltip(
+            content=HTML(
+                html="How to combine the time axis from different EEG traces to form the X-axis:"
+                + "<dl>"
+                + "<dt>Union</dt>"
+                + "<dd>Use a contiguous time axis which includes all traces. Epoched data may overlap the same timespan more than once so pickers to page through multiple options are put into the top gutter.</dd>"
+                + "<dt>Intersection</dt>"
+                + "<dd>Create a &mdash; possibly discontinuous &mdash; timespan where every point includes all timespans. Discontinuities such as a skip forward or skip backwards on the x-axis are shown in the top gutter.</dd>"
+                + "</dl>",
+            ),
+            stylesheets=[
+                """
+                .bk-tooltip-content {
+                    width: 280px;
+                }
+                dt {
+                    font-style: italic;
+                }
+                dd {
+                    padding-left: 1em;
+                }
+            """
+            ],
+            position="right",
+        ),
     )
     epoch_toggle = CheckboxGroup(
         labels=["Show epoch starts"],
@@ -213,6 +315,20 @@ def _build_comparison(doc, dataset, stats):
     current_pair = [None]
     reset_domain_view = [False]
     layers = CheckboxButtonGroup(labels=["Venn", "Lines"], active=[0])
+    layers_help = HelpIcon(
+        tooltip=Tooltip(
+            content="Venn uses min-max ranges guaranteed to contain all data points and colors for their intersections.\n"
+            + "Lines shows a more conventional line graph.",
+            position="bottom",
+            stylesheets=[
+                """
+                .bk-tooltip-content {
+                    width: 280px;
+                }
+            """
+            ],
+        )
+    )
     guides_toggle = Toggle(label="Guides", active=True, name="guides-toggle")
     active_guides = [None]
     plot_holder = column(sizing_mode="stretch_both")
@@ -245,6 +361,7 @@ def _build_comparison(doc, dataset, stats):
         raise
 
     import json
+
     from ctapdash.channels import participant_channel_metadata
     from venn_ts.channel_selector import ChannelSelector
 
@@ -257,7 +374,7 @@ def _build_comparison(doc, dataset, stats):
         height=520,
     )
     channel_toggle = Toggle(
-        label="Show channels",
+        label="Select channels",
         active=False,
         name="channel-dialog-toggle",
     )
@@ -272,7 +389,6 @@ def _build_comparison(doc, dataset, stats):
 
     def toggle_channels(_attr, _old, visible):
         channel_dialog.visible = visible
-        channel_toggle.label = "Hide channels" if visible else "Show channels"
 
     def sync_channel_toggle(_attr, _old, visible):
         if channel_toggle.active != visible:
@@ -306,25 +422,80 @@ def _build_comparison(doc, dataset, stats):
         width=110,
         name="sidebar-toggle",
     )
+    markers_group = GroupBox(
+        title="Markers",  # Text displayed on the border frame
+        child=column(
+            row(palette_select, palette_help),
+            Div(text="Steps", styles={"margin-top": "10px", "margin-bottom": "2px"}),
+            *step_rows,
+            row(remove_step, add_step, styles={"margin-left": "auto"}),
+            hull_toggle,
+            row(layers, layers_help, spacing=4),
+            width_policy="max",
+        ),
+        width_policy="max",
+        stylesheets=[
+            InlineStyleSheet(
+                css="""
+                fieldset {
+                    min-inline-size: 0;
+                }
+            """
+            )
+        ],
+        margin=(5, 0),
+    )
+    y_axis_group = GroupBox(
+        title="Y-axis",
+        child=column(
+            channel_toggle,
+            plotting_mode,
+            guides_toggle,
+            width_policy="max",
+        ),
+        margin=(5, 0),
+        width_policy="max",
+        stylesheets=[
+            InlineStyleSheet(
+                css="""
+                fieldset {
+                    min-inline-size: 0;
+                }
+            """
+            )
+        ],
+    )
+    x_axis_group = GroupBox(
+        title="X-axis",
+        child=column(
+            domain_mode,
+            epoch_toggle,
+        ),
+        margin=(5, 0),
+        width_policy="max",
+        stylesheets=[
+            InlineStyleSheet(
+                css="""
+                fieldset {
+                    min-inline-size: 0;
+                }
+            """
+            )
+        ],
+    )
     controls_sidebar = column(
-        *step_rows,
-        row(remove_step, add_step),
-        palette_select,
-        hull_toggle,
-        plotting_mode,
-        domain_mode,
-        epoch_toggle,
-        layers,
-        guides_toggle,
-        channel_toggle,
-        width=220,
+        markers_group,
+        y_axis_group,
+        x_axis_group,
+        width_policy="max",
+        margin=(0, 0, 0, 5),
     )
     sidebar_shell = column(
         sidebar_toggle,
         controls_sidebar,
-        width=230,
+        width=SIDEBAR_WIDTH_FULL,
         sizing_mode="stretch_height",
-        styles={"padding-top": "10px", "padding-left": "10px"},
+        margin=(10, 0, 0, 5),
     )
     plot_panel = column(plot_holder, sizing_mode="stretch_both")
     viewer_frame = column(
@@ -357,13 +528,13 @@ def _build_comparison(doc, dataset, stats):
                 "normal_state": normal_sidebar_open,
                 "fullscreen_state": fullscreen_sidebar_open,
             },
-            code="""
+            code=f"""
             const frame_view = Bokeh.index.find_one(viewer_frame)
             const fullscreen = document.fullscreenElement === frame_view?.el
             const state = fullscreen ? fullscreen_state : normal_state
             state.active = cb_obj.active
             controls_sidebar.visible = cb_obj.active
-            sidebar_shell.width = cb_obj.active ? 230 : 40
+            sidebar_shell.width = cb_obj.active ? {SIDEBAR_WIDTH_FULL} : 40
             cb_obj.width = cb_obj.active ? 110 : 30
             cb_obj.label = cb_obj.active ? "« Hide controls" : "»"
         """,
@@ -512,6 +683,55 @@ def _build_comparison(doc, dataset, stats):
         if renderer is not None:
             renderer.venn_visible = 0 in layers.active
             renderer.lines_visible = 1 in layers.active
+
+    def fullscreen_action():
+        code = (
+            """
+            const view = Bokeh.index.find_one(viewer_frame)
+            const element = view?.el
+            if (element == null) return
+            const sync_sidebar = () => {
+                const fullscreen = document.fullscreenElement === element
+                const dialog_el = Bokeh.index.find_one(channel_dialog)?.el
+                if (channel_dialog.visible && dialog_el != null)
+                    (fullscreen ? view.shadow_el : document.body).append(dialog_el)
+                const state = fullscreen ? fullscreen_state : normal_state
+                controls_sidebar.visible = state.active
+            """
+            + f"""
+                sidebar_shell.width = state.active ? {SIDEBAR_WIDTH_FULL} : 40
+                sidebar_toggle.active = state.active
+                sidebar_toggle.width = state.active ? 110 : 30
+                sidebar_toggle.label = state.active ? "« Hide controls" : "»"
+            """
+            + """
+            }
+            if (element._ctap_sidebar_fullscreen_listener == null) {
+                element._ctap_sidebar_fullscreen_listener = sync_sidebar
+                document.addEventListener("fullscreenchange", sync_sidebar)
+            }
+            if (document.fullscreenElement === element)
+                void document.exitFullscreen()
+            else if (document.fullscreenElement == null)
+                void element.requestFullscreen()
+            """
+        )
+        return CustomAction(
+            description="Fullscreen",
+            icon="fullscreen",
+            callback=CustomJS(
+                args={
+                    "viewer_frame": viewer_frame,
+                    "channel_dialog": channel_dialog,
+                    "controls_sidebar": controls_sidebar,
+                    "sidebar_shell": sidebar_shell,
+                    "sidebar_toggle": sidebar_toggle,
+                    "normal_state": normal_sidebar_open,
+                    "fullscreen_state": fullscreen_sidebar_open,
+                },
+                code=code,
+            ),
+        )
 
     def rebuild(_attr, _old, _new):
         previous_plot = active_plot[0]
@@ -698,13 +918,6 @@ def _build_comparison(doc, dataset, stats):
                     )
                 )
             ]
-            plot.add_tools(
-                HoverTool(
-                    renderers=line_renderers,
-                    tooltips=[("Step", "$name"), ("Channel", "@channel")],
-                    mode="mouse",
-                )
-            )
             style_axes(plot, channels, geometry)
             epoch_markers.extend(
                 configure_domain_axis(
@@ -751,48 +964,7 @@ def _build_comparison(doc, dataset, stats):
             )
             minimap = plot_frame.select_one({"name": "time-minimap"})
             configure_domain_axis(minimap, domain, epochs=False)
-            plot.add_tools(
-                CustomAction(
-                    description="Fullscreen",
-                    icon="fullscreen",
-                    callback=CustomJS(
-                        args={
-                            "viewer_frame": viewer_frame,
-                            "channel_dialog": channel_dialog,
-                            "controls_sidebar": controls_sidebar,
-                            "sidebar_shell": sidebar_shell,
-                            "sidebar_toggle": sidebar_toggle,
-                            "normal_state": normal_sidebar_open,
-                            "fullscreen_state": fullscreen_sidebar_open,
-                        },
-                        code="""
-                    const view = Bokeh.index.find_one(viewer_frame)
-                    const element = view?.el
-                    if (element == null) return
-                    const sync_sidebar = () => {
-                        const fullscreen = document.fullscreenElement === element
-                        const dialog_el = Bokeh.index.find_one(channel_dialog)?.el
-                        if (channel_dialog.visible && dialog_el != null)
-                            (fullscreen ? view.shadow_el : document.body).append(dialog_el)
-                        const state = fullscreen ? fullscreen_state : normal_state
-                        controls_sidebar.visible = state.active
-                        sidebar_shell.width = state.active ? 230 : 40
-                        sidebar_toggle.active = state.active
-                        sidebar_toggle.width = state.active ? 110 : 30
-                        sidebar_toggle.label = state.active ? "« Hide controls" : "»"
-                    }
-                    if (element._ctap_sidebar_fullscreen_listener == null) {
-                        element._ctap_sidebar_fullscreen_listener = sync_sidebar
-                        document.addEventListener("fullscreenchange", sync_sidebar)
-                    }
-                    if (document.fullscreenElement === element)
-                        void document.exitFullscreen()
-                    else if (document.fullscreenElement == null)
-                        void element.requestFullscreen()
-                """,
-                    ),
-                )
-            )
+            plot.add_tools(fullscreen_action())
             install_toolbar_sizing(plot)
             active_renderer[0] = renderer
             active_coordinator[0] = coordinator
@@ -895,6 +1067,7 @@ def venn_time_series_bokeh(doc):
     """Build immediately with cached stats, or await them without blocking Bokeh."""
     from bokeh.models import Div
     from markupsafe import escape
+
     from ctapdash.io.stats_cache import DATASET_STATS
 
     dataset = ObservationData.from_bokeh_doc(doc)
