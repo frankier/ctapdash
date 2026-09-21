@@ -21,6 +21,8 @@ HTTP_CHECKS = [
     ("static/generated/index.css", None),
     ("webagg/mpl.js", None),
     ("webagg/_static/js/mpl.js", None),
+    ("bokeh/static/js/bokeh.min.js", None),
+    ("bokeh/static/js/bokeh-widgets.min.js", None),
 ]
 
 IMPORT_CHECKS = [
@@ -106,7 +108,9 @@ def _check_mne_plot(failures):
         import numpy as np
         import mne
 
-        info = mne.create_info(["a", "b", "c"], sfreq=100.0, ch_types="eeg")
+        info = mne.create_info(["Fz", "Cz", "Pz"], sfreq=100.0, ch_types="eeg")
+        # Exercise the channel data retained by the packaging rules.
+        info.set_montage(mne.channels.make_standard_montage("biosemi64"))
         raw = mne.io.RawArray(np.zeros((3, 500)), info, verbose="error")
         figure = raw.plot(show=False, verbose="error")
         figure.canvas.draw()
