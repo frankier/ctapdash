@@ -8,6 +8,8 @@
 # Build with:  uv run pyinstaller ctapdash.spec --noconfirm --clean
 
 import sys
+from pathlib import Path
+from shutil import copyfile
 
 from PyInstaller.utils.hooks import (
     collect_data_files,
@@ -172,6 +174,11 @@ coll = COLLECT(
     upx=False,
     name="ctapdash",
 )
+
+if sys.platform == "win32":
+    # CLR reads the host executable's config before pythonnet loads. This must
+    # sit beside the EXE: collecting it as data puts it in _internal instead.
+    copyfile("ci/windows/ctapdash.exe.config", Path(coll.name) / "ctapdash.exe.config")
 
 if IS_MACOS:
     app = BUNDLE(

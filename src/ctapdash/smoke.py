@@ -6,6 +6,7 @@ its submodules lazily. This exercises those paths directly, because missing
 modules are the failure mode PyInstaller actually produces.
 """
 
+import sys
 import urllib.error
 import urllib.request
 
@@ -125,6 +126,15 @@ def run_smoke_test(app, sock):
     server = desktop.ServerThread(app, sock, log_level="warning").start()
     failures = []
     try:
+        if sys.platform == "win32":
+            # Load the same CLR/WinForms bridge as a native window. A server-only
+            # check misses broken or download-blocked Python.Runtime.dll files.
+            _check_import(
+                "Windows native backend",
+                "webview.platforms.winforms",
+                "BrowserView",
+                failures,
+            )
         print(f"Serving at {server.url}", flush=True)
         for path, contains in HTTP_CHECKS:
             _check_http(server.url + path, failures, contains=contains)

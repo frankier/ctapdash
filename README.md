@@ -17,6 +17,11 @@ The builds are not code-signed, so:
   ```
 - **Windows**: SmartScreen shows "Windows protected your PC". Choose
   _More info_ → _Run anyway_.
+  Keep `ctapdash.exe.config` beside `ctapdash.exe`: it lets the native window
+  load its bundled .NET assemblies after extraction from a downloaded ZIP.
+  For older builds reporting `Failed to resolve Python.Runtime.Loader.Initialize`,
+  right-click the downloaded ZIP, choose _Properties_ → _Unblock_ → _Apply_,
+  then extract it again into a fresh directory.
 
 On Windows and macOS the dashboard opens in its own window. On Linux it starts
 a local server and opens your usual browser, because the native window there
