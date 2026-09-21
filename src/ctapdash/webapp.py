@@ -1,11 +1,11 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from importlib.resources import files
+import importlib.util
 from pathlib import Path
 from ctapdash.io.cache import CacheWarmer
 from ctapdash.io.paths import ObservationData, DatasetPaths
 from ctapdash.io.recording import RecordingData
-import panel.io.resources as panel_resources
 
 from mne import BaseEpochs
 from mne.io import BaseRaw
@@ -34,7 +34,13 @@ import anyio
 _PKG = files("ctapdash")
 TEMPLATES_DIR = str(_PKG / "templates")
 STATIC_DIR = str(_PKG / "static")
-panel_resources.RESOURCE_MODE = "cdn"
+
+# This is a guard against a Panel bug with BokehASGI if we accidentally end up with Panel installed.
+# Can probably be removed at some point.
+if importlib.util.find_spec("panel") is not None:
+    import panel.io.resources as panel_resources
+
+    panel_resources.RESOURCE_MODE = "cdn"
 
 
 def sources_context(request):
