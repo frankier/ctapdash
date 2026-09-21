@@ -71,6 +71,25 @@ jobs:
         shell: bash
         run: '"${{ matrix.binary }}" --smoke-test'
 
+      # Explorer propagates the downloaded ZIP's internet zone to its DLLs.
+      # Reproduce that on NTFS: an ordinary CI build has no download markers.
+      - name: Smoke test downloaded Windows assemblies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $assemblies = Get-ChildItem dist/ctapdash -Recurse -Filter *.dll
+          try {
+            foreach ($assembly in $assemblies) {
+              Set-Content -LiteralPath $assembly.FullName -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3"
+            }
+            & "${{ matrix.binary }}" --smoke-test
+            if ($LASTEXITCODE -ne 0) { throw "Downloaded Windows assemblies failed the smoke test" }
+          } finally {
+            foreach ($assembly in $assemblies) {
+              Remove-Item -LiteralPath $assembly.FullName -Stream Zone.Identifier -ErrorAction SilentlyContinue
+            }
+          }
+
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |

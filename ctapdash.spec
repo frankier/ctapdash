@@ -8,6 +8,8 @@
 # Build with:  uv run pyinstaller ctapdash.spec --noconfirm --clean
 
 import sys
+from pathlib import Path
+from shutil import copyfile
 
 from PyInstaller.utils.hooks import (
     collect_data_files,
@@ -48,15 +50,28 @@ datas += collect_data_files("matplotlib")
 datas += collect_data_files("mne", includes=["**/*.pyi"])
 datas += collect_data_files(
     "mne",
-    includes=["data/**", "icons/**", "html_templates/**", "channels/data/**"],
+    # EEG montage/layout data is needed; anatomical surfaces, MEG helmets,
+    # coil definitions and the large icos.fif.gz under data/ are not.
+    includes=["icons/**", "html_templates/**", "channels/data/**"],
 )
 datas += copy_metadata("mne")
 datas += copy_metadata("matplotlib")
 datas += copy_metadata("mplbed")
 
 hiddenimports = []
-# lazy_loader defeats static analysis for the whole mne namespace.
-hiddenimports += collect_submodules("mne")
+# Keep core module families intact: lazy_loader defeats static analysis and
+# a private-leaf allowlist would track MNE internals too closely. Dataset
+# downloaders, CLI entry points and tests are not dashboard runtime features.
+hiddenimports += collect_submodules(
+    "mne",
+    filter=lambda name: not (
+        name == "mne.datasets"
+        or name.startswith("mne.datasets.")
+        or name == "mne.commands"
+        or name.startswith("mne.commands.")
+        or "tests" in name.split(".")
+    ),
+)
 # uvicorn picks its protocol/loop/lifespan implementations by string.
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += [
@@ -115,6 +130,26 @@ a = Analysis(
     noarchive=False,
 )
 
+# Apply this after Analysis: upstream hooks also collect package data and
+# would otherwise reintroduce these files. Normalize Windows TOC paths too.
+# Keep runtime Bokeh bundles, templates, fonts and the compiled venn_ts
+# extension. Only the build-time compiler/types/modules and maps are removed.
+def runtime_data(entry):
+    name = entry[0].replace("\\", "/")
+    if name.startswith("bokeh/server/static/"):
+        return not (
+            name.startswith("bokeh/server/static/lib/")
+            or name.startswith("bokeh/server/static/js/lib/")
+            or name == "bokeh/server/static/js/compiler.js"
+            or name.endswith((".d.ts", ".map"))
+        )
+    if name.startswith("mne/data/"):
+        return name.endswith(".pyi")
+    return True
+
+
+a.datas = [entry for entry in a.datas if runtime_data(entry)]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -139,6 +174,11 @@ coll = COLLECT(
     upx=False,
     name="ctapdash",
 )
+
+if sys.platform == "win32":
+    # CLR reads the host executable's config before pythonnet loads. This must
+    # sit beside the EXE: collecting it as data puts it in _internal instead.
+    copyfile("ci/windows/ctapdash.exe.config", Path(coll.name) / "ctapdash.exe.config")
 
 if IS_MACOS:
     app = BUNDLE(

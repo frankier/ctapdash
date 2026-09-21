@@ -6,6 +6,7 @@ its submodules lazily. This exercises those paths directly, because missing
 modules are the failure mode PyInstaller actually produces.
 """
 
+import sys
 import urllib.error
 import urllib.request
 
@@ -21,6 +22,8 @@ HTTP_CHECKS = [
     ("static/generated/index.css", None),
     ("webagg/mpl.js", None),
     ("webagg/_static/js/mpl.js", None),
+    ("bokeh/static/js/bokeh.min.js", None),
+    ("bokeh/static/js/bokeh-widgets.min.js", None),
 ]
 
 IMPORT_CHECKS = [
@@ -106,7 +109,9 @@ def _check_mne_plot(failures):
         import numpy as np
         import mne
 
-        info = mne.create_info(["a", "b", "c"], sfreq=100.0, ch_types="eeg")
+        info = mne.create_info(["Fz", "Cz", "Pz"], sfreq=100.0, ch_types="eeg")
+        # Exercise the channel data retained by the packaging rules.
+        info.set_montage(mne.channels.make_standard_montage("biosemi64"))
         raw = mne.io.RawArray(np.zeros((3, 500)), info, verbose="error")
         figure = raw.plot(show=False, verbose="error")
         figure.canvas.draw()
@@ -121,6 +126,15 @@ def run_smoke_test(app, sock):
     server = desktop.ServerThread(app, sock, log_level="warning").start()
     failures = []
     try:
+        if sys.platform == "win32":
+            # Load the same CLR/WinForms bridge as a native window. A server-only
+            # check misses broken or download-blocked Python.Runtime.dll files.
+            _check_import(
+                "Windows native backend",
+                "webview.platforms.winforms",
+                "BrowserView",
+                failures,
+            )
         print(f"Serving at {server.url}", flush=True)
         for path, contains in HTTP_CHECKS:
             _check_http(server.url + path, failures, contains=contains)
