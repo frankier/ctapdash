@@ -33,6 +33,8 @@ IMPORT_CHECKS = [
     ("mne.read_epochs", "mne", "read_epochs"),
     ("mne.viz._mpl_figure", "mne.viz._mpl_figure", "MNEBrowseFigure"),
     ("ctapdash.io.eeglab", "ctapdash.io.eeglab", "read_eeglab"),
+    ("pydanticstarlette", "pydanticstarlette", "query_params"),
+    ("pydantic", "pydantic", "BaseModel"),
     ("scipy.io.loadmat", "scipy.io", "loadmat"),
     ("scipy.stats.describe", "scipy.stats", "describe"),
     ("xarray.Dataset", "xarray", "Dataset"),

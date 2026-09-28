@@ -24,6 +24,13 @@ from ctapdash.io.eeglab import read_eeglab
 from ctapdash.io.stats_cache import DATASET_STATS
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
+from pydantic import BaseModel
+from workingtitle.pydanticstarlette import (
+    int_or,
+    json_list_of,
+    query_params,
+    require_found,
+)
 
 from starlette.websockets import WebSocketDisconnect
 import anyio
@@ -66,6 +73,34 @@ templates = Jinja2Templates(
 )
 
 
+class PeeksParams(BaseModel):
+    """Peek/set/bit selection; None means "not present in the query"."""
+
+    peek: str | None = None
+    set: str | None = None
+    bit: str | None = None
+
+
+class StepsFragmentParams(BaseModel):
+    """The steps fragment: a step number, or "" when none was given."""
+
+    step: int_or("") = ""
+    yaxis: str = "overdraw"
+
+
+class StatisticsParams(BaseModel):
+    """The statistics fragment: a step number or "all", plus a channel filter."""
+
+    step: int_or("all") = "all"
+    channels: json_list_of(str, message="must be a JSON list of names") | None = None
+
+
+class LogParams(BaseModel):
+    """The log viewer: which log file to show (checked against the dataset)."""
+
+    log: str | None = None
+
+
 def _observation_count(instance):
     if isinstance(instance, BaseEpochs):
         return len(instance) * len(instance.times)
@@ -91,6 +126,7 @@ def _participant_step_rows(root_path, steps, participant):
     return rows
 
 
+@query_params()
 async def index(request):
     return templates.TemplateResponse(
         request,
@@ -119,6 +155,7 @@ def participant_context(request, default_participant=None):
     return result
 
 
+@query_params()
 async def dataset_overview(request):
     context = participant_context(request)
     context["view"] = "dataset-overview"
@@ -145,6 +182,7 @@ async def dataset_overview(request):
     )
 
 
+@query_params()
 async def participant_select(request):
     context = participant_context(request)
     context["view"] = "participant-select"
@@ -155,20 +193,17 @@ async def participant_select(request):
     )
 
 
-async def participant_steps_fragment(request):
+@query_params(StepsFragmentParams)
+async def participant_steps_fragment(request, params):
     context = participant_context(request)
     context["view"] = "steps"
-    yaxis = request.query_params.get("yaxis", "overdraw")
+    yaxis = params.yaxis
     context = {**context, "yaxis": yaxis, "yaxis_options": []}
     participant = context["participant"]
     steps = context["steps"]
-    step = request.query_params.get("step", "")
-    if step:
+    step = params.step
+    if step != "":
         steps_dict = dict(steps)
-        try:
-            step = int(step)
-        except ValueError:
-            raise HTTPException(status_code=404, detail="Step must be integer")
         if step not in steps_dict:
             raise HTTPException(status_code=404, detail="Step not found")
         has_prev = (step - 1) in steps_dict
@@ -211,6 +246,7 @@ def bokeh_document(request, path, *args, **kwargs):
     return Markup(server_document(url, relative_urls=True, *args, **kwargs))
 
 
+@query_params()
 async def venn_time_series(request):
     """Serve the multichannel processing-step comparison viewer."""
     # If there's not participant, just pick the first one
@@ -282,19 +318,20 @@ def map_encode_qc(source_path, val):
         return val
 
 
-async def participant_peeks_fragment(request):
+@query_params(PeeksParams)
+async def participant_peeks_fragment(request, params):
     from ctapdash.io.paths import qc_to_tree
 
     dataset = ObservationData.from_request(request)
     qcs = dataset.get_qc()
     tree = qc_to_tree(qcs)
-    peek_param = request.query_params.get("peek")
-    set_param = request.query_params.get("set")
+    peek_param = params.peek
+    set_param = params.set
     if set_param is None:
         peek_tree = tree.get(peek_param)
         if peek_tree is not None and len(peek_tree) > 0:
             set_param = list(peek_tree.keys())[0]
-    bit_param = request.query_params.get("bit")
+    bit_param = params.bit
     if bit_param is None:
         groupsrest = tree.get(peek_param, {}).get(set_param)
         if groupsrest is not None:
@@ -330,7 +367,7 @@ async def participant_peeks_fragment(request):
                     "encoded_string": encode_qc(dataset.source_path, path),
                 }
             )
-        elif "set" in request.query_params and "bit" in request.query_params:
+        elif params.set is not None and params.bit is not None:
             raise HTTPException(status_code=404)
     return templates.TemplateResponse(
         request, "participant_peeks.html", context=context
@@ -369,6 +406,7 @@ async def cache_status(websocket):
             group.cancel_scope.cancel()
 
 
+@query_params()
 async def participant_overview_fragment(request):
     dataset = ObservationData.from_request(request)
     logs = dataset.get_logs()
@@ -395,37 +433,20 @@ async def participant_overview_fragment(request):
     )
 
 
-async def participant_statistics_fragment(request):
+@query_params(StatisticsParams)
+async def participant_statistics_fragment(request, params):
     from ctapdash.plotting.stats_heatmap import participant_descriptive_heatmap
 
     dataset = ObservationData.from_request(request)
     steps = dataset.get_steps()
-    selected_step = request.query_params.get("step", "all")
     selected_steps = steps
-    if selected_step != "all":
-        try:
-            step_num = int(selected_step)
-        except ValueError:
-            raise HTTPException(status_code=404, detail="Step must be integer or all")
+    if params.step != "all":
         steps_by_number = dict(steps)
-        if step_num not in steps_by_number:
+        if params.step not in steps_by_number:
             raise HTTPException(status_code=404, detail="Step not found")
-        selected_steps = [(step_num, steps_by_number[step_num])]
+        selected_steps = [(params.step, steps_by_number[params.step])]
     stats = await DATASET_STATS.get(dataset.source_path)
-    import json
-
-    channels = None
-    if "channels" in request.query_params:
-        try:
-            channels = json.loads(request.query_params["channels"])
-            if not isinstance(channels, list) or not all(
-                isinstance(name, str) for name in channels
-            ):
-                raise ValueError("Expected channel names")
-        except ValueError, TypeError:
-            raise HTTPException(
-                status_code=400, detail="channels must be a JSON list of names"
-            )
+    channels = params.channels
     descriptive_heatmap = None
     if selected_steps:
         descriptive_heatmap = await run_in_threadpool(
@@ -440,20 +461,21 @@ async def participant_statistics_fragment(request):
         "participant_statistics.html",
         context={
             "descriptive_heatmap": descriptive_heatmap,
-            "show_step": selected_step == "all",
+            "show_step": params.step == "all",
         },
     )
 
 
-async def participant_log(request):
+@query_params(LogParams)
+async def participant_log(request, params):
     dataset = ObservationData.from_request(request)
     logs = dataset.get_logs()
     ctx = {
         "view": "logs",
         "logs": logs,
     }
-    if "log" in request.query_params:
-        log = request.query_params["log"]
+    if params.log is not None:
+        log = require_found(params.log, logs, "Log")
         log_path = dataset.source_path / log
         with open(log_path) as f:
             content = f.read()
