@@ -1,17 +1,16 @@
-import argparse
-import importlib.util
-import os
-import sys
+"""Thin application adapter over the shared desktop runner."""
+
 from pathlib import Path
 
-from ctapdash import config, desktop
+from workingtitle.desktop import run_cli
+
+from ctapdash import config
+from ctapdash.build import ASSETS
+from ctapdash.desktop import APP, SESSION
+from ctapdash.smoke import smoke_test
 
 
-def build_parser():
-    parser = argparse.ArgumentParser(
-        prog="ctapdash",
-        description="A dashboard for viewing the outputs of CTAP pipelines.",
-    )
+def add_arguments(parser):
     parser.add_argument(
         "--config",
         type=Path,
@@ -19,106 +18,37 @@ def build_parser():
         help=f"TOML configuration file. Overrides ${config.ENV_VAR}. "
         "Without either, the dashboard starts on its setup page.",
     )
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument(
-        "--port", type=int, default=0, help="0 (the default) picks a free port"
-    )
-    parser.add_argument(
-        "--no-window",
-        action="store_true",
-        help="Serve only; do not open a native window",
-    )
-    parser.add_argument(
-        "--no-browser", action="store_true", help="Do not open the system browser"
-    )
-    parser.set_defaults(reload=False, debug=False)
-    if importlib.util.find_spec("watchfiles") is not None:
-        parser.add_argument(
-            "--reload",
-            action="store_true",
-            help="Restart the server when source files change (browser only)",
-        )
-        parser.add_argument(
-            "--debug",
-            action="store_true",
-            help="Show tracebacks in the browser and enable --reload",
-        )
-    parser.add_argument(
-        "--smoke-test",
-        action="store_true",
-        help="Start up, self-check, and exit. Used to validate frozen builds.",
-    )
-    return parser
+
+
+def prepare(args):
+    """Load the requested configuration before assets or the app are built.
+
+    The returned override is inherited by the reload subprocess, so its factory
+    finds the same file. ValueError becomes a normal argparse error.
+    """
+    if args.config:
+        if not args.config.exists():
+            raise ValueError(f"no such configuration file: {args.config}")
+        config.load_from_file(args.config)
+        return {config.ENV_VAR: str(args.config)}
+    config.load_from_env()
+    return {}
 
 
 def main(argv=None):
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    if args.config:
-        if not args.config.exists():
-            parser.error(f"no such configuration file: {args.config}")
-        config.load_from_file(args.config)
-    else:
-        config.load_from_env()
-
-    # --debug implies --reload: tracebacks are only useful while iterating.
-    # --smoke-test starts and exits, so reloading it would be pointless.
-    reload = (args.reload or args.debug) and not args.smoke_test
-
-    # Compile shared browser components and the Bokeh extension before serving.
-    # Frozen builds ship these assets (see rthook_extbuild.py).
-    from ctapdash.build import ensure_built
-
-    ensure_built()
-
-    if reload:
-        # The reloader re-imports the app in a subprocess, so pass the settings
-        # and debug flag on through the environment rather than directly.
-        if args.config:
-            os.environ[config.ENV_VAR] = str(args.config)
-        if args.debug:
-            os.environ[config.DEBUG_ENV_VAR] = "1"
-        desktop.run_reload(
-            args.host,
-            args.port,
-            open_browser=not args.no_browser,
-        )
-        return 0
-
-    from ctapdash.webapp import create_app
-
-    app = create_app(debug=args.debug)
-    sock = desktop.bind_socket(args.host, args.port)
-
-    if args.smoke_test:
-        from ctapdash.smoke import run_smoke_test
-
-        return run_smoke_test(app, sock)
-
-    if args.no_window or not desktop.native_window_supported():
-        desktop.run_browser(app, sock, open_browser=not args.no_browser)
-        return 0
-
-    try:
-        desktop.run_window(app, sock)
-    except Exception as err:
-        # A missing or broken webview backend should degrade to the browser,
-        # not to nothing at all.
-        print(
-            f"Could not open a native window ({err}); falling back to the browser.",
-            file=sys.stderr,
-        )
-        # uvicorn closes the sockets it was handed when it shuts down, so the
-        # socket run_window used is dead by now; the fallback needs a fresh one.
-        sock.close()
-        sock = desktop.bind_socket(args.host, args.port)
-        desktop.run_browser(app, sock, open_browser=not args.no_browser)
-    return 0
+    return run_cli(
+        APP,
+        argv,
+        add_arguments=add_arguments,
+        prepare=prepare,
+        assets=ASSETS,
+        smoke_test=smoke_test,
+        session=SESSION,
+    )
 
 
 if __name__ == "__main__":
     from multiprocessing import freeze_support
 
     freeze_support()
-    sys.exit(main())
+    raise SystemExit(main())

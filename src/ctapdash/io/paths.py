@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
+from pydantic import BaseModel
+from workingtitle.pydanticstarlette import FileStem, ParamError, parse_query
+
 SCALP_REGEX = re.compile(r"(?P<stem>[^-]+)-badChan-scalp.png")
 CH_REGEX = re.compile(r"(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
 
@@ -127,6 +130,13 @@ def collect_steps(root_path):
     }
 
 
+class RequestQuery(BaseModel):
+    """The source/participant pair every page is keyed on."""
+
+    source: str | None = None
+    participant: FileStem | None = None
+
+
 class ObservationData:
     def __init__(self, source_path, participant=None, source=None):
         self.source_path = DatasetPaths(source_path).root
@@ -141,18 +151,20 @@ class ObservationData:
         from ctapdash.config import SETTINGS
         from pathlib import Path
 
+        if source not in SETTINGS.sources:
+            raise ParamError(f"Unknown source: {source}")
         source_path = Path(SETTINGS.sources[source])
         return cls(source_path, participant, source)
 
     @classmethod
     def from_request(cls, request, default_participant=None):
-        source = request.query_params.get("source")
-        if source is None:
-            raise ValueError("Source must be specified in the request.")
-        participant = request.query_params.get("participant")
+        query = parse_query(request.query_params, RequestQuery)
+        if query.source is None:
+            raise ParamError("Source must be specified in the request.")
+        participant = query.participant
         if participant is None:
             participant = default_participant
-        return cls.from_source(source, participant)
+        return cls.from_source(query.source, participant)
 
     @classmethod
     def from_bokeh_doc(cls, doc):

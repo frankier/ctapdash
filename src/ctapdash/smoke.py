@@ -10,8 +10,9 @@ import sys
 import urllib.error
 import urllib.request
 
-from ctapdash import desktop
+from workingtitle.desktop import ServerThread, bind_socket
 
+from ctapdash import config
 
 HTTP_CHECKS = [
     # base.html renders mplbed_head(), which needs the middleware's request
@@ -33,6 +34,12 @@ IMPORT_CHECKS = [
     ("mne.read_epochs", "mne", "read_epochs"),
     ("mne.viz._mpl_figure", "mne.viz._mpl_figure", "MNEBrowseFigure"),
     ("ctapdash.io.eeglab", "ctapdash.io.eeglab", "read_eeglab"),
+    (
+        "workingtitle.pydanticstarlette",
+        "workingtitle.pydanticstarlette",
+        "query_params",
+    ),
+    ("pydantic", "pydantic", "BaseModel"),
     ("scipy.io.loadmat", "scipy.io", "loadmat"),
     ("scipy.stats.describe", "scipy.stats", "describe"),
     ("xarray.Dataset", "xarray", "Dataset"),
@@ -106,8 +113,8 @@ def _check_mne_plot(failures):
     it runnable in CI with no fixtures.
     """
     try:
-        import numpy as np
         import mne
+        import numpy as np
 
         info = mne.create_info(["Fz", "Cz", "Pz"], sfreq=100.0, ch_types="eeg")
         # Exercise the channel data retained by the packaging rules.
@@ -123,7 +130,7 @@ def _check_mne_plot(failures):
 
 
 def run_smoke_test(app, sock):
-    server = desktop.ServerThread(app, sock, log_level="warning").start()
+    server = ServerThread(app, sock, log_level="warning").start()
     failures = []
     try:
         if sys.platform == "win32":
@@ -152,3 +159,21 @@ def run_smoke_test(app, sock):
         return 1
     print("\nSMOKE TEST PASSED", flush=True)
     return 0
+
+
+def smoke_test(args, session):
+    """Runner callback: own the app, fixtures, and server lifecycle.
+
+    Normal preparation and factory creation are bypassed for smoke tests, so
+    this loads the configuration and builds the app itself. The server binds
+    its own socket here rather than using the launch-mode path.
+    """
+    if args.config:
+        config.load_from_file(args.config)
+    else:
+        config.load_from_env()
+
+    from ctapdash.webapp import create_app
+
+    app = create_app(debug=args.debug, session=session)
+    return run_smoke_test(app, bind_socket(args.host, args.port))
