@@ -18,6 +18,23 @@
         <div class="mb-4 p-3 rounded-md bg-red-100 border border-red-400">{{ error }}</div>
     {% endif %}
 
+    {% if pending_paths %}
+        <div class="mb-6 p-4 rounded-md border border-sky-300 bg-sky-50">
+            <p class="mb-3">Found {{ dataset_count }} dataset director{{ 'y' if dataset_count == 1 else 'ies' }}. Add all of them?</p>
+            <div class="flex gap-3">
+                <form hx-post="{{ url_for('setup_confirm') }}" hx-target="#setup" hx-swap="outerHTML">
+                    <input type="hidden" name="token" value="{{ token }}">
+                    <input type="hidden" name="modal" value="{{ '1' if modal else '0' }}">
+                    <input type="hidden" name="paths" value="{{ pending_paths }}">
+                    <button type="submit" class="rounded-md border border-black px-4 py-2 bg-white hover:bg-sky-100">Add all</button>
+                </form>
+                <a href="{{ url_for('setup') }}{{ '?modal=1' if modal else '' }}"
+                   hx-get="{{ url_for('setup') }}{{ '?modal=1' if modal else '' }}" hx-target="#setup" hx-swap="outerHTML"
+                   class="rounded-md border border-black px-4 py-2 bg-white hover:bg-sky-100">Cancel</a>
+            </div>
+        </div>
+    {% endif %}
+
     {% if sources %}
         <table class="w-full mb-6 border border-slate-300">
             <thead class="bg-slate-100">

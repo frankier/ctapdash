@@ -70,6 +70,7 @@ def test_failed_replace_keeps_sources_and_cleans_temporary_file(
 def test_setup_changes_persist_and_immutable_routes_reject(
     managed_path, tmp_path, monkeypatch
 ):
+    (tmp_path / "1_load").mkdir()
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=Mock()))
     )
@@ -95,6 +96,7 @@ def test_setup_changes_persist_and_immutable_routes_reject(
 
 
 def test_setup_write_error_keeps_visible_sources(managed_path, tmp_path, monkeypatch):
+    (tmp_path / "1_load").mkdir()
     SETTINGS.sources = {"first": str(tmp_path)}
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=Mock()))
@@ -113,3 +115,49 @@ def test_setup_write_error_keeps_visible_sources(managed_path, tmp_path, monkeyp
     assert result == {"modal": True, "error": "disk full"}
     assert SETTINGS.sources == {"first": str(tmp_path)}
     request.app.state.cache_hurrier.add_dataset.assert_not_called()
+
+
+def test_setup_rejects_non_dataset(managed_path, tmp_path, monkeypatch):
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=Mock()))
+    )
+    monkeypatch.setattr(
+        setup_ui, "_read_form", AsyncMock(return_value={"path": str(tmp_path)})
+    )
+    monkeypatch.setattr(setup_ui, "_render", lambda _request, **kwargs: kwargs)
+
+    result = asyncio.run(setup_ui.setup_add(request))
+    assert "No dataset directories" in result["error"]
+    assert SETTINGS.sources == {}
+    request.app.state.cache_hurrier.add_dataset.assert_not_called()
+
+
+def test_setup_prompts_before_adding_nested_datasets(
+    managed_path, tmp_path, monkeypatch
+):
+    import json
+
+    first = tmp_path / "group" / "first"
+    second = tmp_path / "group" / "deeper" / "second"
+    (first / "1_load").mkdir(parents=True)
+    (second / "2_clean").mkdir(parents=True)
+    (tmp_path / "unrelated" / "1_not_a_dir").parent.mkdir()
+    (tmp_path / "unrelated" / "1_not_a_dir").touch()
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=Mock()))
+    )
+    form = {"path": str(tmp_path), "modal": "1"}
+    monkeypatch.setattr(setup_ui, "_read_form", AsyncMock(side_effect=lambda _: form))
+    monkeypatch.setattr(setup_ui, "_render", lambda _request, **kwargs: kwargs)
+
+    result = asyncio.run(setup_ui.setup_add(request))
+    assert result["dataset_count"] == 2
+    assert SETTINGS.sources == {}
+    request.app.state.cache_hurrier.add_dataset.assert_not_called()
+
+    form = {"paths": result["pending_paths"], "modal": "1"}
+    assert json.loads(form["paths"]) == [str(tmp_path)]
+    confirmed = asyncio.run(setup_ui.setup_confirm(request))
+    assert confirmed == {"modal": True, "changed": True}
+    assert set(SETTINGS.sources.values()) == {str(first), str(second)}
+    assert request.app.state.cache_hurrier.add_dataset.call_count == 2

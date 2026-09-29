@@ -233,6 +233,8 @@ def test_setup_registers_manual_and_picked_sources(tmp_path, monkeypatch):
     from ctapdash.config import SETTINGS
     from unittest.mock import Mock
 
+    (tmp_path / "1_load").mkdir()
+
     warmer = Mock()
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=warmer))

@@ -1,5 +1,8 @@
 """Managed source picker, shared by first-run setup and the dashboard dialog."""
 
+import json
+import os
+import re
 import secrets
 from pathlib import Path
 from urllib.parse import parse_qsl
@@ -77,6 +80,10 @@ def _add_source(directory, name=None, sources=None):
     directory = Path(directory).expanduser().resolve()
     if not directory.is_dir():
         raise ValueError(f"Not a directory: {directory}")
+    if not _is_dataset(directory):
+        raise ValueError(
+            f"Not a dataset directory (no numbered step directories): {directory}"
+        )
     name = (name or directory.name or str(directory)).strip()
     candidate = name
     suffix = 2
@@ -86,6 +93,71 @@ def _add_source(directory, name=None, sources=None):
         suffix += 1
     sources[candidate] = str(directory)
     return candidate, sources
+
+
+_STEP_NAME = re.compile(r"[0-9]+(?:_|$)")
+
+
+def _is_dataset(directory):
+    return any(
+        child.is_dir() and _STEP_NAME.match(child.name) for child in directory.iterdir()
+    )
+
+
+def _find_datasets(directory):
+    """Find dataset roots, without descending into their step directories."""
+    directory = Path(directory).expanduser().resolve()
+    if not directory.is_dir():
+        raise ValueError(f"Not a directory: {directory}")
+    if _is_dataset(directory):
+        return [directory], False
+    found = []
+    for root, dirs, _files in os.walk(directory):
+        if root == str(directory):
+            continue
+        path = Path(root)
+        if _is_dataset(path):
+            found.append(path)
+            dirs.clear()
+    if not found:
+        raise ValueError(
+            f"No dataset directories with numbered step directories found in: {directory}"
+        )
+    return found, True
+
+
+def _prepare_sources(directories):
+    found = []
+    nested = False
+    for directory in directories:
+        datasets, is_nested = _find_datasets(directory)
+        found.extend(datasets)
+        nested |= is_nested
+    return list(dict.fromkeys(found)), nested
+
+
+def _save_sources(request, directories, *, modal, name=None):
+    sources = SETTINGS.sources.copy()
+    for directory in directories:
+        _, sources = _add_source(directory, name, sources)
+    changed = sources != SETTINGS.sources
+    if changed:
+        config.save_managed_sources(sources)
+    for directory in directories:
+        request.app.state.cache_hurrier.add_dataset(str(directory))
+    return _render(request, modal=modal, changed=changed)
+
+
+def _add_or_confirm(request, selected, *, modal, name=None):
+    datasets, nested = _prepare_sources(selected)
+    if nested:
+        return _render(
+            request,
+            modal=modal,
+            pending_paths=json.dumps([str(path) for path in selected]),
+            dataset_count=len(datasets),
+        )
+    return _save_sources(request, datasets, modal=modal, name=name)
 
 
 def _require_managed():
@@ -104,14 +176,11 @@ async def setup_add(request):
     form = await _read_form(request)
     modal = form.get("modal") == "1"
     try:
-        name, sources = _add_source(form.get("path", ""), form.get("name") or None)
-        changed = sources != SETTINGS.sources
-        if changed:
-            config.save_managed_sources(sources)
-        request.app.state.cache_hurrier.add_dataset(SETTINGS.sources[name])
+        return _add_or_confirm(
+            request, [form.get("path", "")], modal=modal, name=form.get("name") or None
+        )
     except (ValueError, OSError) as err:
         return _render(request, modal=modal, error=str(err))
-    return _render(request, modal=modal, changed=changed)
 
 
 async def setup_pick(request):
@@ -126,20 +195,30 @@ async def setup_pick(request):
 
     # The dialog blocks until the user dismisses it.
     chosen = await run_in_threadpool(session.open_folder, allow_multiple=True)
-    sources = SETTINGS.sources.copy()
-    picked_paths = []
     try:
-        for directory in chosen:
-            name, sources = _add_source(directory, sources=sources)
-            picked_paths.append(sources[name])
-        changed = sources != SETTINGS.sources
-        if changed:
-            config.save_managed_sources(sources)
+        if chosen:
+            return _add_or_confirm(request, chosen, modal=modal)
     except (ValueError, OSError) as err:
         return _render(request, modal=modal, error=str(err))
-    for path in picked_paths:
-        request.app.state.cache_hurrier.add_dataset(path)
-    return _render(request, modal=modal, changed=changed)
+    return _render(request, modal=modal)
+
+
+async def setup_confirm(request):
+    _require_managed()
+    form = await _read_form(request)
+    modal = form.get("modal") == "1"
+    try:
+        selected = json.loads(form.get("paths", ""))
+        if (
+            not isinstance(selected, list)
+            or not selected
+            or not all(isinstance(path, str) for path in selected)
+        ):
+            raise ValueError("Invalid directory selection")
+        datasets, _ = _prepare_sources(selected)
+        return _save_sources(request, datasets, modal=modal)
+    except (ValueError, OSError) as err:
+        return _render(request, modal=modal, error=str(err))
 
 
 async def setup_remove(request):
@@ -162,5 +241,6 @@ def setup_routes():
         Route("/setup", setup_page, name="setup"),
         Route("/setup/add", setup_add, methods=["POST"], name="setup_add"),
         Route("/setup/pick", setup_pick, methods=["POST"], name="setup_pick"),
+        Route("/setup/confirm", setup_confirm, methods=["POST"], name="setup_confirm"),
         Route("/setup/remove", setup_remove, methods=["POST"], name="setup_remove"),
     ]
