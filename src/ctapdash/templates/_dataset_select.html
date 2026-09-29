@@ -9,6 +9,7 @@
                 class="mx-4 my-2 rounded-md border border-black p-1 bg-white">
                 <option
                     value=""
+                    disabled
                     {% if not source %}selected{% endif %}
                 >--- Please choose an option ---</option>
                 {% for some_source, directory in sources.items() %}
