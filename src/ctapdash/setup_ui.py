@@ -14,8 +14,13 @@ from starlette.exceptions import HTTPException
 from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
-from ctapdash import config, desktop
+from ctapdash import config
 from ctapdash.config import SETTINGS
+
+
+def _session(request):
+    """The launch's desktop session, or None in tests and bare ASGI runs."""
+    return getattr(request.app.state, "desktop", None)
 
 
 # The server is loopback-bound, but any web page the user visits can POST to
@@ -56,12 +61,13 @@ async def _read_form(request):
 def _render(request, **extra):
     from ctapdash.webapp import templates
 
+    session = _session(request)
     return templates.TemplateResponse(
         request,
         "setup.html",
         context={
             "token": TOKEN,
-            "native": desktop.WINDOW is not None,
+            "native": session is not None and session.native,
             "loaded_from": SETTINGS.loaded_from,
             **extra,
         },
@@ -103,16 +109,13 @@ async def setup_pick(request):
     """Open the platform folder picker. Only reachable with a native window."""
     # _read_form validates the CSRF token; the form carries no other fields.
     await _read_form(request)
-    window = desktop.WINDOW
-    if window is None:
+    session = _session(request)
+    if session is None or not session.native:
         raise HTTPException(status_code=400, detail="No native window")
-    import webview
 
-    # create_file_dialog blocks until the user dismisses it.
-    chosen = await run_in_threadpool(
-        window.create_file_dialog, webview.FOLDER_DIALOG, allow_multiple=True
-    )
-    for directory in chosen or ():
+    # The dialog blocks until the user dismisses it.
+    chosen = await run_in_threadpool(session.open_folder, allow_multiple=True)
+    for directory in chosen:
         name = _add_source(directory)
         request.app.state.cache_hurrier.add_dataset(SETTINGS.sources[name])
     return _render(request)
@@ -127,18 +130,10 @@ async def setup_remove(request):
 async def setup_save(request):
     form = await _read_form(request)
     target = form.get("path", "").strip()
-    window = desktop.WINDOW
-    if not target and window is not None:
-        import webview
-
-        chosen = await run_in_threadpool(
-            window.create_file_dialog,
-            webview.SAVE_DIALOG,
-            save_filename="conf.toml",
-        )
-        if isinstance(chosen, (list, tuple)):
-            chosen = chosen[0] if chosen else None
-        target = chosen or ""
+    session = _session(request)
+    if not target and session is not None and session.native:
+        chosen = await run_in_threadpool(session.save_file, filename="conf.toml")
+        target = str(chosen) if chosen is not None else ""
     if not target:
         return _render(request, error="No destination given")
     try:

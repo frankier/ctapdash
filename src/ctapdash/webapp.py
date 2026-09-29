@@ -488,7 +488,7 @@ async def participant_log(request, params):
     return templates.TemplateResponse(request, "participant_log.html", context=ctx)
 
 
-def create_app(debug=False):
+def create_app(debug=False, session=None):
     from ctapdash.setup_ui import RequireConfigMiddleware, setup_routes
     from venn_ts import venn_time_series_bokeh
 
@@ -559,4 +559,7 @@ def create_app(debug=False):
     # Installs MplbedMiddleware (which does its own /webagg routing), registers
     # the mplbed_head context processor, and selects the webaggext backend.
     mplbed_starlette.setup(app, templates=templates, prefix="/webagg")
+    # The setup UI reaches native file dialogs through this launch-scoped
+    # object; it is None in browser/server mode and in tests.
+    app.state.desktop = session
     return app

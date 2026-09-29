@@ -1,83 +1,120 @@
-"""Reloader wiring for the compiled TypeScript sources."""
+"""The app's asset plan and its wiring to the shared desktop runner."""
 
-from pathlib import Path
+from argparse import Namespace
 
-from ctapdash import desktop
+import pytest
 
-
-def make_tree(root: Path) -> None:
-    for path in (
-        root / "node_modules",
-        root / ".venv",
-        root / "build",
-        root / "dist",
-        root / "src/venn_ts/node_modules",
-        root / "src/venn_ts/dist",
-    ):
-        path.mkdir(parents=True)
+from ctapdash import cli
+from ctapdash.build import ASSETS
 
 
-def test_watches_typescript_but_not_dependencies(monkeypatch, tmp_path):
-    root = tmp_path.resolve()
-    make_tree(root)
-    monkeypatch.setattr(desktop, "__file__", str(root / "src/ctapdash/desktop.py"))
-
-    includes, excludes = desktop._typescript_reload_options()
-
-    assert includes == ["*.ts"]
-    assert set(excludes) == {
-        str(root / "node_modules"),
-        str(root / ".venv"),
-        str(root / "build"),
-        str(root / "dist"),
-        str(root / "src/venn_ts/node_modules"),
-        str(root / "src/venn_ts/dist"),
-    }
-
-
-def test_uvicorn_filter_accepts_extension_sources(monkeypatch, tmp_path):
+def test_reload_filter_accepts_declared_sources_and_python():
     from uvicorn.config import Config
     from uvicorn.supervisors.watchfilesreload import FileFilter
 
-    root = tmp_path.resolve()
-    make_tree(root)
-    monkeypatch.setattr(desktop, "__file__", str(root / "src/ctapdash/desktop.py"))
-    includes, excludes = desktop._typescript_reload_options()
     config = Config(
         "ctapdash.asgi:create_app_from_env",
         factory=True,
         reload=True,
-        reload_includes=includes,
-        reload_excludes=excludes,
+        reload_dirs=[str(ASSETS.root)],
     )
-    watch_filter = FileFilter(config)
+    accepts = ASSETS.watch_filter(FileFilter(config))
 
     for relative in (
-        "src/venn_ts/plot.py",
-        "src/venn_ts/vennrender.ts",
         "src/js/index.ts",
+        "src/css/index.css",
+        "src/ctapdash/templates/base.html",
+        "src/venn_ts/vennrender.ts",
+        "package-lock.json",
+        "src/ctapdash/webapp.py",
     ):
-        assert watch_filter(root / relative), relative
+        assert accepts(ASSETS.root / relative), relative
+
+
+def test_reload_filter_rejects_generated_and_dependency_trees():
+    from uvicorn.config import Config
+    from uvicorn.supervisors.watchfilesreload import FileFilter
+
+    config = Config(
+        "ctapdash.asgi:create_app_from_env",
+        factory=True,
+        reload=True,
+        reload_dirs=[str(ASSETS.root)],
+    )
+    accepts = ASSETS.watch_filter(FileFilter(config))
+
     for relative in (
         "README.md",
-        "src/css/index.css",
-        "src/venn_ts/node_modules/x/y.ts",
-        "src/venn_ts/dist/lib/vennrender.d.ts",
         "node_modules/x/y.ts",
-        ".venv/lib/x.ts",
-        "dist/app/foo.ts",
+        "src/venn_ts/node_modules/x.ts",
+        "src/venn_ts/dist/venn_ts.js",
+        "src/ctapdash/static/generated/index.js",
+        ".desktop-build/frontend.json",
     ):
-        assert not watch_filter(root / relative), relative
+        assert not accepts(ASSETS.root / relative), relative
 
 
-def test_restarts_rebuild_before_spawning(monkeypatch):
-    import ctapdash.build as build
-    from uvicorn.supervisors import ChangeReload
+def test_build_extension_reports_toolchain_failure_as_unavailable(monkeypatch):
+    from workingtitle.desktop import BuildUnavailable
 
-    calls = []
-    monkeypatch.setattr(build, "ensure_built", lambda: calls.append("build"))
-    monkeypatch.setattr(ChangeReload, "restart", lambda self: calls.append("restart"))
+    import venn_ts.build as venn
+    from ctapdash import build
 
-    desktop._BuildOnReload.restart(object.__new__(desktop._BuildOnReload))
+    def fail(**kwargs):
+        raise venn.ExtensionBuildFailed("no node")
 
-    assert calls == ["build", "restart"]
+    monkeypatch.setattr(venn, "build_extension_bundle", fail)
+    with pytest.raises(BuildUnavailable, match="no node"):
+        build.build_extension()
+
+
+def test_build_extension_propagates_integrity_errors(monkeypatch):
+    import venn_ts.build as venn
+    from ctapdash import build
+
+    def broken(**kwargs):
+        raise RuntimeError("missing modules")
+
+    monkeypatch.setattr(venn, "build_extension_bundle", broken)
+    # A broken bundle must never be treated as a fallback candidate.
+    with pytest.raises(RuntimeError, match="missing modules"):
+        build.build_extension()
+
+
+def test_installed_assets_are_validation_only():
+    from ctapdash.build import _installed_assets
+
+    plan = _installed_assets()
+    assert plan.source is False
+    outputs = {output for step in plan.steps for output in step.outputs}
+    assert "ctapdash/static/generated/index.js" in outputs
+    assert "venn_ts/dist/venn_ts.json" in outputs
+
+
+def test_prepare_returns_environment_override(tmp_path, monkeypatch):
+    from ctapdash import config
+
+    path = tmp_path / "conf.toml"
+    path.write_text("[sources]\n")
+    monkeypatch.setattr(config, "load_from_file", lambda p: None)
+    assert cli.prepare(Namespace(config=path)) == {config.ENV_VAR: str(path)}
+
+
+def test_prepare_rejects_missing_config(tmp_path):
+    with pytest.raises(ValueError, match="no such configuration file"):
+        cli.prepare(Namespace(config=tmp_path / "missing.toml"))
+
+
+def test_main_wires_the_shared_runner(monkeypatch):
+    captured = {}
+
+    def fake_run_cli(spec, argv, **kwargs):
+        captured.update(spec=spec, argv=argv, **kwargs)
+        return 0
+
+    monkeypatch.setattr(cli, "run_cli", fake_run_cli)
+    assert cli.main(["--config", "conf.toml"]) == 0
+    assert captured["spec"] is cli.APP
+    assert captured["assets"] is ASSETS
+    assert captured["session"] is cli.SESSION
+    assert captured["smoke_test"] is cli.smoke_test

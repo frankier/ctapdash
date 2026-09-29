@@ -53,13 +53,14 @@ ctapdash --config /path/to/conf.toml
 
 or set `CTAPDASH_SETTINGS=/path/to/conf.toml` in the environment.
 
-| Option         | Effect                                             |
-| -------------- | -------------------------------------------------- |
-| `--port N`     | Serve on a fixed port instead of a free one        |
-| `--no-window`  | Serve only; don't open a window or a browser       |
-| `--no-browser` | Don't open a browser                               |
-| `--reload`     | Restart on source changes (browser only)           |
-| `--debug`      | Show tracebacks in the browser, implies `--reload` |
+| Option         | Effect                                                      |
+| -------------- | ----------------------------------------------------------- |
+| `--host HOST`  | Bind address (default `127.0.0.1`)                          |
+| `--port N`     | Serve on a fixed port instead of a free one                 |
+| `--mode MODE`  | `auto` (default), `native`, `browser`, or `server`          |
+| `--reload`     | Restart on source changes (requires watchfiles; not frozen) |
+| `--debug`      | Show tracebacks in the browser, implies `--reload`          |
+| `--smoke-test` | Start up, self-check, and exit                              |
 
 Freshness is checked at registration using `.set` mtimes. External `.fdt` changes
 and removed recordings are not detected. Re-add an existing source in Setup to
@@ -70,7 +71,7 @@ check it again after editing `.set` files; there is no filesystem watcher.
 ## Developing
 
 ```bash
-uv sync --group build
+uv sync
 npm ci
 uv run python -m ctapdash.build
 uv run ctapdash --config conf.toml
@@ -78,12 +79,12 @@ uv run ctapdash --config conf.toml
 
 `--debug` implies `--reload`, so `uv run ctapdash --config conf.toml --debug`
 restarts the server whenever you edit a source file. Python changes restart the
-server directly; edits to the TypeScript sources of the Bokeh extension and the
-shared browser components restart the server and recompile their bundles first,
-so `src/venn_ts` is picked up without a manual `ctapdash.build` run. Both options
-serve in the browser: uvicorn's reloader runs the application in a subprocess,
-which cannot own the main thread as the native window needs. `--smoke-test`
-turns reload off.
+server directly; edits to declared frontend inputs (JS, CSS, templates) and to
+the TypeScript sources of the Bokeh extension restart the server and recompile
+their bundles first, so `src/venn_ts` is picked up without a manual
+`ctapdash.build` run. Reloading serves in the browser: uvicorn's reloader runs
+the application in a subprocess, which cannot own the main thread as the native
+window needs. `--smoke-test` turns reload off.
 
 `uv run uvicorn ctapdash.webapp:create_app --factory` also works if you want a
 plain ASGI server. Build browser assets first when starting through ASGI directly.

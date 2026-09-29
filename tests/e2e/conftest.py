@@ -1,11 +1,11 @@
 """Run the actual CLI in an isolated process with temporary data and caches."""
 
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -33,8 +33,8 @@ def dashboard_url(tmp_path_factory):
                 "ctapdash",
                 "--config",
                 str(config),
-                "--no-window",
-                "--no-browser",
+                "--mode",
+                "server",
                 "--port",
                 str(port),
             ],

@@ -27,3 +27,4 @@ node_modules
 /src/venn_ts/dist/
 
 /src/ctapdash/static/generated/
+.desktop-build/

@@ -27,7 +27,7 @@ def test_native_backend_smoke_check(monkeypatch, capsys, platform, backend, expe
     monkeypatch.setattr(smoke, "_check_mne_plot", lambda failures: None)
     server = Mock(url="http://127.0.0.1:1234/")
     monkeypatch.setattr(
-        smoke.desktop, "ServerThread", Mock(return_value=Mock(start=lambda: server))
+        smoke, "ServerThread", Mock(return_value=Mock(start=lambda: server))
     )
 
     assert smoke.run_smoke_test(object(), object()) == expected

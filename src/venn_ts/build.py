@@ -68,31 +68,25 @@ def _missing_modules(base_dir: Path) -> set[str]:
     return sources - bundled
 
 
-def ensure_extension_built(*, force: bool = False, verbose: bool = False) -> None:
-    """Rebuild the extension bundle if any source is newer than it.
+class ExtensionBuildFailed(RuntimeError):
+    """The compiler could not produce a bundle, usually a missing toolchain."""
 
-    A failure is tolerated when a (possibly stale) bundle already exists so
-    that a broken or missing node toolchain does not take the whole dashboard
-    down; without any bundle there is nothing to serve, so it raises.
+
+def build_extension_bundle(*, verbose: bool = False) -> None:
+    """Compile the bundle and verify it, raising rather than falling back.
+
+    ``ExtensionBuildFailed`` distinguishes a toolchain failure (the caller may
+    fall back to a stale bundle) from a broken bundle, which is never safe to
+    serve. This is the strict primitive the asset-plan action uses.
     """
     base_dir = _extension_dir()
-    if not force and _is_up_to_date(base_dir):
-        return
 
     # Imported lazily: pulling in the compiler plumbing is wasted work on
     # every launch when the bundle is already current.
     from bokeh.ext import build
 
     if not build(base_dir, verbose=verbose):
-        bundle = base_dir / "dist" / "venn_ts.json"
-        if bundle.exists():
-            print(
-                f"warning: could not rebuild the {base_dir.name} extension bundle; "
-                "continuing with the existing one (it may be out of date)",
-                file=sys.stderr,
-            )
-            return
-        raise RuntimeError(
+        raise ExtensionBuildFailed(
             f"could not build the {base_dir.name} extension bundle in "
             f"{base_dir}; check that node and npm are installed"
         )
@@ -104,6 +98,31 @@ def ensure_extension_built(*, force: bool = False, verbose: bool = False) -> Non
             f"{sorted(missing)}; delete {base_dir / 'dist'} and rebuild "
             "(this is usually caused by stale files under dist/lib)"
         )
+
+
+def ensure_extension_built(*, force: bool = False, verbose: bool = False) -> None:
+    """Rebuild the extension bundle if any source is newer than it.
+
+    A toolchain failure is tolerated when a (possibly stale) bundle already
+    exists so that a broken or missing node toolchain does not take the whole
+    dashboard down; without any bundle there is nothing to serve, so it raises.
+    A bundle that fails the integrity check always raises: it is unsafe to run.
+    """
+    base_dir = _extension_dir()
+    if not force and _is_up_to_date(base_dir):
+        return
+
+    try:
+        build_extension_bundle(verbose=verbose)
+    except ExtensionBuildFailed as exc:
+        if (base_dir / "dist" / "venn_ts.json").exists():
+            print(
+                f"warning: {exc}; continuing with the existing bundle "
+                "(it may be out of date)",
+                file=sys.stderr,
+            )
+            return
+        raise
 
 
 if __name__ == "__main__":

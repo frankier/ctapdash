@@ -296,30 +296,19 @@ dependencies = [
     { name = "numba" },
     { name = "pillow" },
     { name = "pymatreader" },
-    { name = "pywebview", marker = "sys_platform != 'linux'" },
     { name = "scipy" },
     { name = "starlette" },
     { name = "starlette-htmx" },
     { name = "tbb4u" },
     { name = "tsdownsample" },
-    { name = "uvicorn" },
-    { name = "websockets" },
-    { name = "workingtitle" },
+    { name = "workingtitle", extra = ["desktop"] },
     { name = "xarray" },
 ]
 
 [package.dev-dependencies]
-build = [
-    { name = "pyinstaller" },
-    { name = "pyinstaller-hooks-contrib" },
-]
-devserver = [
-    { name = "watchfiles" },
-]
 test = [
     { name = "pytest" },
     { name = "pytest-playwright" },
-    { name = "watchfiles" },
 ]
 
 [package.metadata]
@@ -332,28 +321,19 @@ requires-dist = [
     { name = "numba", specifier = ">=0.67.0" },
     { name = "pillow", specifier = ">=12.0" },
     { name = "pymatreader", specifier = ">=1.3.1" },
-    { name = "pywebview", marker = "sys_platform != 'linux'", specifier = ">=6.2.1" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "starlette", specifier = ">=1.0.0" },
     { name = "starlette-htmx", specifier = ">=0.1.1" },
     { name = "tbb4u", specifier = ">=2023.1.0" },
     { name = "tsdownsample", specifier = ">=0.1.5.1" },
-    { name = "uvicorn", specifier = ">=0.46.0" },
-    { name = "websockets", specifier = ">=15" },
-    { name = "workingtitle", git = "https://github.com/frankier/workingtitle.git" },
+    { name = "workingtitle", extras = ["desktop"], git = "https://github.com/frankier/workingtitle.git" },
     { name = "xarray", specifier = ">=2026.2.0" },
 ]
 
 [package.metadata.requires-dev]
-build = [
-    { name = "pyinstaller", specifier = ">=6.21.0" },
-    { name = "pyinstaller-hooks-contrib" },
-]
-devserver = [{ name = "watchfiles", specifier = ">=1.0" }]
 test = [
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-playwright", specifier = ">=0.7" },
-    { name = "watchfiles", specifier = ">=1.0" },
 ]
 
 [[package]]
@@ -1795,10 +1775,20 @@ wheels = [
 [[package]]
 name = "workingtitle"
 version = "0.1.0"
-source = { git = "https://github.com/frankier/workingtitle.git#961a80cbada42677e6025dcbe9dc0afbf1e2d3f7" }
+source = { git = "https://github.com/frankier/workingtitle.git#9a499c0b7a50568f1b27edb025855302b745cf48" }
 dependencies = [
     { name = "pydantic" },
     { name = "starlette" },
+]
+
+[package.optional-dependencies]
+desktop = [
+    { name = "pyinstaller" },
+    { name = "pyinstaller-hooks-contrib" },
+    { name = "pywebview", marker = "sys_platform != 'linux'" },
+    { name = "uvicorn" },
+    { name = "watchfiles" },
+    { name = "websockets" },
 ]
 
 [[package]]
