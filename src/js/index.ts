@@ -30,3 +30,34 @@ window.Tabulator = TabulatorFull
 
 // The CDN build of Alpine started itself; the module build does not.
 Alpine.start()
+
+const settingsButton = document.querySelector<HTMLButtonElement>("#source-settings-button")
+const settingsDialog = document.querySelector<HTMLDialogElement>("#source-settings-dialog")
+const settingsContent = document.querySelector<HTMLElement>("#source-settings-content")
+if (settingsButton && settingsDialog && settingsContent) {
+    let changed = false
+    settingsButton.addEventListener("click", async () => {
+        await htmx.ajax("get", settingsButton.dataset.setupUrl!, {
+            target: settingsContent,
+            swap: "innerHTML",
+        })
+        settingsDialog.showModal()
+    })
+    document
+        .querySelector("#source-settings-close")
+        ?.addEventListener("click", () => settingsDialog.close())
+    document.body.addEventListener("sources-changed", () => {
+        changed = true
+    })
+    settingsDialog.addEventListener("close", () => {
+        if (!changed) return
+        const selected = document.querySelector<HTMLSelectElement>("#source-select")?.value
+        const names = [
+            ...settingsContent.querySelectorAll<HTMLTableCellElement>(
+                "#setup tbody tr td:first-child",
+            ),
+        ].map((cell) => cell.textContent?.trim())
+        if (selected && !names.includes(selected)) window.location.assign("/")
+        else window.location.reload()
+    })
+}

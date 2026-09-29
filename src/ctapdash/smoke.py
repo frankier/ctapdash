@@ -171,7 +171,7 @@ def smoke_test(args, session):
     if args.config:
         config.load_from_file(args.config)
     else:
-        config.load_from_env()
+        config.load_startup()
 
     from ctapdash.webapp import create_app
 

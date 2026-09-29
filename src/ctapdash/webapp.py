@@ -53,6 +53,7 @@ if importlib.util.find_spec("panel") is not None:
 def sources_context(request):
     ctx = {
         "sources": SETTINGS.sources,
+        "managed_config": SETTINGS.managed,
     }
     source = request.query_params.get("source", "")
     ctx["source"] = source

@@ -38,10 +38,61 @@ def test_home_dataset_and_participant_selection(page, dashboard_url):
     ).to_be_visible()
 
 
-def test_setup(page, dashboard_url):
+def test_explicit_config_hides_setup(page, dashboard_url):
     visit(page, dashboard_url, "/setup")
+    expect(page.locator("#source-select")).to_be_visible()
+    expect(page.locator("#source-settings-button")).to_have_count(0)
+    assert (
+        page.request.post(
+            dashboard_url + "/setup/remove", data={"name": "dummy"}
+        ).status
+        == 403
+    )
+
+
+def test_managed_setup_and_dialog_refresh(page, managed_dashboard):
+    url, source, directory = managed_dashboard
+    visit(page, url, "/")
     expect(page.get_by_role("heading", name="Data sources")).to_be_visible()
-    expect(page.get_by_role("table")).to_contain_text("dummy")
+    expect(page.get_by_text("No sources configured yet.")).to_be_visible()
+
+    page.get_by_role("textbox", name="Directory").fill(str(source))
+    page.get_by_role("button", name="Add source").click()
+    expect(page.get_by_role("table")).to_contain_text(str(source))
+    config_files = list(directory.rglob("config.toml"))
+    assert len(config_files) == 1
+    config_path = config_files[0]
+    page.get_by_role("link", name="Open dashboard").click()
+    expect(page.locator("#source-select option")).to_have_count(2)
+    page.locator("#source-select").select_option("TAPPED")
+    expect(page.get_by_role("heading", name="Dataset Overview")).to_be_visible()
+
+    page.get_by_role("button", name="Manage data sources").click()
+    dialog = page.get_by_role("dialog", name="Manage data sources")
+    expect(dialog).to_be_visible()
+    second = directory / "second-source"
+    second.mkdir()
+    dialog.get_by_role("textbox", name="Directory").fill(str(second))
+    dialog.get_by_role("button", name="Add source").click()
+    expect(dialog.get_by_role("table")).to_contain_text(str(second))
+    dialog.get_by_role("button", name="Done").click()
+    expect(page.locator("#source-select option")).to_have_count(3)
+    expect(page.get_by_role("heading", name="Dataset Overview")).to_be_visible()
+
+    page.get_by_role("button", name="Manage data sources").click()
+    expect(dialog).to_be_visible()
+    dialog.get_by_role("button", name="Remove").first.click()
+    dialog.get_by_role("button", name="Done").click()
+    expect(page.locator("#source-select option")).to_have_count(2)
+    expect(page).to_have_url(url + "/")
+
+    page.get_by_role("button", name="Manage data sources").click()
+    expect(dialog).to_be_visible()
+    dialog.get_by_role("button", name="Remove").click()
+    expect(dialog.get_by_text("No sources configured yet.")).to_be_visible()
+    dialog.get_by_role("button", name="Done").click()
+    expect(page.get_by_role("heading", name="Data sources")).to_be_visible()
+    assert config_path.read_text() == "[sources]\n"
 
 
 def test_statistics_fragment(page, dashboard_url):

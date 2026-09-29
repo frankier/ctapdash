@@ -1,9 +1,4 @@
-"""First-run source picker.
-
-Sources can come from --config, from CTAPDASH_SETTINGS, or from this UI. There
-is deliberately no global config location: anything added here lives in memory
-for the session unless the user explicitly saves it somewhere.
-"""
+"""Managed source picker, shared by first-run setup and the dashboard dialog."""
 
 import secrets
 from pathlib import Path
@@ -37,7 +32,7 @@ class RequireConfigMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and not SETTINGS.configured:
+        if scope["type"] == "http" and SETTINGS.managed and not SETTINGS.configured:
             path = scope["path"]
             if not path.startswith(_EXEMPT_PREFIXES):
                 await RedirectResponse("/setup")(scope, receive, send)
@@ -58,89 +53,108 @@ async def _read_form(request):
     return form
 
 
-def _render(request, **extra):
+def _render(request, *, modal=False, changed=False, **extra):
     from ctapdash.webapp import templates
 
     session = _session(request)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "setup.html",
         context={
             "token": TOKEN,
             "native": session is not None and session.native,
-            "loaded_from": SETTINGS.loaded_from,
+            "modal": modal,
             **extra,
         },
     )
+    if changed:
+        response.headers["HX-Trigger"] = "sources-changed"
+    return response
 
 
-def _add_source(directory, name=None):
-    """Add a directory, deriving a unique name from it if none is given."""
+def _add_source(directory, name=None, sources=None):
+    """Return a new source map, deriving a unique name when needed."""
     directory = Path(directory).expanduser().resolve()
     if not directory.is_dir():
         raise ValueError(f"Not a directory: {directory}")
     name = (name or directory.name or str(directory)).strip()
     candidate = name
     suffix = 2
-    while candidate in SETTINGS.sources and SETTINGS.sources[candidate] != str(
-        directory
-    ):
+    sources = (SETTINGS.sources if sources is None else sources).copy()
+    while candidate in sources and sources[candidate] != str(directory):
         candidate = f"{name}-{suffix}"
         suffix += 1
-    SETTINGS.sources[candidate] = str(directory)
-    return candidate
+    sources[candidate] = str(directory)
+    return candidate, sources
+
+
+def _require_managed():
+    if not SETTINGS.managed:
+        raise HTTPException(status_code=403, detail="Configuration is read only")
 
 
 async def setup_page(request):
-    return _render(request)
+    if not SETTINGS.managed:
+        return RedirectResponse("/")
+    return _render(request, modal=request.query_params.get("modal") == "1")
 
 
 async def setup_add(request):
+    _require_managed()
     form = await _read_form(request)
+    modal = form.get("modal") == "1"
     try:
-        name = _add_source(form.get("path", ""), form.get("name") or None)
+        name, sources = _add_source(form.get("path", ""), form.get("name") or None)
+        changed = sources != SETTINGS.sources
+        if changed:
+            config.save_managed_sources(sources)
         request.app.state.cache_hurrier.add_dataset(SETTINGS.sources[name])
-    except ValueError as err:
-        return _render(request, error=str(err))
-    return _render(request)
+    except (ValueError, OSError) as err:
+        return _render(request, modal=modal, error=str(err))
+    return _render(request, modal=modal, changed=changed)
 
 
 async def setup_pick(request):
     """Open the platform folder picker. Only reachable with a native window."""
     # _read_form validates the CSRF token; the form carries no other fields.
-    await _read_form(request)
+    _require_managed()
+    form = await _read_form(request)
+    modal = form.get("modal") == "1"
     session = _session(request)
     if session is None or not session.native:
         raise HTTPException(status_code=400, detail="No native window")
 
     # The dialog blocks until the user dismisses it.
     chosen = await run_in_threadpool(session.open_folder, allow_multiple=True)
-    for directory in chosen:
-        name = _add_source(directory)
-        request.app.state.cache_hurrier.add_dataset(SETTINGS.sources[name])
-    return _render(request)
+    sources = SETTINGS.sources.copy()
+    picked_paths = []
+    try:
+        for directory in chosen:
+            name, sources = _add_source(directory, sources=sources)
+            picked_paths.append(sources[name])
+        changed = sources != SETTINGS.sources
+        if changed:
+            config.save_managed_sources(sources)
+    except (ValueError, OSError) as err:
+        return _render(request, modal=modal, error=str(err))
+    for path in picked_paths:
+        request.app.state.cache_hurrier.add_dataset(path)
+    return _render(request, modal=modal, changed=changed)
 
 
 async def setup_remove(request):
+    _require_managed()
     form = await _read_form(request)
-    SETTINGS.sources.pop(form.get("name", ""), None)
-    return _render(request)
-
-
-async def setup_save(request):
-    form = await _read_form(request)
-    target = form.get("path", "").strip()
-    session = _session(request)
-    if not target and session is not None and session.native:
-        chosen = await run_in_threadpool(session.save_file, filename="conf.toml")
-        target = str(chosen) if chosen is not None else ""
-    if not target:
-        return _render(request, error="No destination given")
+    modal = form.get("modal") == "1"
+    sources = SETTINGS.sources.copy()
+    sources.pop(form.get("name", ""), None)
+    changed = sources != SETTINGS.sources
     try:
-        saved = config.save_to_file(Path(target).expanduser())
+        if changed:
+            config.save_managed_sources(sources)
     except OSError as err:
-        return _render(request, error=str(err))
-    return _render(request, saved_to=saved)
+        return _render(request, modal=modal, error=str(err))
+    return _render(request, modal=modal, changed=changed)
 
 
 def setup_routes():
@@ -149,5 +163,4 @@ def setup_routes():
         Route("/setup/add", setup_add, methods=["POST"], name="setup_add"),
         Route("/setup/pick", setup_pick, methods=["POST"], name="setup_pick"),
         Route("/setup/remove", setup_remove, methods=["POST"], name="setup_remove"),
-        Route("/setup/save", setup_save, methods=["POST"], name="setup_save"),
     ]
