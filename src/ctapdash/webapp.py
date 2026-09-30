@@ -1,7 +1,9 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+import csv
 from importlib.resources import files
 import importlib.util
+from io import StringIO
 from pathlib import Path
 from ctapdash.io.cache import CacheWarmer
 from ctapdash.io.paths import ObservationData, DatasetPaths
@@ -469,6 +471,19 @@ async def participant_statistics_fragment(request, params):
     )
 
 
+def parse_dat_table(content: str):
+    """Return a tab-separated table, or None if its structure is unclear."""
+    try:
+        rows = list(csv.reader(StringIO(content), delimiter="\t", strict=True))
+    except csv.Error:
+        return None
+    if not rows or len(rows[0]) < 2 or any(not heading.strip() for heading in rows[0]):
+        return None
+    if any(len(row) != len(rows[0]) for row in rows[1:]):
+        return None
+    return {"columns": rows[0], "rows": rows[1:]}
+
+
 @query_params(LogParams)
 async def participant_log(request, params):
     dataset = ObservationData.from_request(request)
@@ -486,6 +501,9 @@ async def participant_log(request, params):
             {
                 "current_log_file": log,
                 "content": content,
+                "table_data": parse_dat_table(content)
+                if log_path.suffix.lower() == ".dat"
+                else None,
             }
         )
     return templates.TemplateResponse(request, "participant_log.html", context=ctx)

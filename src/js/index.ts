@@ -31,6 +31,66 @@ window.Tabulator = TabulatorFull
 // The CDN build of Alpine started itself; the module build does not.
 Alpine.start()
 
+const logTable = document.querySelector<HTMLElement>("#log-table")
+const logTableData = document.querySelector<HTMLScriptElement>("#log-table-data")
+if (logTable && logTableData) {
+    const {columns, rows} = JSON.parse(logTableData.textContent || "{}") as {
+        columns: string[]
+        rows: string[][]
+    }
+    const availableHeight = () =>
+        Math.max(1, window.innerHeight - logTable.getBoundingClientRect().top)
+    const table = new TabulatorFull(logTable, {
+        data: rows.map((row) =>
+            Object.fromEntries(row.map((value, index) => [`col${index}`, value])),
+        ),
+        columns: columns.map((title, index) => {
+            const heading = document.createElement("span")
+            heading.textContent = title
+            return {
+                title: heading.innerHTML,
+                field: `col${index}`,
+                formatter: "plaintext",
+            }
+        }),
+        layout: "fitData",
+        height: availableHeight(),
+        columnDefaults: {maxWidth: 320, tooltip: true},
+        pagination: true,
+        paginationCounter: "rows",
+    })
+    let ready = false
+    let fitting = false
+    const fitFirstPage = () => {
+        if (!ready || fitting || table.getPage() !== 1 || !logTable.getClientRects().length) return
+        fitting = true
+        try {
+            table.setHeight(availableHeight())
+            const holder = logTable.querySelector<HTMLElement>(".tabulator-tableholder")
+            const row = logTable.querySelector<HTMLElement>(".tabulator-row")
+            if (holder && row?.offsetHeight) {
+                const pageSize = Math.max(1, Math.floor(holder.clientHeight / row.offsetHeight))
+                if (pageSize !== table.getPageSize()) table.setPageSize(pageSize)
+            }
+        } finally {
+            fitting = false
+        }
+    }
+    table.on("tableBuilt", () => {
+        ready = true
+        fitFirstPage()
+    })
+    table.on("pageLoaded", (page) => {
+        if (page === 1) fitFirstPage()
+    })
+    window.addEventListener("resize", () => {
+        fitFirstPage()
+    })
+    document.querySelector("#log-table-tab")?.addEventListener("click", () => {
+        requestAnimationFrame(fitFirstPage)
+    })
+}
+
 const settingsButton = document.querySelector<HTMLAnchorElement>("#source-settings-button")
 const settingsDialog = document.querySelector<HTMLDialogElement>("#source-settings-dialog")
 const settingsContent = document.querySelector<HTMLElement>("#source-settings-content")

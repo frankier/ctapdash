@@ -79,7 +79,21 @@ def write_dataset(directory):
     log = root / "logs" / "CTAP_load_data" / f"{participant}.log"
     log.parent.mkdir(parents=True)
     log.write_text(
-        "Dummy CTAP pipeline\nLoaded 2 channels and 500 samples.\nProcessing completed.\n"
+        "Dummy CTAP pipeline\nLoaded 2 channels and 500 samples.\n"
+        "Processing completed.\n" + "wide-column-" * 80 + "\n"
+    )
+    stats_dir = root / "logs" / "log_stats"
+    stats_dir.mkdir()
+    (stats_dir / f"{participant}_stats.dat").write_text(
+        "Row\trange\tM\n"
+        + "".join(
+            f"A{index}\t{114.57 if index == 1 else 56.19}\t"
+            f"{0.007 if index == 1 else -0.008}\n"
+            for index in range(1, 46)
+        )
+    )
+    (stats_dir / f"{participant}_malformed.dat").write_text(
+        "Row\trange\tM\nA1\t114.57\n"
     )
     for folder, names in {
         "CTAP_peek_data/set1_fun1": [

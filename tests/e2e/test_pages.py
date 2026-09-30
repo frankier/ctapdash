@@ -245,6 +245,83 @@ def test_logs(page, dashboard_url):
     page.get_by_role("link", name="Logs", exact=True).click()
     page.locator("#log-select").select_option(f"logs/CTAP_load_data/{PARTICIPANT}.log")
     expect(page.locator("#log-content pre")).to_contain_text("Processing completed.")
+    expect(page.get_by_role("tab", name="Table")).to_have_count(0)
+    raw = page.locator("#log-content pre").locator("..")
+    assert raw.evaluate("element => element.scrollWidth > element.clientWidth")
+
+    page.locator("#log-select").select_option(f"logs/log_stats/{PARTICIPANT}_stats.dat")
+    expect(page.get_by_role("tab", name="Table")).to_have_attribute(
+        "aria-selected", "true"
+    )
+    expect(page.locator("#log-table-tab")).to_have_attribute("href", "#log-table")
+    expect(page.locator("#log-original-tab")).to_have_attribute("href", "#log-original")
+    assert page.locator("#log-view-tabs").evaluate(
+        """bar => {
+            const navigation = document.querySelector('#viewer > div:first-child');
+            const selected = navigation.querySelector('div:last-child');
+            const barBounds = bar.getBoundingClientRect();
+            const navBounds = navigation.getBoundingClientRect();
+            return barBounds.x === navBounds.x && barBounds.width === navBounds.width
+                && getComputedStyle(bar).backgroundColor === getComputedStyle(navigation).backgroundColor
+                && getComputedStyle(bar.querySelector('#log-table-tab').parentElement).backgroundColor
+                    === getComputedStyle(selected).backgroundColor;
+        }"""
+    )
+    expect(page.locator("#log-table .tabulator-col-title")).to_have_text(
+        ["Row", "range", "M"]
+    )
+    table_rows = page.locator("#log-table .tabulator-row")
+    first_page_size = table_rows.count()
+    assert 1 < first_page_size < 45
+    expect(page.locator("#log-table")).to_contain_text("A1")
+    expect(page.locator("#log-table")).to_contain_text("114.57")
+    expect(page.locator("#log-table .tabulator-page-counter")).to_contain_text(
+        f"{first_page_size} of 45"
+    )
+    assert page.locator("#log-table").evaluate(
+        """table => Math.abs(table.getBoundingClientRect().bottom - window.innerHeight) <= 1
+            && document.documentElement.scrollHeight <= window.innerHeight + 1"""
+    )
+    page.set_viewport_size({"width": 900, "height": 600})
+    smaller_page_size = table_rows.count()
+    assert 1 <= smaller_page_size < first_page_size
+    assert page.locator("#log-table").evaluate(
+        """table => Math.abs(table.getBoundingClientRect().bottom - window.innerHeight) <= 1
+            && document.documentElement.scrollHeight <= window.innerHeight + 1"""
+    )
+    page.locator('#log-table .tabulator-page[data-page="next"]').click()
+    expect(page.locator("#log-table")).to_contain_text(f"A{smaller_page_size + 1}")
+    frozen_height = page.locator("#log-table").evaluate("table => table.offsetHeight")
+    frozen_page_size = table_rows.count()
+    page.set_viewport_size({"width": 1100, "height": 800})
+    assert (
+        page.locator("#log-table").evaluate("table => table.offsetHeight")
+        == frozen_height
+    )
+    assert table_rows.count() == frozen_page_size
+    page.locator('#log-table .tabulator-page[data-page="first"]').click()
+    assert table_rows.count() > smaller_page_size
+    assert page.locator("#log-table").evaluate(
+        """table => Math.abs(table.getBoundingClientRect().bottom - window.innerHeight) <= 1
+            && document.documentElement.scrollHeight <= window.innerHeight + 1"""
+    )
+    page.get_by_role("tab", name="Original").click()
+    expect(page.locator("#log-content pre")).to_be_visible()
+    expect(page.locator("#log-content pre")).to_contain_text("A2\t56.19\t-0.008")
+    expect(page.locator("#log-table")).to_be_hidden()
+    page.set_viewport_size({"width": 1024, "height": 700})
+    page.get_by_role("tab", name="Table").click()
+    expect(page.locator("#log-table")).to_be_visible()
+    assert page.locator("#log-table").evaluate(
+        """table => Math.abs(table.getBoundingClientRect().bottom - window.innerHeight) <= 1
+            && document.documentElement.scrollHeight <= window.innerHeight + 1"""
+    )
+
+    page.locator("#log-select").select_option(
+        f"logs/log_stats/{PARTICIPANT}_malformed.dat"
+    )
+    expect(page.get_by_role("tab", name="Table")).to_have_count(0)
+    expect(page.locator("#log-content pre")).to_contain_text("A1\t114.57")
 
 
 def test_cache_progress_across_navigation(page, dashboard_url):
