@@ -69,6 +69,8 @@ def sources_context(request):
     return ctx
 
 
+safe_templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
 templates = Jinja2Templates(
     directory=TEMPLATES_DIR, context_processors=[sources_context]
 )
@@ -489,6 +491,66 @@ async def participant_log(request, params):
     return templates.TemplateResponse(request, "participant_log.html", context=ctx)
 
 
+async def bad_request(request: Request, exc: HTTPException):
+    return safe_templates.TemplateResponse(request, "400.html", status_code=400)
+
+
+async def not_found(request: Request, exc: HTTPException):
+    return safe_templates.TemplateResponse(request, "404.html", status_code=404)
+
+
+async def server_error(request: Request, exc: Exception):
+    import traceback
+    from textwrap import dedent
+    from urllib.parse import urlencode
+
+    show_stacktrace = SETTINGS.managed
+    if show_stacktrace:
+        stacktrace = "".join(
+            traceback.format_exception(
+                type(exc),
+                exc,
+                exc.__traceback__,
+            )
+        )
+        report_url = "https://github.com/frankier/ctapdash/issues/new?"
+        report_url += urlencode(
+            (
+                ("title", "Runtime error with stacktrace: " + type(exc).__name__),
+                ("assignee", "frankier"),
+                (
+                    "body",
+                    dedent("""\
+                ## Steps to reproduce
+
+                What were you doing when the error occurred?
+
+                ## Stacktrace
+                ```
+                PASTE THE STACKTRACE HERE
+                ```
+                """),
+                ),
+                ("labels[]", ("bug", "errorpage")),
+            )
+        )
+    else:
+        stacktrace = ""
+        report_url = ""
+    return safe_templates.TemplateResponse(
+        request,
+        "500.html",
+        context={
+            "stacktrace": stacktrace,
+            "report_url": report_url,
+        },
+        status_code=500,
+    )
+
+
+exception_handlers = {400: bad_request, 404: not_found, 500: server_error}
+
+
 def create_app(debug=False, session=None):
     from ctapdash.setup_ui import RequireConfigMiddleware, setup_routes
     from venn_ts import venn_time_series_bokeh
@@ -555,6 +617,7 @@ def create_app(debug=False, session=None):
             Middleware(HtmxMiddleware),
             Middleware(GlobalRequestMiddleware),
         ],
+        exception_handlers=exception_handlers,
         lifespan=lifespan,
     )
     # Installs MplbedMiddleware (which does its own /webagg routing), registers
