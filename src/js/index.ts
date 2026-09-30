@@ -31,7 +31,7 @@ window.Tabulator = TabulatorFull
 // The CDN build of Alpine started itself; the module build does not.
 Alpine.start()
 
-const settingsButton = document.querySelector<HTMLButtonElement>("#source-settings-button")
+const settingsButton = document.querySelector<HTMLAnchorElement>("#source-settings-button")
 const settingsDialog = document.querySelector<HTMLDialogElement>("#source-settings-dialog")
 const settingsContent = document.querySelector<HTMLElement>("#source-settings-content")
 if (settingsButton && settingsDialog && settingsContent) {
