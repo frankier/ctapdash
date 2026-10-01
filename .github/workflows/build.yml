@@ -61,6 +61,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      # Tag name is the source of truth for releases; branch builds fall back to
+      # the version in pyproject.toml.
+      - name: Resolve version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          else
+            version="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Build
         run: uv run pyinstaller ctapdash.spec --noconfirm --clean
 
@@ -94,21 +106,21 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p artifacts
-          tar -czf "artifacts/ctapdash-${{ matrix.target }}.tar.gz" -C dist ctapdash
+          tar -czf "artifacts/ctapdash-${{ env.VERSION }}-${{ matrix.target }}.tar.gz" -C dist ctapdash
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force artifacts | Out-Null
-          Compress-Archive -Path dist/ctapdash -DestinationPath "artifacts/ctapdash-${{ matrix.target }}.zip"
+          Compress-Archive -Path dist/ctapdash -DestinationPath "artifacts/ctapdash-${{ env.VERSION }}-${{ matrix.target }}.zip"
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |
           mkdir -p artifacts
           # ditto, not zip: zip mangles the symlinks inside .app bundles.
-          ditto -c -k --keepParent "dist/CTAP Dashboard.app" "artifacts/ctapdash-${{ matrix.target }}.zip"
+          ditto -c -k --keepParent "dist/CTAP Dashboard.app" "artifacts/ctapdash-${{ env.VERSION }}-${{ matrix.target }}.zip"
 
       - uses: actions/upload-artifact@v4
         with:
