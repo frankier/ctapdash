@@ -153,11 +153,15 @@ def test_new_statistics_filter_replaces_the_in_flight_load():
     assert source.count('hx-sync="#channel-statistics-table:replace"') == 2
 
 
-def test_step_rows_strip_dataset_root_and_include_observations():
+def test_step_rows_strip_dataset_root_and_include_counts():
     root = Path("/data/dataset")
     steps = [
         (1, root / "1_import"),
         (3, root / "nested" / "3_filter"),
+    ]
+    counts = [
+        {"epochs": 1, "channels": 4, "samples": 100, "total": 400},
+        {"epochs": 2, "channels": 4, "samples": 50, "total": 400},
     ]
 
     with (
@@ -165,13 +169,13 @@ def test_step_rows_strip_dataset_root_and_include_observations():
             "ctapdash.webapp.RecordingData.read_metadata",
             side_effect=[object(), object()],
         ),
-        patch("ctapdash.webapp._observation_count", side_effect=[100, 24]),
+        patch("ctapdash.webapp._eeg_counts", side_effect=counts),
     ):
         rows = _participant_step_rows(root, steps, "sub-01")
 
     assert rows == [
-        {"number": 1, "directory": "1_import", "observations": 100},
-        {"number": 3, "directory": "nested/3_filter", "observations": 24},
+        {"number": 1, "directory": "1_import", **counts[0]},
+        {"number": 3, "directory": "nested/3_filter", **counts[1]},
     ]
 
 
@@ -183,7 +187,7 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
         query_params={"source": "example", "participant": "sub-01"},
     )
     steps = [(1, Path("/data/1_import"))]
-    step_rows = [{"number": 1, "directory": "1_import", "observations": 100}]
+    step_rows = [{"number": 1, "directory": "1_import", "total": 100}]
     rendered = object()
 
     monkeypatch.setattr(SETTINGS, "sources", {"example": "/data"})
@@ -212,7 +216,7 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
     assert response is rendered
     describe_mne.assert_not_called()
     context = template_response.call_args.kwargs["context"]
-    assert context["step_rows"][0]["observations"] == 100
+    assert context["step_rows"][0]["total"] == 100
     assert "descriptive_heatmap" not in context
 
 

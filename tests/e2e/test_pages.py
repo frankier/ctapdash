@@ -24,7 +24,7 @@ def test_home_dataset_and_participant_selection(page, dashboard_url):
     page.get_by_role("link", name="Participant", exact=True).click()
     expect(page.locator("#participant-select")).to_be_visible()
     page.locator("#participant-select").select_option(PARTICIPANT)
-    expect(page.get_by_role("columnheader", name="Observations")).to_be_visible()
+    expect(page.get_by_role("columnheader", name="Total", exact=True)).to_be_visible()
     expect(page.get_by_role("cell", name="3_fine_clean", exact=True)).to_be_visible()
     expect(page.locator("#channel-statistics-table table")).to_be_visible(timeout=30000)
     page.locator("#statistics-step").select_option("2")
@@ -38,10 +38,61 @@ def test_home_dataset_and_participant_selection(page, dashboard_url):
     ).to_be_visible()
 
 
-def test_setup(page, dashboard_url):
+def test_explicit_config_hides_setup(page, dashboard_url):
     visit(page, dashboard_url, "/setup")
+    expect(page.locator("#source-select")).to_be_visible()
+    expect(page.locator("#source-settings-button")).to_have_count(0)
+    assert (
+        page.request.post(
+            dashboard_url + "/setup/remove", data={"name": "dummy"}
+        ).status
+        == 403
+    )
+
+
+def test_managed_setup_and_dialog_refresh(page, managed_dashboard):
+    url, source, directory = managed_dashboard
+    visit(page, url, "/")
     expect(page.get_by_role("heading", name="Data sources")).to_be_visible()
-    expect(page.get_by_role("table")).to_contain_text("dummy")
+    expect(page.get_by_text("No sources configured yet.")).to_be_visible()
+
+    page.get_by_role("textbox", name="Directory").fill(str(source))
+    page.get_by_role("button", name="Add source").click()
+    expect(page.get_by_role("table")).to_contain_text(str(source))
+    config_files = list(directory.rglob("config.toml"))
+    assert len(config_files) == 1
+    config_path = config_files[0]
+    page.get_by_role("link", name="Open dashboard").click()
+    expect(page.locator("#source-select option")).to_have_count(2)
+    page.locator("#source-select").select_option("TAPPED")
+    expect(page.get_by_role("heading", name="Dataset Overview")).to_be_visible()
+
+    page.get_by_role("link", name="Manage data sources").click()
+    dialog = page.get_by_role("dialog", name="Manage data sources")
+    expect(dialog).to_be_visible()
+    second = directory / "second-source"
+    (second / "1_load").mkdir(parents=True)
+    dialog.get_by_role("textbox", name="Directory").fill(str(second))
+    dialog.get_by_role("button", name="Add source").click()
+    expect(dialog.get_by_role("table")).to_contain_text(str(second))
+    dialog.get_by_role("button", name="Done").click()
+    expect(page.locator("#source-select option")).to_have_count(3)
+    expect(page.get_by_role("heading", name="Dataset Overview")).to_be_visible()
+
+    page.get_by_role("link", name="Manage data sources").click()
+    expect(dialog).to_be_visible()
+    dialog.get_by_role("button", name="Remove").first.click()
+    dialog.get_by_role("button", name="Done").click()
+    expect(page.locator("#source-select option")).to_have_count(2)
+    expect(page).to_have_url(url + "/")
+
+    page.get_by_role("link", name="Manage data sources").click()
+    expect(dialog).to_be_visible()
+    dialog.get_by_role("button", name="Remove").click()
+    expect(dialog.get_by_text("No sources configured yet.")).to_be_visible()
+    dialog.get_by_role("button", name="Done").click()
+    expect(page.get_by_role("heading", name="Data sources")).to_be_visible()
+    assert config_path.read_text() == "[sources]\n"
 
 
 def test_statistics_fragment(page, dashboard_url):
@@ -179,7 +230,7 @@ def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
 @pytest.mark.parametrize("peek,count", [("CTAP_peek_data", 2), ("CTAP_blink2event", 1)])
 def test_quality_control_images(page, dashboard_url, peek, count):
     visit(page, dashboard_url, "/participant/overview" + QUERY)
-    page.get_by_role("link", name="Quality control (peeks)").click()
+    page.get_by_role("link", name="Quality control", exact=True).click()
     page.locator("#peek-select").select_option(peek)
     images = page.locator("#peek-content img")
     expect(images).to_have_count(count)
@@ -194,6 +245,89 @@ def test_logs(page, dashboard_url):
     page.get_by_role("link", name="Logs", exact=True).click()
     page.locator("#log-select").select_option(f"logs/CTAP_load_data/{PARTICIPANT}.log")
     expect(page.locator("#log-content pre")).to_contain_text("Processing completed.")
+    expect(page.get_by_role("tab", name="Table")).to_have_count(0)
+    raw = page.locator("#log-content pre").locator("..")
+    assert raw.evaluate("element => element.scrollWidth > element.clientWidth")
+
+    page.locator("#log-select").select_option(f"logs/log_stats/{PARTICIPANT}_stats.dat")
+    expect(page.get_by_role("tab", name="Table")).to_have_attribute(
+        "aria-selected", "true"
+    )
+    expect(page.locator("#log-table-tab")).to_have_attribute("href", "#log-table")
+    expect(page.locator("#log-original-tab")).to_have_attribute("href", "#log-original")
+    assert page.locator("#log-view-tabs").evaluate(
+        """bar => {
+            const navigation = document.querySelector('#viewer > div:first-child');
+            const selected = navigation.querySelector('div:last-child');
+            const barBounds = bar.getBoundingClientRect();
+            const navBounds = navigation.getBoundingClientRect();
+            return barBounds.x === navBounds.x && barBounds.width === navBounds.width
+                && getComputedStyle(bar).backgroundColor === getComputedStyle(navigation).backgroundColor
+                && getComputedStyle(bar.querySelector('#log-table-tab').parentElement).backgroundColor
+                    === getComputedStyle(selected).backgroundColor;
+        }"""
+    )
+    expect(page.locator("#log-table .tabulator-col-title")).to_have_text(
+        ["Row", "range", "M"]
+    )
+    table_rows = page.locator("#log-table .tabulator-row")
+    first_page_size = table_rows.count()
+    assert 1 < first_page_size < 45
+    expect(page.locator("#log-table")).to_contain_text("A1")
+    expect(page.locator("#log-table")).to_contain_text("114.57")
+    expect(page.locator("#log-table .tabulator-page-counter")).to_contain_text(
+        f"{first_page_size} of 45"
+    )
+    assert page.locator("#log-table").evaluate(
+        """table => Math.abs(table.getBoundingClientRect().bottom - window.innerHeight) <= 1
+            && document.documentElement.scrollHeight <= window.innerHeight + 1"""
+    )
+    page.set_viewport_size({"width": 900, "height": 600})
+    # The fit is recalculated from a resize handler, so the table redraws
+    # asynchronously.
+    page.wait_for_function(
+        "rows => document.querySelectorAll('#log-table .tabulator-row').length < rows",
+        arg=first_page_size,
+    )
+    smaller_page_size = table_rows.count()
+    assert 1 <= smaller_page_size < first_page_size
+    assert page.locator("#log-table").evaluate(
+        """table => Math.abs(table.getBoundingClientRect().bottom - window.innerHeight) <= 1
+            && document.documentElement.scrollHeight <= window.innerHeight + 1"""
+    )
+    page.locator('#log-table .tabulator-page[data-page="next"]').click()
+    expect(page.locator("#log-table")).to_contain_text(f"A{smaller_page_size + 1}")
+    frozen_height = page.locator("#log-table").evaluate("table => table.offsetHeight")
+    frozen_page_size = table_rows.count()
+    page.set_viewport_size({"width": 1100, "height": 800})
+    assert (
+        page.locator("#log-table").evaluate("table => table.offsetHeight")
+        == frozen_height
+    )
+    assert table_rows.count() == frozen_page_size
+    page.locator('#log-table .tabulator-page[data-page="first"]').click()
+    assert table_rows.count() > smaller_page_size
+    assert page.locator("#log-table").evaluate(
+        """table => Math.abs(table.getBoundingClientRect().bottom - window.innerHeight) <= 1
+            && document.documentElement.scrollHeight <= window.innerHeight + 1"""
+    )
+    page.get_by_role("tab", name="Original").click()
+    expect(page.locator("#log-content pre")).to_be_visible()
+    expect(page.locator("#log-content pre")).to_contain_text("A2\t56.19\t-0.008")
+    expect(page.locator("#log-table")).to_be_hidden()
+    page.set_viewport_size({"width": 1024, "height": 700})
+    page.get_by_role("tab", name="Table").click()
+    expect(page.locator("#log-table")).to_be_visible()
+    assert page.locator("#log-table").evaluate(
+        """table => Math.abs(table.getBoundingClientRect().bottom - window.innerHeight) <= 1
+            && document.documentElement.scrollHeight <= window.innerHeight + 1"""
+    )
+
+    page.locator("#log-select").select_option(
+        f"logs/log_stats/{PARTICIPANT}_malformed.dat"
+    )
+    expect(page.get_by_role("tab", name="Table")).to_have_count(0)
+    expect(page.locator("#log-content pre")).to_contain_text("A1\t114.57")
 
 
 def test_cache_progress_across_navigation(page, dashboard_url):

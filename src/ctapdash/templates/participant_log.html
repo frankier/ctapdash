@@ -14,6 +14,7 @@
                     class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                     <option
                         value=""
+                        disabled
                         {% if not current_log_file %}selected{% endif %}
                     >--- Please choose an option ---</option>
                     {% for log_file in logs %}
@@ -27,7 +28,32 @@
             </form>
         </div>
     </div>
-    <div class="flex-1 p-4" id="log-content">
-        <pre class="whitespace-pre-wrap">{{ content }}</pre>
+    <div class="min-w-0 flex-1" id="log-content"
+         {% if table_data %}x-data="{tab: 'table'}"{% endif %}>
+        {% if table_data %}
+            <div id="log-view-tabs" class="bg-slate-400 flex flex-wrap w-full"
+                 role="tablist" aria-label="Log views">
+                <div class="text-nowrap px-4 py-2" :class="tab === 'table' ? 'bg-slate-300' : ''">
+                    <a id="log-table-tab" href="#log-table" role="tab" aria-controls="log-table"
+                       :aria-selected="tab === 'table'" @click.prevent="tab = 'table'">Table</a>
+                </div>
+                <div class="text-nowrap px-4 py-2" :class="tab === 'original' ? 'bg-slate-300' : ''">
+                    <a id="log-original-tab" href="#log-original" role="tab" aria-controls="log-original"
+                       :aria-selected="tab === 'original'" @click.prevent="tab = 'original'">Original</a>
+                </div>
+            </div>
+            <script type="application/json" id="log-table-data">{{ table_data|tojson }}</script>
+        {% endif %}
+        <div class="px-4 pt-4 min-w-0">
+            {% if table_data %}
+                <div id="log-table" role="tabpanel" aria-labelledby="log-table-tab"
+                     x-show="tab === 'table'" class="max-w-full overflow-x-auto"></div>
+            {% endif %}
+            <div {% if table_data %}id="log-original" role="tabpanel" aria-labelledby="log-original-tab"
+                 x-show="tab === 'original'" x-cloak{% endif %}
+                 class="max-w-full overflow-x-auto [&[x-cloak]]:hidden">
+                <pre class="whitespace-pre">{{ content }}</pre>
+            </div>
+        </div>
     </div>
 {% endblock %}

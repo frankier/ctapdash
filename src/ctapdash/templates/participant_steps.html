@@ -16,6 +16,7 @@
                 class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                 <option
                     value=""
+                    disabled
                     {% if not current_step %}selected{% endif %}
                 >--- Please choose an option ---</option>
                 {% for step_num, subdir in steps %}

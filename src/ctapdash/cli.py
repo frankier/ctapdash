@@ -16,7 +16,7 @@ def add_arguments(parser):
         type=Path,
         metavar="PATH",
         help=f"TOML configuration file. Overrides ${config.ENV_VAR}. "
-        "Without either, the dashboard starts on its setup page.",
+        "Without either, the dashboard uses its managed configuration.",
     )
 
 
@@ -31,7 +31,7 @@ def prepare(args):
             raise ValueError(f"no such configuration file: {args.config}")
         config.load_from_file(args.config)
         return {config.ENV_VAR: str(args.config)}
-    config.load_from_env()
+    config.load_startup()
     return {}
 
 

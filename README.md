@@ -29,8 +29,14 @@ would need a system WebKitGTK installation.
 
 ## Configuration
 
-By default, simply opening the program shows a setup page where you can set out your CTAP output directories.
-Sources added that way last only for that run — use _Save configuration_ to write them to a file you can pass with `--config` next time.
+Without a configuration path, the dashboard saves CTAP output directories to
+`ctapdash/config.toml` in your platform's user configuration directory. The
+setup page appears when no directories have been added. After that, use the
+gear beside the dataset selector to add or remove directories. Changes save
+automatically and the dashboard refreshes when you close the dialog.
+
+Passing `--config` or setting `CTAPDASH_SETTINGS` loads that TOML file in
+read-only mode. Edit the file outside the dashboard to change its sources.
 
 ---
 
@@ -63,7 +69,7 @@ or set `CTAPDASH_SETTINGS=/path/to/conf.toml` in the environment.
 | `--smoke-test` | Start up, self-check, and exit                              |
 
 Freshness is checked at registration using `.set` mtimes. External `.fdt` changes
-and removed recordings are not detected. Re-add an existing source in Setup to
+and removed recordings are not detected. Re-add an existing source in the dialog to
 check it again after editing `.set` files; there is no filesystem watcher.
 
 `ctapdash-warm --config conf.toml` warms only the metadata pickle caches.
@@ -86,7 +92,7 @@ their bundles first, so `src/venn_ts` is picked up without a manual
 the application in a subprocess, which cannot own the main thread as the native
 window needs. `--smoke-test` turns reload off.
 
-`uv run uvicorn ctapdash.webapp:create_app --factory` also works if you want a
+`uv run uvicorn ctapdash.asgi:create_app_from_env --factory` also works if you want a
 plain ASGI server. Build browser assets first when starting through ASGI directly.
 Node.js and npm are needed during development and packaging. `ctapdash.build`
 bundles `src/js` with esbuild, compiles `src/css` with the Tailwind CLI, and

@@ -229,45 +229,36 @@ async def test_empty_dataset_and_worker_death(tmp_path):
 
 
 def test_setup_registers_manual_and_picked_sources(tmp_path, monkeypatch):
-    from ctapdash import setup_ui
+    from ctapdash import config, setup_ui
     from ctapdash.config import SETTINGS
     from unittest.mock import Mock
+
+    (tmp_path / "1_load").mkdir()
 
     warmer = Mock()
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=warmer))
     )
     monkeypatch.setattr(SETTINGS, "sources", {})
+    monkeypatch.setattr(SETTINGS, "managed", True)
+    monkeypatch.setattr(
+        config, "managed_config_path", lambda: tmp_path / "config" / "config.toml"
+    )
     monkeypatch.setattr(
         setup_ui, "_read_form", AsyncMock(return_value={"path": str(tmp_path)})
     )
     monkeypatch.setattr(setup_ui, "_render", lambda *args, **kwargs: kwargs)
     asyncio.run(setup_ui.setup_add(request))
     warmer.add_dataset.assert_called_once_with(str(tmp_path))
+    assert config.managed_config_path().is_file()
     warmer.reset_mock()
     session = SimpleNamespace(native=True, open_folder=lambda **kwargs: (tmp_path,))
     request.app.state.desktop = session
+    monkeypatch.setattr(
+        setup_ui, "run_in_threadpool", AsyncMock(return_value=(tmp_path,))
+    )
     asyncio.run(setup_ui.setup_pick(request))
     warmer.add_dataset.assert_called_once_with(str(tmp_path))
-
-
-def test_setup_save_uses_native_save_dialog(tmp_path, monkeypatch):
-    from ctapdash import setup_ui
-
-    saved = {}
-    session = SimpleNamespace(
-        native=True, save_file=lambda **kwargs: tmp_path / "c.toml"
-    )
-    request = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(desktop=session))
-    )
-    monkeypatch.setattr(setup_ui, "_read_form", AsyncMock(return_value={"path": ""}))
-    monkeypatch.setattr(setup_ui, "_render", lambda *args, **kwargs: kwargs)
-    monkeypatch.setattr(
-        setup_ui.config, "save_to_file", lambda path: saved.setdefault("path", path)
-    )
-    asyncio.run(setup_ui.setup_save(request))
-    assert saved["path"] == tmp_path / "c.toml"
 
 
 def test_newest_relevant_set_and_single_mtime_pass(tmp_path, monkeypatch):

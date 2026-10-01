@@ -1,7 +1,9 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+import csv
 from importlib.resources import files
 import importlib.util
+from io import StringIO
 from pathlib import Path
 from ctapdash.io.cache import CacheWarmer
 from ctapdash.io.paths import ObservationData, DatasetPaths
@@ -53,6 +55,7 @@ if importlib.util.find_spec("panel") is not None:
 def sources_context(request):
     ctx = {
         "sources": SETTINGS.sources,
+        "managed_config": SETTINGS.managed,
     }
     source = request.query_params.get("source", "")
     ctx["source"] = source
@@ -67,6 +70,8 @@ def sources_context(request):
         ctx["source_participant_qs"] = f"?source={source}&participant={participant}"
     return ctx
 
+
+safe_templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 templates = Jinja2Templates(
     directory=TEMPLATES_DIR, context_processors=[sources_context]
@@ -101,11 +106,35 @@ class LogParams(BaseModel):
     log: str | None = None
 
 
-def _observation_count(instance):
+def _eeg_counts(instance):
     if isinstance(instance, BaseEpochs):
-        return len(instance) * len(instance.times)
+        sfreq = instance.info["sfreq"]
+        n_times = len(instance.times)
+        samples = len(instance) * n_times
+        onsets = instance.events[:, 0]
+        return {
+            "epoch_duration": instance.times[-1] - instance.times[0],
+            # Time the epochs occupy in total: exceeds the spanned time when
+            # epochs overlap.
+            "samples_duration": samples / sfreq,
+            # First epoch onset to last epoch offset: exceeds the occupied time
+            # when the epochs are not contiguous.
+            "spanned_duration": (onsets.max() - onsets.min() + n_times) / sfreq,
+            "epochs": len(instance),
+            "channels": len(instance.ch_names),
+            "samples": samples,
+            "total": samples * len(instance.ch_names),
+        }
     if isinstance(instance, BaseRaw):
-        return instance.n_times
+        return {
+            "samples_duration": instance.times[-1] - instance.times[0],
+            "spanned_duration": None,
+            "epoch_duration": None,
+            "epochs": 1,
+            "channels": len(instance.ch_names),
+            "samples": len(instance.times),
+            "total": len(instance.times) * len(instance.ch_names),
+        }
     raise TypeError(f"Expected MNE Raw or Epochs, got {type(instance).__name__}")
 
 
@@ -120,7 +149,7 @@ def _participant_step_rows(root_path, steps, participant):
             {
                 "number": step_num,
                 "directory": str(step_path.relative_to(root_path)),
-                "observations": _observation_count(instance),
+                **_eeg_counts(instance),
             }
         )
     return rows
@@ -172,7 +201,7 @@ async def dataset_overview(request):
         participant_steps[participant] = step_rows
     context["participant_steps"] = participant_steps
     context["participant_totals"] = {
-        participant: sum(row["observations"] for row in rows)
+        participant: sum(row["total"] for row in rows)
         for participant, rows in participant_steps.items()
     }
     return templates.TemplateResponse(
@@ -466,6 +495,19 @@ async def participant_statistics_fragment(request, params):
     )
 
 
+def parse_dat_table(content: str):
+    """Return a tab-separated table, or None if its structure is unclear."""
+    try:
+        rows = list(csv.reader(StringIO(content), delimiter="\t", strict=True))
+    except csv.Error:
+        return None
+    if not rows or len(rows[0]) < 2 or any(not heading.strip() for heading in rows[0]):
+        return None
+    if any(len(row) != len(rows[0]) for row in rows[1:]):
+        return None
+    return {"columns": rows[0], "rows": rows[1:]}
+
+
 @query_params(LogParams)
 async def participant_log(request, params):
     dataset = ObservationData.from_request(request)
@@ -483,9 +525,71 @@ async def participant_log(request, params):
             {
                 "current_log_file": log,
                 "content": content,
+                "table_data": parse_dat_table(content)
+                if log_path.suffix.lower() == ".dat"
+                else None,
             }
         )
     return templates.TemplateResponse(request, "participant_log.html", context=ctx)
+
+
+async def bad_request(request: Request, exc: HTTPException):
+    return safe_templates.TemplateResponse(request, "400.html", status_code=400)
+
+
+async def not_found(request: Request, exc: HTTPException):
+    return safe_templates.TemplateResponse(request, "404.html", status_code=404)
+
+
+async def server_error(request: Request, exc: Exception):
+    import traceback
+    from textwrap import dedent
+    from urllib.parse import urlencode
+
+    show_stacktrace = SETTINGS.managed
+    if show_stacktrace:
+        stacktrace = "".join(
+            traceback.format_exception(
+                type(exc),
+                exc,
+                exc.__traceback__,
+            )
+        )
+        report_url = "https://github.com/frankier/ctapdash/issues/new?"
+        report_url += urlencode(
+            (
+                ("title", "Runtime error with stacktrace: " + type(exc).__name__),
+                ("assignee", "frankier"),
+                (
+                    "body",
+                    dedent("""\
+                ## Steps to reproduce
+
+                What were you doing when the error occurred?
+
+                ## Stacktrace
+                ```
+                PASTE THE STACKTRACE HERE
+                ```
+                """),
+                ),
+            )
+        )
+    else:
+        stacktrace = ""
+        report_url = ""
+    return safe_templates.TemplateResponse(
+        request,
+        "500.html",
+        context={
+            "stacktrace": stacktrace,
+            "report_url": report_url,
+        },
+        status_code=500,
+    )
+
+
+exception_handlers = {400: bad_request, 404: not_found, 500: server_error}
 
 
 def create_app(debug=False, session=None):
@@ -554,6 +658,7 @@ def create_app(debug=False, session=None):
             Middleware(HtmxMiddleware),
             Middleware(GlobalRequestMiddleware),
         ],
+        exception_handlers=exception_handlers,
         lifespan=lifespan,
     )
     # Installs MplbedMiddleware (which does its own /webagg routing), registers

@@ -14,5 +14,5 @@ def create_app_from_env():
     here rather than passed in, so the window the shared runner opens reaches
     the setup UI in the normal process too.
     """
-    config.load_from_env()
+    config.load_startup()
     return create_app(debug=config.debug_from_env(), session=SESSION)

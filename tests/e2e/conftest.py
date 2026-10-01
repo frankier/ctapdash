@@ -64,6 +64,55 @@ def dashboard_url(tmp_path_factory):
                 process.wait()
 
 
+@pytest.fixture(scope="session")
+def managed_dashboard(tmp_path_factory):
+    """A fresh browser-mode launch with an isolated platform config directory."""
+    directory = tmp_path_factory.mktemp("managed-dashboard")
+    write_dataset(directory)
+    source = directory / "TAPPED"
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    url = f"http://127.0.0.1:{port}"
+    env = dict(os.environ)
+    env.pop("CTAPDASH_SETTINGS", None)
+    env.update(
+        XDG_CONFIG_HOME=str(directory / "config-home"),
+        APPDATA=str(directory / "config-home"),
+        HOME=str(directory),
+        MPLCONFIGDIR=str(directory / "matplotlib"),
+        _MNE_FAKE_HOME_DIR=str(directory),
+        PYTHONPATH=str(Path(__file__).resolve().parents[2] / "src"),
+    )
+    with (directory / "server.log").open("w+") as log:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "ctapdash", "--mode", "server", "--port", str(port)],
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            deadline = time.monotonic() + 90
+            while time.monotonic() < deadline and process.poll() is None:
+                try:
+                    with urlopen(url + "/setup", timeout=1) as response:
+                        if response.status == 200:
+                            break
+                except URLError, TimeoutError:
+                    time.sleep(0.1)
+            else:
+                log.seek(0)
+                pytest.fail("Managed dashboard failed to start:\n" + log.read())
+            yield url, source, directory
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+
 @pytest.fixture(scope="module")
 def e2e_browser(browser_name, pytestconfig):
     # The plugin's session-scoped sync Playwright loop stays active during the
