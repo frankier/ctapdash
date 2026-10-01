@@ -549,7 +549,6 @@ async def server_error(request: Request, exc: Exception):
                 ```
                 """),
                 ),
-                ("labels[]", ("bug", "errorpage")),
             )
         )
     else:
