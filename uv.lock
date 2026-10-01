@@ -285,7 +285,7 @@ wheels = [
 
 [[package]]
 name = "ctapdash"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "bokeh" },
@@ -316,7 +316,7 @@ test = [
 requires-dist = [
     { name = "bokeh", specifier = "==3.10" },
     { name = "matplotlib", specifier = ">=3.10.9" },
-    { name = "mne", extras = ["hdf5"], git = "https://github.com/mne-tools/mne-python.git" },
+    { name = "mne", extras = ["hdf5"], specifier = ">=1.13.2" },
     { name = "mplbed", specifier = ">=0.3.0" },
     { name = "natsort", specifier = ">=8.4.0" },
     { name = "numba", specifier = ">=0.67.0" },
@@ -726,8 +726,8 @@ wheels = [
 
 [[package]]
 name = "mne"
-version = "1.14.0.dev51+g590dd73e7"
-source = { git = "https://github.com/mne-tools/mne-python.git#590dd73e7ff6aad63d3f458d761873f0c4148303" }
+version = "1.13.2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "decorator" },
     { name = "jinja2" },
@@ -738,6 +738,10 @@ dependencies = [
     { name = "pooch" },
     { name = "scipy" },
     { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cf/19/004114922a8e6afcc713cbc6122c015b2487f17fc7ca021db700501868ea/mne-1.13.2.tar.gz", hash = "sha256:729829e35010a7273cce8608d61d930c973fbead6edc1a70316c01e3a5551521", size = 7362367, upload-time = "2026-09-11T16:35:08.004Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/44/e4/face21e5da320fdc3a3e016ea93a28d1b786d01b36d75872627161a837aa/mne-1.13.2-py3-none-any.whl", hash = "sha256:36bbdd9fdc68431309a75e9dc6331b9de085cb6836688ac50b7b89f141a83cc3", size = 7668762, upload-time = "2026-09-11T16:35:05.268Z" },
 ]
 
 [package.optional-dependencies]
