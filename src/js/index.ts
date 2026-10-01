@@ -8,10 +8,30 @@ import "htmx-ext-sse"
 import "htmx-ext-ws"
 import {TabulatorFull} from "tabulator-tables"
 
+// Registers <uui-button-copy-text>, which 500.html uses to copy the
+// stacktrace. Import the single element, not the package root, which would pull
+// every UUI component into the bundle. It also registers <uui-icon>.
+import "@umbraco-ui/uui/components/button-copy-text/button-copy-text.js"
+
+// <uui-icon name="copy"> resolves its name against an ancestor icon registry.
+// UUI's essential registry ships all of its icons, so the registry below holds
+// just the copy icon the 500 page asks for.
+import {UUIIconRegistryElement} from "@umbraco-ui/uui/components/icon-registry/icon-registry.js"
+import {iconCopy} from "@umbraco-ui/uui/components/icon-registry-essential/svgs/iconCopy.js"
+
 // Registers <channel-selector> and <heatmap-channels>, which the statistics
 // and Venndiff pages use.
 import "./channel-selector.js"
 import "./heatmap-channels.js"
+
+class IconRegistry extends UUIIconRegistryElement {
+    constructor() {
+        super()
+        this.icons = {copy: iconCopy.strings[0]}
+    }
+}
+if (!customElements.get("ctapdash-icon-registry"))
+    customElements.define("ctapdash-icon-registry", IconRegistry)
 
 // The vendored builds exposed themselves as globals. Nothing in this repo
 // relies on that, but htmx and Alpine are documented extension points and

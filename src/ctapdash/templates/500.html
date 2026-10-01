@@ -3,6 +3,7 @@
     <head>
         <meta charset="UTF-8">
         <link href="{{ url_for('static', path='generated/index.css') }}" rel="stylesheet">
+        <script type="module" src="{{ url_for('static', path='generated/index.js') }}"></script>
         <title>Internal server error</title>
     </head>
     <body class="bg-slate-100 min-h-screen flex items-center justify-center">
@@ -25,10 +26,12 @@
                     Please include this stacktrace:
                 </p>
 
-                <a class="text-blue-600 visited:text-purple-600 hover:underline py-2 block text-center" href="javascript:copyToClipboard(document.getElementById('stacktrace').innerText)">
-                    <svg class="h-lh inline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M448 96L439.4 96C428.4 76.9 407.7 64 384 64L256 64C232.3 64 211.6 76.9 200.6 96L192 96C156.7 96 128 124.7 128 160L128 512C128 547.3 156.7 576 192 576L448 576C483.3 576 512 547.3 512 512L512 160C512 124.7 483.3 96 448 96zM264 176C250.7 176 240 165.3 240 152C240 138.7 250.7 128 264 128L376 128C389.3 128 400 138.7 400 152C400 165.3 389.3 176 376 176L264 176z"/></svg>
-                    Copy to clipboard
-                </a>
+                <ctapdash-icon-registry class="block py-2 text-center">
+                    <uui-button-copy-text copy-from="stacktrace">
+                        <uui-icon name="copy"></uui-icon>
+                        Copy to Clipboard
+                    </uui-button-copy-text>
+                </ctapdash-icon-registry>
 
                 <pre id="stacktrace" class="mx-auto my=2 max-w-lg max-h-[30vh] overflow-scroll">{{ stacktrace }}</pre>
             {% endif %}
