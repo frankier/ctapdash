@@ -112,7 +112,7 @@ def _eeg_counts(instance):
         n_times = len(instance.times)
         samples = len(instance) * n_times
         onsets = instance.events[:, 0]
-        counts = {
+        return {
             "epoch_duration": instance.times[-1] - instance.times[0],
             # Time the epochs occupy in total: exceeds the spanned time when
             # epochs overlap.
@@ -126,7 +126,7 @@ def _eeg_counts(instance):
             "total": samples * len(instance.ch_names),
         }
     if isinstance(instance, BaseRaw):
-        counts = {
+        return {
             "samples_duration": instance.times[-1] - instance.times[0],
             "spanned_duration": None,
             "epoch_duration": None,
@@ -135,8 +135,6 @@ def _eeg_counts(instance):
             "samples": len(instance.times),
             "total": len(instance.times) * len(instance.ch_names),
         }
-    print(counts)
-    return counts
     raise TypeError(f"Expected MNE Raw or Epochs, got {type(instance).__name__}")
 
 

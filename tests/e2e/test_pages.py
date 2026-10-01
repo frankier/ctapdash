@@ -24,7 +24,7 @@ def test_home_dataset_and_participant_selection(page, dashboard_url):
     page.get_by_role("link", name="Participant", exact=True).click()
     expect(page.locator("#participant-select")).to_be_visible()
     page.locator("#participant-select").select_option(PARTICIPANT)
-    expect(page.get_by_role("columnheader", name="Observations")).to_be_visible()
+    expect(page.get_by_role("columnheader", name="Total", exact=True)).to_be_visible()
     expect(page.get_by_role("cell", name="3_fine_clean", exact=True)).to_be_visible()
     expect(page.locator("#channel-statistics-table table")).to_be_visible(timeout=30000)
     page.locator("#statistics-step").select_option("2")
@@ -283,6 +283,12 @@ def test_logs(page, dashboard_url):
             && document.documentElement.scrollHeight <= window.innerHeight + 1"""
     )
     page.set_viewport_size({"width": 900, "height": 600})
+    # The fit is recalculated from a resize handler, so the table redraws
+    # asynchronously.
+    page.wait_for_function(
+        "rows => document.querySelectorAll('#log-table .tabulator-row').length < rows",
+        arg=first_page_size,
+    )
     smaller_page_size = table_rows.count()
     assert 1 <= smaller_page_size < first_page_size
     assert page.locator("#log-table").evaluate(
