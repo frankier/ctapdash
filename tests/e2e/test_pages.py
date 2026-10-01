@@ -67,11 +67,11 @@ def test_managed_setup_and_dialog_refresh(page, managed_dashboard):
     page.locator("#source-select").select_option("TAPPED")
     expect(page.get_by_role("heading", name="Dataset Overview")).to_be_visible()
 
-    page.get_by_role("button", name="Manage data sources").click()
+    page.get_by_role("link", name="Manage data sources").click()
     dialog = page.get_by_role("dialog", name="Manage data sources")
     expect(dialog).to_be_visible()
     second = directory / "second-source"
-    second.mkdir()
+    (second / "1_load").mkdir(parents=True)
     dialog.get_by_role("textbox", name="Directory").fill(str(second))
     dialog.get_by_role("button", name="Add source").click()
     expect(dialog.get_by_role("table")).to_contain_text(str(second))
@@ -79,14 +79,14 @@ def test_managed_setup_and_dialog_refresh(page, managed_dashboard):
     expect(page.locator("#source-select option")).to_have_count(3)
     expect(page.get_by_role("heading", name="Dataset Overview")).to_be_visible()
 
-    page.get_by_role("button", name="Manage data sources").click()
+    page.get_by_role("link", name="Manage data sources").click()
     expect(dialog).to_be_visible()
     dialog.get_by_role("button", name="Remove").first.click()
     dialog.get_by_role("button", name="Done").click()
     expect(page.locator("#source-select option")).to_have_count(2)
     expect(page).to_have_url(url + "/")
 
-    page.get_by_role("button", name="Manage data sources").click()
+    page.get_by_role("link", name="Manage data sources").click()
     expect(dialog).to_be_visible()
     dialog.get_by_role("button", name="Remove").click()
     expect(dialog.get_by_text("No sources configured yet.")).to_be_visible()
@@ -230,7 +230,7 @@ def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
 @pytest.mark.parametrize("peek,count", [("CTAP_peek_data", 2), ("CTAP_blink2event", 1)])
 def test_quality_control_images(page, dashboard_url, peek, count):
     visit(page, dashboard_url, "/participant/overview" + QUERY)
-    page.get_by_role("link", name="Quality control (peeks)").click()
+    page.get_by_role("link", name="Quality control", exact=True).click()
     page.locator("#peek-select").select_option(peek)
     images = page.locator("#peek-content img")
     expect(images).to_have_count(count)
