@@ -106,11 +106,37 @@ class LogParams(BaseModel):
     log: str | None = None
 
 
-def _observation_count(instance):
+def _eeg_counts(instance):
     if isinstance(instance, BaseEpochs):
-        return len(instance) * len(instance.times)
+        sfreq = instance.info["sfreq"]
+        n_times = len(instance.times)
+        samples = len(instance) * n_times
+        onsets = instance.events[:, 0]
+        counts = {
+            "epoch_duration": instance.times[-1] - instance.times[0],
+            # Time the epochs occupy in total: exceeds the spanned time when
+            # epochs overlap.
+            "samples_duration": samples / sfreq,
+            # First epoch onset to last epoch offset: exceeds the occupied time
+            # when the epochs are not contiguous.
+            "spanned_duration": (onsets.max() - onsets.min() + n_times) / sfreq,
+            "epochs": len(instance),
+            "channels": len(instance.ch_names),
+            "samples": samples,
+            "total": samples * len(instance.ch_names),
+        }
     if isinstance(instance, BaseRaw):
-        return instance.n_times
+        counts = {
+            "samples_duration": instance.times[-1] - instance.times[0],
+            "spanned_duration": None,
+            "epoch_duration": None,
+            "epochs": 1,
+            "channels": len(instance.ch_names),
+            "samples": len(instance.times),
+            "total": len(instance.times) * len(instance.ch_names),
+        }
+    print(counts)
+    return counts
     raise TypeError(f"Expected MNE Raw or Epochs, got {type(instance).__name__}")
 
 
@@ -125,7 +151,7 @@ def _participant_step_rows(root_path, steps, participant):
             {
                 "number": step_num,
                 "directory": str(step_path.relative_to(root_path)),
-                "observations": _observation_count(instance),
+                **_eeg_counts(instance),
             }
         )
     return rows
@@ -177,7 +203,7 @@ async def dataset_overview(request):
         participant_steps[participant] = step_rows
     context["participant_steps"] = participant_steps
     context["participant_totals"] = {
-        participant: sum(row["observations"] for row in rows)
+        participant: sum(row["total"] for row in rows)
         for participant, rows in participant_steps.items()
     }
     return templates.TemplateResponse(

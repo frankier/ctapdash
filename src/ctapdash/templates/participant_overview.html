@@ -9,9 +9,18 @@
             <table class="border-collapse text-sm">
                 <thead class="bg-slate-200">
                     <tr>
-                        <th scope="col" class="border border-slate-300 px-3 py-2 text-left">Step</th>
-                        <th scope="col" class="border border-slate-300 px-3 py-2 text-left">Directory</th>
-                        <th scope="col" class="border border-slate-300 px-3 py-2 text-right">Observations</th>
+                        <th scope="col" rowspan="2" class="border border-slate-300 px-3 py-2 text-left">Step</th>
+                        <th scope="col" rowspan="2" class="border border-slate-300 px-3 py-2 text-left">Directory</th>
+                        <th scope="colgroup" colspan="3" class="border border-slate-300 px-3 py-2 text-center">Duration (s)</th>
+                        <th scope="col" rowspan="2" class="border border-slate-300 px-3 py-2 text-right">Epochs</th>
+                        <th scope="col" rowspan="2" class="border border-slate-300 px-3 py-2 text-right">Samples</th>
+                        <th scope="col" rowspan="2" class="border border-slate-300 px-3 py-2 text-right">Channels</th>
+                        <th scope="col" rowspan="2" class="border border-slate-300 px-3 py-2 text-right">Total</th>
+                    </tr>
+                    <tr>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-left">Epoch</th>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-left">Samples</th>
+                        <th scope="col" class="border border-slate-300 px-3 py-2 text-left">Spanned</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -25,8 +34,32 @@
                                 </a>
                             </th>
                             <td class="border border-slate-300 px-3 py-2">{{ step.directory }}</td>
+                            {% if step.spanned_duration is not none %}
+                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                    {{ step.epoch_duration|round(2) }}
+                                </td>
+                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                    {{ step.samples_duration|round(2) }}
+                                </td>
+                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                    {{ step.spanned_duration|round(2) }}
+                                </td>
+                            {% else %}
+                                <td colspan="3" class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                    {{ step.samples_duration|round(2) }}
+                                </td>
+                            {% endif %}
                             <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                {{ "{:,}".format(step.observations) }}
+                                {{ step.epochs }}
+                            </td>
+                            <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                {{ step.samples }}
+                            </td>
+                            <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                {{ step.channels }}
+                            </td>
+                            <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                {{ step.total }}
                             </td>
                         </tr>
                     {% endfor %}
