@@ -1,5 +1,6 @@
 import asyncio
 import os
+import pickle
 from multiprocessing import Pipe
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,7 @@ from ctapdash.io.cache import (
 )
 from ctapdash.io.paths import DatasetPaths, ObservationData
 from ctapdash.io.recording import RecordingData
+from ctapdash.io.stats_cache import DATASET_STATS
 from tests.dummy_data import write_eeglab
 
 
@@ -76,6 +78,10 @@ def test_registration_freshness_snapshot(tmp_path):
 
             job.output.mkdir()
             (job.output / "sample-grid-version").write_text(GRID_VERSION)
+        elif job.key[0] == "stats":
+            job.output.mkdir()
+            with (job.output / "sources.pkl").open("wb") as stream:
+                pickle.dump(job.sources, stream)
         else:
             job.output.touch()
         os.utime(job.output, ns=(timestamp, timestamp))
@@ -87,7 +93,8 @@ def test_registration_freshness_snapshot(tmp_path):
     stats = scan_dataset(tmp_path)[job_key("stats", tmp_path)]
     assert stats.recordings == (paths.relative,)
     os.utime(paths.dataset.stats, ns=(timestamp + 2_000_000, timestamp + 2_000_000))
-    assert scan_dataset(tmp_path)[job_key("stats", tmp_path)].state == "ready"
+    # A newer statistics timestamp does not replace rebuilding its stale inputs.
+    assert scan_dataset(tmp_path)[job_key("stats", tmp_path)].state == "pending"
 
 
 def test_queue_dedup_priorities_and_failure(tmp_path, monkeypatch):
@@ -117,7 +124,10 @@ def test_queue_dedup_priorities_and_failure(tmp_path, monkeypatch):
         queue.run_next(messages.append)
     assert queue.jobs[target].state == "failed"
     assert target not in built
-    assert queue.jobs[job_key("stats", tmp_path)].state == "failed"
+    assert queue.jobs[job_key("stats", tmp_path)].state == "ready"
+    assert queue.jobs[job_key("stats", tmp_path)].recordings == (
+        first.relative_to(tmp_path),
+    )
     assert queue.jobs[job_key("pyramid", (tmp_path, first))].state == "ready"
     assert sum(message[2] in ("ready", "failed") for message in messages) == 9
 
@@ -268,7 +278,7 @@ def test_newest_relevant_set_and_single_mtime_pass(tmp_path, monkeypatch):
         os.utime(path, ns=(timestamp, timestamp))
     stats = DatasetPaths(tmp_path).stats
     stats.parent.mkdir()
-    stats.touch()
+    stats.mkdir()
     os.utime(stats, ns=(150, 150))
     counts = {}
     original = Path.stat
@@ -285,6 +295,13 @@ def test_newest_relevant_set_and_single_mtime_pass(tmp_path, monkeypatch):
     os.utime(stats, ns=(200, 200))
     # Changes to external samples alone are deliberately outside the policy.
     os.utime(second.with_suffix(".fdt"), ns=(1000, 1000))
+    for key in snapshot[job_key("stats", tmp_path)].dependencies:
+        output = snapshot[key].output
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.touch()
+        os.utime(output, ns=(200, 200))
+    with (stats / "sources.pkl").open("wb") as stream:
+        pickle.dump(snapshot[job_key("stats", tmp_path)].sources, stream)
     assert scan_dataset(tmp_path)[job_key("stats", tmp_path)].state == "ready"
 
 
@@ -349,7 +366,8 @@ def test_stats_requires_metadata_even_with_ready_transpose(tmp_path, monkeypatch
     monkeypatch.setattr("ctapdash.io.cache.build_job", fail)
     while queue.pending:
         queue.run_next(lambda message: None)
-    assert stats not in built
+    assert stats in built
+    assert queue.jobs[stats].recordings == ()
     assert queue.jobs[stats].state == "failed"
 
 
@@ -427,3 +445,68 @@ async def test_status_broadcast_initial_update_and_unsubscribe(tmp_path):
         REGISTERED.pop(str(tmp_path), None)
         parent.close()
         worker.close()
+
+
+@pytest.mark.anyio
+async def test_bad_recordings_are_isolated_and_retried(tmp_path):
+    from ctapdash.io.cache import CacheJobError
+
+    good = write_eeglab(tmp_path / "1_load", stem="good", n_times=512)
+    bad = write_eeglab(tmp_path / "1_load", stem="bad", n_times=512)
+    # Plausible header, broken contents: exercise the parser error boundary too.
+    bad.write_bytes(bad.read_bytes()[:128])
+    invalid = tmp_path / "1_load" / "invalid.set"
+    invalid.write_bytes(b"not MATLAB")
+    missing = write_eeglab(tmp_path / "1_load", stem="missing", n_times=512)
+    missing.with_suffix(".fdt").unlink()
+    async with CacheWarmer() as warmer:
+        warmer.add_dataset(tmp_path)
+        with anyio.fail_after(30):
+            await warmer.hurry("stats", tmp_path)
+        for path in (bad, invalid, missing):
+            with pytest.raises(CacheJobError, match=path.name):
+                await warmer.hurry("metadata", (tmp_path, path))
+            assert warmer.problem((tmp_path, path)) is not None
+            assert ObservationData(tmp_path, path.stem).get_steps(usable=True) == []
+        stats = await DATASET_STATS.get(tmp_path)
+        assert stats.participant.values.tolist() == ["good"]
+        assert warmer.ready("transpose", (tmp_path, good))
+        with anyio.fail_after(30):
+            while any(
+                job.state in ("pending", "running") for job in warmer.jobs.values()
+            ):
+                await anyio.sleep(0.05)
+        # Repair a file, remove another, and rebuild from the new input set.
+        write_eeglab(tmp_path / "1_load", stem="bad", n_times=512)
+        invalid.unlink()
+        missing.unlink()
+        warmer.add_dataset(tmp_path)
+        with anyio.fail_after(30):
+            await warmer.hurry("stats", tmp_path)
+        assert warmer.problem((tmp_path, bad)) is None
+        stats = await DATASET_STATS.get(tmp_path)
+        assert set(stats.participant.values) == {"good", "bad"}
+        with anyio.fail_after(30):
+            while any(
+                job.state in ("pending", "running") for job in warmer.jobs.values()
+            ):
+                await anyio.sleep(0.05)
+        # Removing a healthy source also invalidates otherwise fresh statistics.
+        good.unlink()
+        warmer.add_dataset(tmp_path)
+        with anyio.fail_after(30):
+            await warmer.hurry("stats", tmp_path)
+        stats = await DATASET_STATS.get(tmp_path)
+        assert stats.participant.values.tolist() == ["bad"]
+
+
+@pytest.mark.anyio
+async def test_all_bad_recordings_produce_empty_statistics(tmp_path):
+    (tmp_path / "1_load").mkdir()
+    (tmp_path / "1_load" / "bad.set").write_bytes(b"not MATLAB")
+    async with CacheWarmer() as warmer:
+        warmer.add_dataset(tmp_path)
+        with anyio.fail_after(30):
+            await warmer.hurry("stats", tmp_path)
+        stats = await DATASET_STATS.get(tmp_path)
+        assert stats.sizes["recording"] == 0
