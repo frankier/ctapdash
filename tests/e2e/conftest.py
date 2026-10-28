@@ -22,8 +22,11 @@ def dashboard_url(tmp_path_factory, request):
         root = directory / "TAPPED"
         for step in ("1_load", "2_rough_clean"):
             write_eeglab(root / step, stem="mixed", n_times=512)
-        (root / "1_load" / "mixed.set").write_bytes(b"not MATLAB")
-        (root / "1_load" / "broken.set").write_bytes(b"not MATLAB")
+        mixed = root / "1_load" / "mixed.set"
+        mixed.write_bytes(mixed.read_bytes()[:128])
+        broken = write_eeglab(root / "1_load", stem="broken")
+        broken.write_bytes(broken.read_bytes()[:128])
+        (root / "1_load" / "invalid.set").write_bytes(b"not MATLAB")
         (root / "1_load" / "._mixed.set").write_bytes(b"AppleDouble sidecar")
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))

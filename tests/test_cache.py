@@ -51,7 +51,7 @@ def test_recording_paths_and_observation(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         ObservationData(tmp_path).get_recording(1)
     (tmp_path / "1_load").mkdir()
-    (tmp_path / "1_load/p.set").touch()
+    write_eeglab(tmp_path / "1_load", stem="p")
     assert (
         ObservationData(tmp_path, "p").get_recording("1").paths.set
         == tmp_path / "1_load/p.set"
@@ -463,7 +463,9 @@ async def test_bad_recordings_are_isolated_and_retried(tmp_path):
         warmer.add_dataset(tmp_path)
         with anyio.fail_after(30):
             await warmer.hurry("stats", tmp_path)
-        for path in (bad, invalid, missing):
+        assert all(key[2] != "1_load/invalid.set" for key in warmer.jobs)
+        assert ObservationData(tmp_path, "invalid").get_steps() == []
+        for path in (bad, missing):
             with pytest.raises(CacheJobError, match=path.name):
                 await warmer.hurry("metadata", (tmp_path, path))
             assert warmer.problem((tmp_path, path)) is not None
@@ -502,8 +504,8 @@ async def test_bad_recordings_are_isolated_and_retried(tmp_path):
 
 @pytest.mark.anyio
 async def test_all_bad_recordings_produce_empty_statistics(tmp_path):
-    (tmp_path / "1_load").mkdir()
-    (tmp_path / "1_load" / "bad.set").write_bytes(b"not MATLAB")
+    bad = write_eeglab(tmp_path / "1_load", stem="bad")
+    bad.write_bytes(bad.read_bytes()[:128])
     async with CacheWarmer() as warmer:
         warmer.add_dataset(tmp_path)
         with anyio.fail_after(30):

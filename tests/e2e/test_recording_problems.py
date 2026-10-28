@@ -13,6 +13,7 @@ def test_recording_problems(page, dashboard_url):
     expect(page.get_by_text("1_load/mixed.set", exact=False)).to_be_visible()
     expect(page.get_by_text("(incomplete)", exact=False)).to_have_count(2)
     expect(page.get_by_text("._mixed", exact=False)).to_have_count(0)
+    expect(page.get_by_role("rowheader", name="invalid", exact=True)).to_have_count(0)
 
     query = "?source=dummy&participant=mixed"
     response = page.goto(dashboard_url + "/participant/overview" + query)
@@ -21,6 +22,7 @@ def test_recording_problems(page, dashboard_url):
         page.get_by_text("Has problems: some processing steps are unavailable.")
     ).to_be_visible()
     expect(page.locator("#participant-select")).not_to_contain_text("._mixed")
+    expect(page.locator("#participant-select")).not_to_contain_text("invalid")
     expect(page.locator("#channel-statistics-table table")).to_be_visible()
     expect(page.locator("#channel-statistics-table")).to_contain_text(
         "results are incomplete"

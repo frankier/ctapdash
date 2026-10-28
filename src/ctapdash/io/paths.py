@@ -12,11 +12,14 @@ CH_REGEX = re.compile(r"(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).
 
 
 def is_recording_file(path, root):
-    """Ignore Unix hidden files and directories beneath the source root."""
+    """Ignore hidden paths and files without a plausible MATLAB header."""
+    from ctapdash.io.eeglab.validation import set_appears_valid
+
     return (
         path.suffix == ".set"
         and not any(part.startswith(".") for part in path.relative_to(root).parts)
         and path.is_file()
+        and set_appears_valid(path)
     )
 
 

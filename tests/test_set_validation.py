@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from scipy.io import savemat
 
-from ctapdash.io.eeglab.validation import validate_set
+from ctapdash.io.eeglab.validation import set_appears_valid
 from ctapdash.io.paths import ObservationData
 from ctapdash.io.cache import scan_dataset
 from tests.dummy_data import write_eeglab
@@ -17,7 +17,7 @@ from tests.dummy_data import write_eeglab
 def test_mat_headers(tmp_path, format):
     path = tmp_path / "p.set"
     savemat(path, {"samples": np.ones((2, 3))}, format=format)
-    validate_set(path)
+    assert set_appears_valid(path) is True
 
 
 def test_big_endian_v4_header(tmp_path):
@@ -25,7 +25,7 @@ def test_big_endian_v4_header(tmp_path):
     path.write_bytes(
         struct.pack(">5i", 1000, 1, 1, 0, 2) + b"x\0" + struct.pack(">d", 1)
     )
-    validate_set(path)
+    assert set_appears_valid(path) is True
 
 
 def test_v73_signature_in_user_block(tmp_path):
@@ -35,11 +35,10 @@ def test_v73_signature_in_user_block(tmp_path):
     header = b"MATLAB 7.3 MAT-file".ljust(124, b" ") + b"\x00\x02IM"
     with path.open("r+b") as stream:
         stream.write(header)
-    validate_set(path)
+    assert set_appears_valid(path) is True
     # A version marker alone must not be enough.
     path.write_bytes(header + b"\0" * 512)
-    with pytest.raises(ValueError, match="HDF5 signature"):
-        validate_set(path)
+    assert set_appears_valid(path) is False
 
 
 @pytest.mark.parametrize(
@@ -54,10 +53,15 @@ def test_v73_signature_in_user_block(tmp_path):
     ],
 )
 def test_invalid_headers(tmp_path, contents):
-    path = tmp_path / "p.set"
+    directory = tmp_path / "1_load"
+    directory.mkdir()
+    path = directory / "p.set"
     path.write_bytes(contents)
-    with pytest.raises((ValueError, OSError)):
-        validate_set(path)
+    assert set_appears_valid(path) is False
+    dataset = ObservationData(tmp_path, "p")
+    assert dataset.get_all_steps()["participants"] == []
+    assert dataset.get_steps() == []
+    assert set(scan_dataset(tmp_path)) == {("stats", str(tmp_path), "")}
 
 
 def test_hidden_paths_are_ignored_everywhere(tmp_path):
@@ -72,3 +76,7 @@ def test_hidden_paths_are_ignored_everywhere(tmp_path):
     snapshot = scan_dataset(tmp_path)
     assert len(snapshot) == 5
     assert {key[2] for key in snapshot} == {"", "1_load/p.set"}
+
+
+def test_missing_file_does_not_appear_valid(tmp_path):
+    assert set_appears_valid(tmp_path / "missing.set") is False

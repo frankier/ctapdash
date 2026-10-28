@@ -7,7 +7,6 @@ import pickle
 
 from ctapdash.io.eeglab.readers import CtapEpochEEGLAB, CtapRawEEGLAB
 from ctapdash.io.paths import metadata_file_path
-from .validation import validate_set
 
 
 def cached_path(path):
@@ -81,7 +80,6 @@ def read_eeglab(
                 return cached
     if force_cache:
         raise ValueError("Wasn't able to load from cache when force_cache=True")
-    validate_set(path)
     with warnings.catch_warnings(action="ignore"):
         if mmap:
             if is_epoched(path):

@@ -77,20 +77,9 @@ def scan_dataset(directory):
 
     for paths, mtime in inputs:
         metadata = add("metadata", paths, paths.metadata, mtime)
-        try:
-            from ctapdash.io.eeglab.validation import validate_set
-
-            validate_set(paths.set)
-        except (OSError, ValueError) as error:
-            jobs[metadata].state = "failed"
-            jobs[metadata].error = f"{type(error).__name__}: {error}"
         transpose = add("transpose", paths, paths.transpose, mtime, (metadata,))
         add("pyramid", paths, paths.pyramid, mtime, (metadata, transpose))
         add("rangepyramid", paths, paths.rangepyramid, mtime, (metadata, transpose))
-        for kind in ("transpose", "pyramid", "rangepyramid"):
-            job = jobs[(kind, str(dataset.root), str(paths.relative))]
-            if any(jobs[key].state == "failed" for key in job.dependencies):
-                job.state = "pending"
         # Match describe_dataset: immediate .set files in numbered step folders.
         if len(paths.relative.parts) == 2 and paths.relative.parts[0][0].isnumeric():
             stats_inputs.append(paths.relative)

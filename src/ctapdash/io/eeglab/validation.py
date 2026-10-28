@@ -6,17 +6,19 @@ import struct
 from scipy.io.matlab import MatReadError, matfile_version
 
 
-def validate_set(path):
+def set_appears_valid(path) -> bool:
     path = Path(path)
     try:
         with path.open("rb") as stream:
             header = stream.read(128)
             if len(header) < 20 or (0 not in header[:4] and len(header) < 128):
-                raise ValueError("Truncated MATLAB header")
+                # Truncated MATLAB header.
+                return False
             stream.seek(0)
             major, minor = matfile_version(stream)
             if minor != 0:
-                raise ValueError("Invalid MATLAB version")
+                # Invalid MATLAB version.
+                return False
             if major == 0:
                 # MAT v4 has no magic string. Validate its five header integers
                 # rather than accepting SciPy's zero-byte detection alone.
@@ -37,14 +39,19 @@ def validate_set(path):
                     ):
                         stream.seek(20 + name_len - 1)
                         if stream.read(1) == b"\0":
-                            return
-                raise ValueError("Invalid MATLAB v4 header")
+                            return True
+                # Invalid MATLAB v4 header.
+                return False
             if header[126:128] not in (b"IM", b"MI"):
-                raise ValueError("Invalid MATLAB endian marker")
+                # Invalid MATLAB endian marker.
+                return False
             if major == 2:
                 from h5py import is_hdf5
 
                 if not is_hdf5(path):
-                    raise ValueError("MATLAB v7.3 file has no HDF5 signature")
-    except (ValueError, MatReadError, struct.error) as error:
-        raise ValueError(f"Invalid .set file: {error}") from error
+                    # MATLAB v7.3 file has no HDF5 signature.
+                    return False
+        return True
+    except OSError, ValueError, MatReadError, struct.error:
+        # Unreadable file or invalid MATLAB container.
+        return False
