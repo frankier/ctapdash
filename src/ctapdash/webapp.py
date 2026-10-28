@@ -5,7 +5,7 @@ from importlib.resources import files
 import importlib.util
 from io import StringIO
 from pathlib import Path
-from ctapdash.io.cache import CacheWarmer
+from ctapdash.io.cache import CacheWarmer, CacheJobError, REGISTERED
 from ctapdash.io.paths import ObservationData, DatasetPaths
 from ctapdash.io.recording import RecordingData
 
@@ -138,20 +138,35 @@ def _eeg_counts(instance):
     raise TypeError(f"Expected MNE Raw or Epochs, got {type(instance).__name__}")
 
 
+def _recording_problems(root_path, steps, participant):
+    warmer = REGISTERED.get(str(root_path))
+    if warmer is None:
+        return {}
+    return {
+        number: str(error)
+        for number, directory in steps
+        if (error := warmer.problem((root_path, directory / (participant + ".set"))))
+        is not None
+    }
+
+
 def _participant_step_rows(root_path, steps, participant):
     rows = []
+    problems = _recording_problems(root_path, steps, participant)
     for step_num, step_path in steps:
-        path = step_path / (participant + ".set")
-        instance = RecordingData(
-            DatasetPaths(root_path).recording(path)
-        ).read_metadata()
-        rows.append(
-            {
-                "number": step_num,
-                "directory": str(step_path.relative_to(root_path)),
-                **_eeg_counts(instance),
-            }
-        )
+        row = {"number": step_num, "directory": str(step_path.relative_to(root_path))}
+        if step_num in problems:
+            row["error"] = problems[step_num]
+        else:
+            path = step_path / (participant + ".set")
+            try:
+                instance = RecordingData(
+                    DatasetPaths(root_path).recording(path)
+                ).read_metadata()
+                row.update(_eeg_counts(instance))
+            except CacheJobError as error:
+                row["error"] = str(error)
+        rows.append(row)
     return rows
 
 
@@ -201,7 +216,7 @@ async def dataset_overview(request):
         participant_steps[participant] = step_rows
     context["participant_steps"] = participant_steps
     context["participant_totals"] = {
-        participant: sum(row["total"] for row in rows)
+        participant: sum(row.get("total", 0) for row in rows)
         for participant, rows in participant_steps.items()
     }
     return templates.TemplateResponse(
@@ -241,7 +256,28 @@ async def participant_steps_fragment(request, params):
         path = step_full / (participant + ".set")
         if not path.exists():
             raise HTTPException(status_code=404, detail="Path not found")
-        eeg = read_eeglab(path, mmap=False, use_cache=False)
+        dataset = ObservationData.from_request(request)
+        await _wait_metadata(request, dataset, [(step, step_full)])
+        problems = _recording_problems(
+            dataset.source_path,
+            [(step, step_full)],
+            participant,
+        )
+        context["current_step"] = step
+        if problems:
+            context["recording_problems"] = problems
+            return templates.TemplateResponse(
+                request, "participant_steps.html", context=context
+            )
+        try:
+            eeg = read_eeglab(path, mmap=False, use_cache=False)
+        except Exception as error:
+            context["recording_problems"] = {
+                step: f"{step_full.name}/{path.name}: {error}"
+            }
+            return templates.TemplateResponse(
+                request, "participant_steps.html", context=context
+            )
         if yaxis == "normalize":
             scalings = "auto"
         else:
@@ -286,6 +322,9 @@ async def venn_time_series(request):
     )
     await _wait_metadata(request, dataset, dataset.get_steps())
     await DATASET_STATS.get(dataset.source_path)
+    context["recording_problems"] = _recording_problems(
+        dataset.source_path, dataset.get_steps(), dataset.participant
+    )
     context["view"] = "venn_time_series"
     context["venn_time_series"] = bokeh_document(
         request,
@@ -405,10 +444,14 @@ async def participant_peeks_fragment(request, params):
 
 async def _wait_metadata(request, dataset, steps):
     for _number, directory in steps:
-        await request.app.state.cache_hurrier.hurry(
-            "metadata",
-            (dataset.source_path, directory / (dataset.participant + ".set")),
-        )
+        try:
+            await request.app.state.cache_hurrier.hurry(
+                "metadata",
+                (dataset.source_path, directory / (dataset.participant + ".set")),
+            )
+        except CacheJobError:
+            # The overview keeps the failed recording and displays its problem.
+            pass
 
 
 async def cache_status(websocket):
@@ -477,7 +520,7 @@ async def participant_statistics_fragment(request, params):
     stats = await DATASET_STATS.get(dataset.source_path)
     channels = params.channels
     descriptive_heatmap = None
-    if selected_steps:
+    if selected_steps and stats.sizes["recording"]:
         descriptive_heatmap = await run_in_threadpool(
             participant_descriptive_heatmap,
             selected_steps,
@@ -491,6 +534,9 @@ async def participant_statistics_fragment(request, params):
         context={
             "descriptive_heatmap": descriptive_heatmap,
             "show_step": params.step == "all",
+            "recording_problems": _recording_problems(
+                dataset.source_path, selected_steps, dataset.participant
+            ),
         },
     )
 

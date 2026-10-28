@@ -233,7 +233,7 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     )
     steps = [(1, Path("/data/1_import")), (3, Path("/data/3_filter"))]
     heatmap = {"channels": ["Cz"], "rows": []}
-    stats = object()
+    stats = xr.Dataset(coords={"recording": [0]})
     rendered = object()
 
     monkeypatch.setattr(SETTINGS, "sources", {"example": "/data"})

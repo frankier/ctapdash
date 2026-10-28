@@ -135,7 +135,9 @@ def test_stats_selection_and_invalid_bounds():
 def test_direct_bokeh_miss(tmp_path, monkeypatch, destroy, error):
     import venn_ts.plot as plot
 
-    dataset = SimpleNamespace(source_path=tmp_path, get_steps=lambda: [(1, tmp_path)])
+    dataset = SimpleNamespace(
+        source_path=tmp_path, get_steps=lambda **kwargs: [(1, tmp_path)]
+    )
     monkeypatch.setattr(ObservationData, "from_bokeh_doc", lambda doc: dataset)
     monkeypatch.setattr(DATASET_STATS, "get_cached", lambda root: None)
     built = []
@@ -198,7 +200,9 @@ def test_http_viewer_waits_for_stats(tmp_path, monkeypatch):
     import ctapdash.webapp as webapp
 
     request = SimpleNamespace(query_params={"participant": "p"})
-    dataset = SimpleNamespace(source_path=tmp_path, get_steps=lambda: [])
+    dataset = SimpleNamespace(
+        source_path=tmp_path, participant="p", get_steps=lambda **kwargs: []
+    )
     monkeypatch.setattr(
         webapp,
         "participant_context",

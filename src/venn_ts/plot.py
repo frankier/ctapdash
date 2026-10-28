@@ -154,10 +154,10 @@ def _build_comparison(doc, dataset, stats):
     )
     from venn_ts.renderer import TileCoordinator, VennTimeSeriesRenderer
 
-    steps = dataset.get_steps()
+    steps = dataset.get_steps(usable=True)
     if not steps:
         doc.add_root(
-            Div(text="No processing steps are available for this participant.")
+            Div(text="No usable processing steps are available for this participant.")
         )
         return
 
@@ -1071,9 +1071,9 @@ def venn_time_series_bokeh(doc):
     from ctapdash.io.stats_cache import DATASET_STATS
 
     dataset = ObservationData.from_bokeh_doc(doc)
-    if not dataset.get_steps():
+    if not dataset.get_steps(usable=True):
         doc.add_root(
-            Div(text="No processing steps are available for this participant.")
+            Div(text="No usable processing steps are available for this participant.")
         )
         return
     stats = DATASET_STATS.get_cached(dataset.source_path)

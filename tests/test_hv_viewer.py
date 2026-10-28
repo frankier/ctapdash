@@ -92,7 +92,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
         (step / "p.set").touch()
         steps.append((number, step))
     dataset = paths.ObservationData(tmp_path, "p", "fake")
-    dataset.get_steps = lambda: steps
+    dataset.get_steps = lambda **kwargs: steps
 
     def fake_source(path, *, recording_data=None):
         offset = int(Path(path).parent.name[:2])

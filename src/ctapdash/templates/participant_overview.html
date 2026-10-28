@@ -4,6 +4,9 @@
     <div class="m-4 bg-white text-slate-900">
         <h1 class="text-2xl font-bold">Participant Overview</h1>
 
+        {% if step_rows|selectattr('error')|list %}
+            <p role="status" class="my-2 text-amber-800">Has problems: some processing steps are unavailable.</p>
+        {% endif %}
         <h3 class="text-xl my-2 mt-4">Steps</h3>
         <div class="max-w-full overflow-x-auto">
             <table class="border-collapse text-sm">
@@ -34,33 +37,37 @@
                                 </a>
                             </th>
                             <td class="border border-slate-300 px-3 py-2">{{ step.directory }}</td>
-                            {% if step.spanned_duration is not none %}
-                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.epoch_duration|round(2) }}
-                                </td>
-                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.samples_duration|round(2) }}
-                                </td>
-                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.spanned_duration|round(2) }}
-                                </td>
+                            {% if step.error %}
+                                <td colspan="7" class="border border-slate-300 px-3 py-2 text-amber-800">{{ step.error }}</td>
                             {% else %}
-                                <td colspan="3" class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.samples_duration|round(2) }}
+                                {% if step.spanned_duration is not none %}
+                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                        {{ step.epoch_duration|round(2) }}
+                                    </td>
+                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                        {{ step.samples_duration|round(2) }}
+                                    </td>
+                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                        {{ step.spanned_duration|round(2) }}
+                                    </td>
+                                {% else %}
+                                    <td colspan="3" class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                        {{ step.samples_duration|round(2) }}
+                                    </td>
+                                {% endif %}
+                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                    {{ step.epochs }}
+                                </td>
+                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                    {{ step.samples }}
+                                </td>
+                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                    {{ step.channels }}
+                                </td>
+                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                    {{ step.total }}
                                 </td>
                             {% endif %}
-                            <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                {{ step.epochs }}
-                            </td>
-                            <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                {{ step.samples }}
-                            </td>
-                            <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                {{ step.channels }}
-                            </td>
-                            <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                {{ step.total }}
-                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>
