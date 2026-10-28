@@ -36,11 +36,15 @@ class RecordingData:
     def _registered_ready(self, kind):
         if self.metadata_validated:
             return True
-        from ctapdash.io.cache import REGISTERED
+        from ctapdash.io.cache import REGISTERED, CacheJobError, job_key
 
         warmer = REGISTERED.get(str(self.paths.dataset.root))
         if warmer is None:
             return False
+        key = job_key(kind, (self.paths.dataset.root, self.paths.relative))
+        job = warmer.jobs.get(key)
+        if job is not None and job.state == "failed":
+            raise CacheJobError(key, job.error)
         if not warmer.ready(kind, (self.paths.dataset.root, self.paths.relative)):
             raise FileNotFoundError(f"Cache {kind} is not ready for {self.paths.set}")
         return True

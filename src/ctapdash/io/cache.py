@@ -1,18 +1,26 @@
 """Registration-time cache validation and a single-reader worker dispatcher."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from multiprocessing import Pipe, Process
 from pathlib import Path
 import pickle
 
 import anyio
 
-from ctapdash.io.paths import DatasetPaths
+from ctapdash.io.paths import DatasetPaths, is_recording_file
 from ctapdash.io.stats_cache import DATASET_STATS
 
 
 # Available to synchronous viewers in the server process. Never shared with workers.
 REGISTERED = {}
+
+
+class CacheJobError(RuntimeError):
+    """A failed artifact, distinct from a dataset scan or worker failure."""
+
+    def __init__(self, key, error):
+        self.key = key
+        super().__init__(f"{key[2] or 'Dataset statistics'} ({key[0]}): {error}")
 
 
 def job_key(kind, file):
@@ -31,6 +39,7 @@ class Job:
     state: str = "pending"
     error: str | None = None
     recordings: tuple = ()
+    sources: tuple = ()
 
 
 def scan_dataset(directory):
@@ -41,7 +50,7 @@ def scan_dataset(directory):
     inputs = [
         (dataset.recording(path), path.stat().st_mtime_ns)
         for path in sorted(dataset.root.rglob("*.set"))
-        if dataset.cache not in path.parents
+        if is_recording_file(path, dataset.root)
     ]
     jobs = {}
     stats_inputs = []
@@ -80,7 +89,7 @@ def scan_dataset(directory):
         for path in stats_inputs
         for kind in ("metadata", "transpose")
     )
-    add(
+    stats = add(
         "stats",
         None,
         dataset.stats,
@@ -88,6 +97,14 @@ def scan_dataset(directory):
         dependencies,
         tuple(stats_inputs),
     )
+    jobs[stats].sources = tuple(zip(map(str, stats_inputs), stats_mtimes, strict=True))
+    try:
+        with (dataset.stats / "sources.pkl").open("rb") as stream:
+            current = pickle.load(stream) == jobs[stats].sources
+    except OSError, ValueError, EOFError, pickle.UnpicklingError:
+        current = False
+    if not current or any(jobs[key].state != "ready" for key in dependencies):
+        jobs[stats].state = "pending"
     return jobs
 
 
@@ -110,7 +127,10 @@ def build_job(job):
         write_transpose(root, relative, metadata_validated=True)
     elif kind == "stats":
         precompute_descriptive_statistics(
-            root, recordings=job.recordings, metadata_validated=True
+            root,
+            recordings=job.recordings,
+            metadata_validated=True,
+            sources=job.sources,
         )
     else:
         recording = RecordingData(DatasetPaths(root).recording(relative), True)
@@ -168,9 +188,25 @@ class JobQueue:
         key = self.pending.pop(0)
         job = self.jobs[key]
         try:
-            for dependency in job.dependencies:
-                if self.jobs[dependency].state != "ready":
-                    raise RuntimeError(f"Dependency failed: {dependency}")
+            if key[0] == "stats":
+                # All prerequisites have finished. Only include recordings whose
+                # metadata and sample transpose both succeeded.
+                job = replace(
+                    job,
+                    recordings=tuple(
+                        path
+                        for path in job.recordings
+                        if all(
+                            self.jobs[(kind, key[1], str(path))].state == "ready"
+                            for kind in ("metadata", "transpose")
+                        )
+                    ),
+                )
+            else:
+                for dependency in job.dependencies:
+                    failed = self.jobs[dependency]
+                    if failed.state != "ready":
+                        raise CacheJobError(dependency, failed.error)
             job.state = "running"
             send(("job", key, "running", None))
             build_job(job)
@@ -178,6 +214,7 @@ class JobQueue:
         except Exception as error:
             job.state = "failed"
             job.error = f"{type(error).__name__}: {error}"
+        self.jobs[key] = job
         send(("job", key, job.state, job.error))
 
 
@@ -253,6 +290,14 @@ class CacheHurrier:
             and self.jobs[key].state == "ready"
         )
 
+    def problem(self, file):
+        for kind in ("metadata", "transpose", "pyramid", "rangepyramid"):
+            key = job_key(kind, file)
+            job = self.jobs.get(key)
+            if job is not None and job.state == "failed":
+                return CacheJobError(key, job.error)
+        return None
+
     def _wake(self):
         self.status_changed.set()
         self.status_changed = anyio.Event()
@@ -277,7 +322,7 @@ class CacheHurrier:
                 if job.state == "ready":
                     return
                 if job.state == "failed":
-                    raise RuntimeError(job.error)
+                    raise CacheJobError(key, job.error)
             event = self.waiters.setdefault(key, anyio.Event())
             await event.wait()
 

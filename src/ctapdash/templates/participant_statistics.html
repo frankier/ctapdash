@@ -1,4 +1,7 @@
-{% if descriptive_heatmap and not descriptive_heatmap.channels %}
+{% include "_recording_problems.html" %}
+{% if descriptive_heatmap and not descriptive_heatmap.rows %}
+    <p role="status">No usable recordings are available for these steps.</p>
+{% elif descriptive_heatmap and not descriptive_heatmap.channels %}
     <p role="status">Empty selection</p>
 {% elif descriptive_heatmap %}
     <p class="mb-3 text-sm text-slate-600">
@@ -92,5 +95,5 @@
         </table>
     </div>
 {% else %}
-    <p class="text-sm text-slate-600">No processing steps are available.</p>
+    <p class="text-sm text-slate-600">No usable recordings are available for these steps.</p>
 {% endif %}

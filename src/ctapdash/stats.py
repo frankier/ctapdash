@@ -79,8 +79,12 @@ def describe_dataset(
     recording_ids = []
     paths = DatasetPaths(dataset_dir)
     if recordings is None:
+        from ctapdash.io.paths import is_recording_file
+
         recordings = [
-            p for p in paths.root.glob("*/*.set") if p.parent.name[0].isnumeric()
+            p
+            for p in paths.root.glob("*/*.set")
+            if p.parent.name[0].isnumeric() and is_recording_file(p, paths.root)
         ]
     for path in recordings:
         recording = RecordingData(paths.recording(path), metadata_validated)
@@ -130,8 +134,9 @@ def describe_dataset(
 
 
 def precompute_descriptive_statistics(
-    dataset_dir, *, recordings=None, metadata_validated=False
+    dataset_dir, *, recordings=None, metadata_validated=False, sources=None
 ):
+    import pickle
     from ctapdash.io.utils import atomic_write
 
     dest = stats_file_path(dataset_dir)
@@ -143,6 +148,8 @@ def precompute_descriptive_statistics(
         # save_xarray creates its own destination.
         staging.rmdir()
         save_xarray(stats, staging)
+        with (staging / "sources.pkl").open("wb") as stream:
+            pickle.dump(sources, stream)
 
 
 @numba.njit

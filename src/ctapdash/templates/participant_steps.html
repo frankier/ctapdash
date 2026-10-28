@@ -1,6 +1,7 @@
 {% extends "participant_base.html" %}
 
 {% block participant_view_content %}
+    {% include "_recording_problems.html" %}
     <form id="steps-form"
           method="get"
           action="{{ url_for('participant_steps') }}"

@@ -102,7 +102,7 @@ def participant_channel_metadata(dataset, *, bads_by_step=None):
     result = channel_metadata(
         (
             (step, dataset.get_recording(step).read_metadata())
-            for step, _ in dataset.get_steps()
+            for step, _ in dataset.get_steps(usable=True)
         ),
         bads_by_step=bads_by_step,
     )

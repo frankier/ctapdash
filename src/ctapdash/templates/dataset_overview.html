@@ -35,40 +35,48 @@
                                             href="{{ url_for('participant_overview') }}{{ source_qs }}&participant={{ participant }}">
                                             {{ participant }}
                                         </a>
+                                        {% if step_rows|selectattr('error')|list %}
+                                            <span class="text-amber-800">Has problems</span>
+                                        {% endif %}
                                     </th>
                                 {% endif %}
                                 <td class="border border-slate-300 px-3 py-2">{{ step.number }}</td>
                                 <td class="border border-slate-300 px-3 py-2">{{ step.directory }}</td>
-                                {% if step.spanned_duration is not none %}
-                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.epoch_duration|round(2) }}
-                                    </td>
-                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.samples_duration|round(2) }}
-                                    </td>
-                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.spanned_duration|round(2) }}
-                                    </td>
+                                {% if step.error %}
+                                    <td colspan="7" class="border border-slate-300 px-3 py-2 text-amber-800">{{ step.error }}</td>
                                 {% else %}
-                                    <td colspan="3" class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.samples_duration|round(2) }}
+                                    {% if step.spanned_duration is not none %}
+                                        <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                            {{ step.epoch_duration|round(2) }}
+                                        </td>
+                                        <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                            {{ step.samples_duration|round(2) }}
+                                        </td>
+                                        <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                            {{ step.spanned_duration|round(2) }}
+                                        </td>
+                                    {% else %}
+                                        <td colspan="3" class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                            {{ step.samples_duration|round(2) }}
+                                        </td>
+                                    {% endif %}
+                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                        {{ step.epochs }}
+                                    </td>
+                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                        {{ step.samples }}
+                                    </td>
+                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                        {{ step.channels }}
+                                    </td>
+                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
+                                        {{ step.total }}
                                     </td>
                                 {% endif %}
-                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.epochs }}
-                                </td>
-                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.samples }}
-                                </td>
-                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.channels }}
-                                </td>
-                                <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.total }}
-                                </td>
                                 {% if loop.first %}
                                     <td class="border border-slate-300 px-3 py-2 text-right tabular-nums" rowspan="{{ step_rows|length }}">
                                         {{ participant_totals[participant] }}
+                                        {% if step_rows|selectattr('error')|list %}(incomplete){% endif %}
                                     </td>
                                 {% endif %}
                             </tr>

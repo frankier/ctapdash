@@ -27,6 +27,8 @@ def _external_data_fname(input_fname, eeg, reader_name):
     if isinstance(eeg.data, str):
         data_fname = _check_eeglab_fname(input_fname, eeg.data)
         if data_fname.lower().endswith(".fdt"):
+            if not os.path.isfile(data_fname):
+                raise FileNotFoundError(f"External sample file not found: {data_fname}")
             return data_fname
     raise ValueError(f"{reader_name} requires data stored in an external .fdt file")
 

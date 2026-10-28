@@ -11,6 +11,18 @@ SCALP_REGEX = re.compile(r"(?P<stem>[^-]+)-badChan-scalp.png")
 CH_REGEX = re.compile(r"(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
 
 
+def is_recording_file(path, root):
+    """Ignore hidden paths and files without a plausible MATLAB header."""
+    from ctapdash.io.eeglab.validation import set_appears_valid
+
+    return (
+        path.suffix == ".set"
+        and not any(part.startswith(".") for part in path.relative_to(root).parts)
+        and path.is_file()
+        and set_appears_valid(path)
+    )
+
+
 def collect_logs(source_path, participant):
     logs = []
     log_dir = source_path / "logs"
@@ -97,7 +109,7 @@ def get_steps_for_participant(root_path, participant):
         if not subdir.name[0].isnumeric():
             continue
         path = subdir / (participant + ".set")
-        if not path.exists():
+        if not is_recording_file(path, root_path):
             continue
         step_num = int(subdir.name.split("_", 1)[0])
         steps.append((step_num, subdir))
@@ -116,7 +128,7 @@ def collect_steps(root_path):
             step_num = int(subdir.name.split("_", 1)[0])
             steps.append((step_num, subdir))
             for filename in subdir.iterdir():
-                if not filename.suffix == ".set":
+                if not is_recording_file(filename, root_path):
                     continue
                 files[filename.stem] += 1
 
@@ -191,9 +203,23 @@ class ObservationData:
         self.require_participant()
         return collect_qc(self.source_path, self.participant)
 
-    def get_steps(self):
+    def get_steps(self, *, usable=False):
         self.require_participant()
-        return get_steps_for_participant(self.source_path, self.participant)
+        steps = get_steps_for_participant(self.source_path, self.participant)
+        if usable:
+            from ctapdash.io.cache import REGISTERED
+
+            warmer = REGISTERED.get(str(self.source_path))
+            if warmer is not None:
+                steps = [
+                    (number, directory)
+                    for number, directory in steps
+                    if warmer.problem(
+                        (self.source_path, directory / (self.participant + ".set"))
+                    )
+                    is None
+                ]
+        return steps
 
     def get_recording(self, step):
         from ctapdash.io.recording import RecordingData
