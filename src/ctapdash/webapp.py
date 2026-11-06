@@ -72,7 +72,10 @@ def sources_context(request):
     return ctx
 
 
+GITHUB_NEW_ISSUE_URL = "https://github.com/frankier/ctapdash/issues/new"
+
 safe_templates = Jinja2Templates(directory=TEMPLATES_DIR)
+safe_templates.env.globals["report_url"] = GITHUB_NEW_ISSUE_URL
 
 templates = Jinja2Templates(
     directory=TEMPLATES_DIR, context_processors=[sources_context]
@@ -606,7 +609,7 @@ async def server_error(request: Request, exc: Exception):
                 exc.__traceback__,
             )
         )
-        report_url = "https://github.com/frankier/ctapdash/issues/new?"
+        report_url = GITHUB_NEW_ISSUE_URL + "?"
         report_url += urlencode(
             (
                 ("title", "Runtime error with stacktrace: " + type(exc).__name__),
