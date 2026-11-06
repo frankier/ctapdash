@@ -275,8 +275,16 @@ async def participant_steps_fragment(request, params):
             return templates.TemplateResponse(
                 request, "participant_steps.html", context=context
             )
+        scalings = "auto" if yaxis == "normalize" else None
+        yaxis_options = ["overdraw", "normalize"]
         try:
             eeg = read_eeglab(path, mmap=False, use_cache=False)
+            if isinstance(eeg, BaseEpochs):
+                fig = eeg.plot(show=False, scalings=scalings)
+            else:
+                yaxis_options.append("clamp")
+                clipping = "clamp" if yaxis == "clip" else None
+                fig = eeg.plot(show=False, scalings=scalings, clipping=clipping)
         except Exception as error:
             context["recording_problems"] = {
                 step: f"{step_full.name}/{path.name}: {error}"
@@ -284,20 +292,7 @@ async def participant_steps_fragment(request, params):
             return templates.TemplateResponse(
                 request, "participant_steps.html", context=context
             )
-        if yaxis == "normalize":
-            scalings = "auto"
-        else:
-            scalings = None
-        context["yaxis_options"].extend(["overdraw", "normalize"])
-        if isinstance(eeg, BaseEpochs):
-            fig = eeg.plot(show=False, scalings=scalings)
-        else:
-            context["yaxis_options"].append("clamp")
-            if yaxis == "clip":
-                clipping = "clamp"
-            else:
-                clipping = None
-            fig = eeg.plot(show=False, scalings=scalings, clipping=clipping)
+        context["yaxis_options"] = yaxis_options
         context["eeg_fig"] = safe_html.figure_html(
             fig, on_close="msg_discrete", prevent_default_navigation=True
         )
