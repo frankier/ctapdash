@@ -18,6 +18,7 @@ from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
+from starlette.requests import Request
 from starlette.routing import Route, Mount, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
@@ -248,22 +249,24 @@ async def participant_steps_fragment(request, params):
     step = params.step
     if step != "":
         steps_dict = dict(steps)
-        if step not in steps_dict:
-            raise HTTPException(status_code=404, detail="Step not found")
-        has_prev = (step - 1) in steps_dict
-        context["has_prev"] = has_prev
-        step_full = steps_dict[step]
-        path = step_full / (participant + ".set")
-        if not path.exists():
-            raise HTTPException(status_code=404, detail="Path not found")
         dataset = ObservationData.from_request(request)
+        context["current_step"] = step
+        step_full = steps_dict.get(step)
+        if step_full is None and step not in dict(dataset.get_all_steps()["steps"]):
+            raise HTTPException(status_code=404, detail="Step not found")
+        path = step_full / (participant + ".set") if step_full is not None else None
+        if path is None or not path.is_file():
+            context["no_recording"] = True
+            return templates.TemplateResponse(
+                request, "participant_steps.html", context=context
+            )
+        context["has_prev"] = (step - 1) in steps_dict
         await _wait_metadata(request, dataset, [(step, step_full)])
         problems = _recording_problems(
             dataset.source_path,
             [(step, step_full)],
             participant,
         )
-        context["current_step"] = step
         if problems:
             context["recording_problems"] = problems
             return templates.TemplateResponse(
@@ -295,7 +298,6 @@ async def participant_steps_fragment(request, params):
         context["eeg_fig"] = safe_html.figure_html(
             fig, on_close="msg_discrete", prevent_default_navigation=True
         )
-        context["current_step"] = step
     return templates.TemplateResponse(
         request,
         "participant_steps.html",
@@ -514,20 +516,23 @@ async def participant_statistics_fragment(request, params):
     selected_steps = steps
     if params.step != "all":
         steps_by_number = dict(steps)
-        if params.step not in steps_by_number:
+        if params.step in steps_by_number:
+            selected_steps = [(params.step, steps_by_number[params.step])]
+        elif params.step in dict(dataset.get_all_steps()["steps"]):
+            selected_steps = []
+        else:
             raise HTTPException(status_code=404, detail="Step not found")
-        selected_steps = [(params.step, steps_by_number[params.step])]
-    stats = await DATASET_STATS.get(dataset.source_path)
-    channels = params.channels
     descriptive_heatmap = None
-    if selected_steps and stats.sizes["recording"]:
-        descriptive_heatmap = await run_in_threadpool(
-            participant_descriptive_heatmap,
-            selected_steps,
-            dataset.participant,
-            stats,
-            channels,
-        )
+    if selected_steps:
+        stats = await DATASET_STATS.get(dataset.source_path)
+        if stats.sizes["recording"]:
+            descriptive_heatmap = await run_in_threadpool(
+                participant_descriptive_heatmap,
+                selected_steps,
+                dataset.participant,
+                stats,
+                params.channels,
+            )
     return templates.TemplateResponse(
         request,
         "participant_statistics.html",

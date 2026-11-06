@@ -117,6 +117,34 @@ def test_classic_eeg(page, dashboard_url, participant, step):
     expect(page.locator("#yaxis-select")).to_be_visible()
 
 
+def test_step_without_participant_recording(page, dashboard_url):
+    query = "?source=dummy&participant=1002P_dummy_intake"
+    visit(page, dashboard_url, "/participant/overview" + query)
+    expect(page.locator("#channel-statistics-table table")).to_be_visible()
+    page.locator("#statistics-step").select_option("1")
+    expect(page.locator("#channel-statistics-table")).to_contain_text(
+        "No usable recordings"
+    )
+
+    page.get_by_role("link", name="Classic EEG viewer").click()
+    with page.expect_navigation() as navigation:
+        page.locator("#step-select").select_option("1")
+    assert navigation.value.status == 200
+    expect(
+        page.get_by_role("status").filter(has_text="No recording is available")
+    ).to_be_visible()
+    expect(page.locator("#step-select")).to_have_value("1")
+
+    page.locator("#step-select").select_option("3")
+    expect(page.locator("canvas").first).to_be_visible(timeout=30000)
+    assert (
+        page.request.get(
+            dashboard_url + "/participant/steps" + query + "&step=99"
+        ).status
+        == 404
+    )
+
+
 def test_venndiff_eeg(page, dashboard_url):
     visit(page, dashboard_url, "/participant/overview" + QUERY)
     page.locator("#viewer").get_by_role("link", name="Venndiff EEG viewer").click()
