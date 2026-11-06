@@ -18,7 +18,7 @@
                 <option
                     value=""
                     disabled
-                    {% if not current_step %}selected{% endif %}
+                    {% if current_step is not defined %}selected{% endif %}
                 >--- Please choose an option ---</option>
                 {% for step_num, subdir in steps %}
                     <option
@@ -48,6 +48,9 @@
     </form>
     <div class="m-4">
         <div id="mpl-warnings"></div>
+        {% if no_recording %}
+            <p role="status">No recording is available for this participant at step {{ current_step }}.</p>
+        {% endif %}
         {{ eeg_fig }}
     </div>
 {% endblock %}
