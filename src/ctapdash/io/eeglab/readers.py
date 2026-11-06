@@ -1,6 +1,7 @@
 """Metadata-only EEGLAB readers for ctapdash's external sample maps."""
 
 import os
+import stat
 import warnings
 from copy import copy
 
@@ -20,16 +21,23 @@ from mne.io.eeglab.eeglab import (
     _set_dig_montage_in_init,
 )
 
-from .mmap import mmap_eeglab
+from .mmap import _check_sample_size, mmap_eeglab
 
 
-def _external_data_fname(input_fname, eeg, reader_name):
+def sample_file_signature(path):
+    info = os.stat(path)
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError(f"External sample path is not a regular file: {path}")
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def _external_sample_source(input_fname, eeg, reader_name):
     if isinstance(eeg.data, str):
         data_fname = _check_eeglab_fname(input_fname, eeg.data)
         if data_fname.lower().endswith(".fdt"):
-            if not os.path.isfile(data_fname):
-                raise FileNotFoundError(f"External sample file not found: {data_fname}")
-            return data_fname
+            signature = sample_file_signature(data_fname)
+            _check_sample_size(signature[2], (eeg.nbchan, eeg.pnts, eeg.trials))
+            return eeg.data, os.path.abspath(data_fname), signature
     raise ValueError(f"{reader_name} requires data stored in an external .fdt file")
 
 
@@ -76,7 +84,11 @@ class CtapRawEEGLAB(BaseRaw):
         eeg = _check_load_mat(input_fname, uint16_codec, preload=False)
         if eeg.trials != 1:
             raise ValueError("Raw files must contain exactly one trial")
-        data_fname = _external_data_fname(input_fname, eeg, type(self).__name__)
+        self.sample_source = _external_sample_source(
+            input_fname, eeg, type(self).__name__
+        )
+        _, data_fname, _ = self.sample_source
+        self._sample_count = eeg.pnts
         info, self.raw_ch_types, montage, _ = _get_info(
             eeg, eog=eog, montage_units=montage_units
         )
@@ -153,7 +165,9 @@ class CtapEpochEEGLAB(BaseEpochs):
             raise ValueError(
                 "The file does not contain epochs (trials must be greater than 1)"
             )
-        _external_data_fname(input_fname, eeg, type(self).__name__)
+        self.sample_source = _external_sample_source(
+            input_fname, eeg, type(self).__name__
+        )
 
         if not (
             (events is None and event_id is None)

@@ -22,8 +22,9 @@ def dashboard_url(tmp_path_factory, request):
         root = directory / "TAPPED"
         for step in ("1_load", "2_rough_clean"):
             write_eeglab(root / step, stem="mixed", n_times=512)
-        mixed = root / "1_load" / "mixed.set"
-        mixed.write_bytes(mixed.read_bytes()[:128])
+        mixed = root / "1_load" / "mixed.fdt"
+        with mixed.open("r+b") as samples:
+            samples.truncate(mixed.stat().st_size - 8)
         broken = write_eeglab(root / "1_load", stem="broken")
         broken.write_bytes(broken.read_bytes()[:128])
         (root / "1_load" / "invalid.set").write_bytes(b"not MATLAB")

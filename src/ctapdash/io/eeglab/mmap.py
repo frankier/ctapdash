@@ -1,3 +1,4 @@
+from math import prod
 import os
 import xarray as xr
 
@@ -12,15 +13,17 @@ from mne.io.eeglab.eeglab import (
 )
 
 
-def _eeglab_memmap(data_fname, shape, order):
-    expected_size = np.prod(shape, dtype=np.int64) * np.dtype("<f4").itemsize
-    actual_size = os.path.getsize(data_fname)
+def _check_sample_size(actual_size, shape):
+    expected_size = prod(map(int, shape)) * np.dtype("<f4").itemsize
     if actual_size != expected_size:
         raise ValueError(
             f"EEGLAB data file has {actual_size} bytes; expected {expected_size} "
             f"bytes for shape {shape}."
         )
 
+
+def _eeglab_memmap(data_fname, shape, order):
+    _check_sample_size(os.path.getsize(data_fname), shape)
     return np.memmap(data_fname, dtype="<f4", mode="r", shape=shape, order=order)
 
 
@@ -69,7 +72,9 @@ def mmap_eeglab(eeg, *, return_xarray=False, data_fname=None, ctapdash_order=Fal
             orig_nchan = eeg._raw_extras[0]["orig_nchan"]
             if orig_nchan != len(eeg.ch_names):
                 raise ValueError("mmap_eeglab does not support picked Raw channels")
-            n_total = os.path.getsize(data_fname) // (orig_nchan * 4)
+            n_total = getattr(eeg, "_sample_count", None)
+            if n_total is None:
+                n_total = os.path.getsize(data_fname) // (orig_nchan * 4)
             data = _eeglab_memmap(data_fname, (orig_nchan, n_total), order=order)
             data = data[:, eeg.first_samp : eeg.last_samp + 1]
         else:

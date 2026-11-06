@@ -11,11 +11,13 @@ import numpy as np
 import pytest
 
 from ctapdash.io.cache import (
+    CacheJobError,
     CacheHurrier,
     CacheWarmer,
     JobQueue,
     REGISTERED,
     job_key,
+    build_job,
     scan_dataset,
 )
 from ctapdash.io.paths import DatasetPaths, ObservationData
@@ -82,6 +84,8 @@ def test_registration_freshness_snapshot(tmp_path):
             job.output.mkdir()
             with (job.output / "sources.pkl").open("wb") as stream:
                 pickle.dump(job.sources, stream)
+        elif job.key[0] == "metadata":
+            build_job(job)
         else:
             job.output.touch()
         os.utime(job.output, ns=(timestamp, timestamp))
@@ -293,16 +297,70 @@ def test_newest_relevant_set_and_single_mtime_pass(tmp_path, monkeypatch):
     assert counts == {first: 1, second: 1}
     assert snapshot[job_key("stats", tmp_path)].state == "pending"
     os.utime(stats, ns=(200, 200))
-    # Changes to external samples alone are deliberately outside the policy.
-    os.utime(second.with_suffix(".fdt"), ns=(1000, 1000))
     for key in snapshot[job_key("stats", tmp_path)].dependencies:
         output = snapshot[key].output
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.touch()
+        if key[0] == "metadata":
+            build_job(snapshot[key])
+        else:
+            output.touch()
         os.utime(output, ns=(200, 200))
     with (stats / "sources.pkl").open("wb") as stream:
         pickle.dump(snapshot[job_key("stats", tmp_path)].sources, stream)
     assert scan_dataset(tmp_path)[job_key("stats", tmp_path)].state == "ready"
+    os.utime(second.with_suffix(".fdt"), ns=(1000, 1000))
+    updated = scan_dataset(tmp_path)
+    for kind in ("metadata", "transpose", "pyramid", "rangepyramid"):
+        assert updated[job_key(kind, (tmp_path, second))].state == "pending"
+    assert updated[job_key("stats", tmp_path)].state == "pending"
+
+
+@pytest.mark.parametrize("epochs", [1, 2])
+def test_overview_reports_truncated_samples_before_transpose(
+    tmp_path, monkeypatch, epochs
+):
+    from ctapdash.io.eeglab import read_eeglab
+    from ctapdash.webapp import _participant_step_rows, _wait_metadata
+
+    path = write_eeglab(tmp_path / "1_load", epochs)
+    # Resolve the external filename from the header, even when the stems differ.
+    samples = path.with_suffix(".fdt")
+    path = path.rename(path.with_name("p.set"))
+    metadata = job_key("metadata", (tmp_path, path))
+    legacy = DatasetPaths(tmp_path).recording(path).metadata
+    legacy.write_bytes(pickle.dumps(read_eeglab(path, use_cache=False)))
+    assert scan_dataset(tmp_path)[metadata].state == "pending"
+    read_eeglab(path)
+    assert scan_dataset(tmp_path)[metadata].state == "ready"
+    sample_stat = samples.stat()
+    with samples.open("r+b") as stream:
+        stream.truncate(sample_stat.st_size - 8)  # One complete two-channel frame.
+    os.utime(samples, ns=(sample_stat.st_atime_ns, sample_stat.st_mtime_ns))
+
+    queue = JobQueue()
+    queue.register(tmp_path)
+    assert queue.jobs[metadata].state == "pending"
+    warmer = CacheHurrier(SimpleNamespace(), None)
+    warmer.jobs = queue.jobs
+
+    async def hurry(kind, file):
+        assert job_key(kind, file) == metadata
+        queue.prioritize(metadata)
+        queue.run_next(lambda message: None)
+        raise warmer.problem(file)
+
+    warmer.hurry = hurry
+    monkeypatch.setitem(REGISTERED, str(tmp_path), warmer)
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=warmer))
+    )
+    dataset = ObservationData(tmp_path, "p")
+    steps = dataset.get_steps()
+    asyncio.run(_wait_metadata(request, dataset, steps))
+    assert queue.jobs[job_key("transpose", (tmp_path, path))].state == "pending"
+    rows = _participant_step_rows(tmp_path, steps, "p")
+    assert "bytes; expected" in rows[0]["error"]
+    assert dataset.get_steps(usable=True) == []
 
 
 @pytest.mark.anyio
@@ -449,8 +507,6 @@ async def test_status_broadcast_initial_update_and_unsubscribe(tmp_path):
 
 @pytest.mark.anyio
 async def test_bad_recordings_are_isolated_and_retried(tmp_path):
-    from ctapdash.io.cache import CacheJobError
-
     good = write_eeglab(tmp_path / "1_load", stem="good", n_times=512)
     bad = write_eeglab(tmp_path / "1_load", stem="bad", n_times=512)
     # Plausible header, broken contents: exercise the parser error boundary too.

@@ -7,7 +7,7 @@ import pytest
 import xarray as xr
 from bokeh.document import Document
 
-from ctapdash.io.cache import REGISTERED
+from ctapdash.io.cache import REGISTERED, CacheJobError, job_key
 from ctapdash.io.paths import DatasetPaths, ObservationData
 from ctapdash.io.stats_cache import DATASET_STATS, DatasetStatsCache
 from ctapdash.io.xarray import save_xarray
@@ -161,6 +161,61 @@ def test_direct_bokeh_miss(tmp_path, monkeypatch, destroy, error):
         assert "stats worker failed" in doc.roots[0].text
     if destroy:
         assert doc.roots[0].text == "Loading comparison statistics..."
+
+
+@pytest.mark.parametrize("healthy", [False, True])
+def test_direct_bokeh_checks_participant_before_stats(tmp_path, monkeypatch, healthy):
+    import venn_ts.plot as plot
+    from tests.dummy_data import write_eeglab
+
+    bad = write_eeglab(tmp_path / "1_load", stem="p")
+    good = write_eeglab(tmp_path / "2_clean", stem="p") if healthy else None
+    write_eeglab(tmp_path / "1_load", stem="other")
+    dataset = ObservationData(tmp_path, "p")
+    problems = {}
+    calls = []
+
+    async def hurry(kind, file):
+        assert kind == "transpose"
+        calls.append(file[1])
+        if file[1] == bad:
+            problem = CacheJobError(job_key(kind, file), "bad samples")
+            problems[file] = problem
+            raise problem
+
+    warmer = SimpleNamespace(hurry=hurry, problem=problems.get)
+    monkeypatch.setitem(REGISTERED, str(tmp_path), warmer)
+    monkeypatch.setattr(ObservationData, "from_bokeh_doc", lambda doc: dataset)
+    monkeypatch.setattr(DATASET_STATS, "get_cached", lambda root: None)
+    doc = Document()
+
+    async def get(root):
+        assert calls == [bad, good]
+        assert doc.roots[0].text == "Loading comparison statistics..."
+        return stats_fixture()
+
+    get_stats = AsyncMock(side_effect=get)
+    built = []
+    monkeypatch.setattr(DATASET_STATS, "get", get_stats)
+    monkeypatch.setattr(
+        plot,
+        "_build_comparison",
+        lambda doc, dataset, stats: built.extend(dataset.get_steps(usable=True)),
+    )
+    venn_time_series_bokeh(doc)
+    assert doc.roots[0].text == "Checking processing steps..."
+    callback = next(iter(doc.session_callbacks))
+    asyncio.run(callback.callback())
+    if healthy:
+        get_stats.assert_awaited_once_with(tmp_path)
+        assert built == [(2, good.parent)]
+    else:
+        get_stats.assert_not_awaited()
+        assert calls == [bad]
+        assert (
+            doc.roots[0].text
+            == "No usable processing steps are available for this participant."
+        )
 
 
 def test_registration_and_shutdown_invalidate(tmp_path, monkeypatch):
