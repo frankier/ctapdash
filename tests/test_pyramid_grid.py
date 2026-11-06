@@ -7,7 +7,7 @@ from ctapdash.io.eeglab import read_eeglab
 from ctapdash.io.paths import DatasetPaths
 from ctapdash.io.recording import RecordingData
 from ctapdash.io.pyramid import mne_to_pyramid, mne_to_rangepyramid, load_pyramid
-from ctapdash.io.cache import scan_dataset
+from ctapdash.io.cache import build_job, job_key, scan_dataset
 from venn_ts.domain import ComparisonDomain
 from venn_ts.range_series import RecordingTileSource
 from tests.dummy_data import write_eeglab
@@ -127,8 +127,11 @@ def test_zoomed_out_domains_read_cached_buckets_without_raw(tmp_path, mode):
 
 
 def test_old_pyramids_are_invalidated_even_with_fresh_mtime(tmp_path):
-    s = cached_source(tmp_path, "1_load", starts=[54, 600])
-    paths = DatasetPaths(tmp_path).recording(s.path)
+    path = write_eeglab(tmp_path / "1_load", 2, n_times=507, epoch_starts=[54, 600])
+    jobs = scan_dataset(tmp_path)
+    for kind in ("metadata", "transpose", "pyramid", "rangepyramid"):
+        build_job(jobs[job_key(kind, (tmp_path, path))])
+    paths = DatasetPaths(tmp_path).recording(path)
     (paths.rangepyramid / "sample-grid-version").unlink()
     jobs = scan_dataset(tmp_path)
     states = {job.key[0]: job.state for job in jobs.values()}

@@ -3,19 +3,58 @@ import warnings
 
 
 from mne.io import read_raw_eeglab, read_epochs_eeglab
+from mne.io.eeglab.eeglab import _check_eeglab_fname
 import pickle
 
-from ctapdash.io.eeglab.readers import CtapEpochEEGLAB, CtapRawEEGLAB
+from ctapdash.io.eeglab.readers import (
+    CtapEpochEEGLAB,
+    CtapRawEEGLAB,
+    sample_file_signature,
+)
 from ctapdash.io.paths import metadata_file_path
+from ctapdash.io.utils import atomic_write
+
+
+_METADATA_CACHE_HEADER = b"CTAPDASH metadata 1\n"
 
 
 def cached_path(path):
     return metadata_file_path(path)
 
 
-def pickle_load(path):
-    with open(path, "rb") as f:
-        return pickle.load(f)
+def _read_sample_source(stream):
+    if stream.read(len(_METADATA_CACHE_HEADER)) != _METADATA_CACHE_HEADER:
+        raise ValueError("Outdated EEGLAB metadata cache")
+    return pickle.load(stream)
+
+
+def _load_metadata(path):
+    with open(path, "rb") as stream:
+        _read_sample_source(stream)
+        return pickle.load(stream)
+
+
+def metadata_cache_current(path, set_path):
+    # Read only the sample dependency during registration, without loading MNE data.
+    try:
+        with path.open("rb") as stream:
+            data_name, sample_path, signature = _read_sample_source(stream)
+        with warnings.catch_warnings(action="ignore"):
+            resolved = _check_eeglab_fname(os.fspath(set_path), data_name)
+        return (
+            os.path.abspath(resolved) == sample_path
+            and sample_file_signature(resolved) == signature
+        )
+    except OSError, ValueError, TypeError, EOFError, pickle.UnpicklingError:
+        return False
+
+
+def write_metadata_cache(path, eeg):
+    with atomic_write(path, overwrite=True) as staging:
+        with staging.open("wb") as stream:
+            stream.write(_METADATA_CACHE_HEADER)
+            pickle.dump(eeg.sample_source, stream)
+            pickle.dump(eeg, stream)
 
 
 def is_epoched(path):
@@ -24,14 +63,16 @@ def is_epoched(path):
     return len(pymatreader.read_mat(path, "epoch").get("epoch", ())) > 0
 
 
-def _try_cache(load_func, path, base_stat, warm=False, force_cache=False):
+def _try_cache(path, set_path, base_stat, warm=False, force_cache=False):
     if path.exists():
         invalid = False
         cached_raw_stat = os.stat(path)
-        mtime_valid = cached_raw_stat.st_mtime >= base_stat.st_mtime
-        if mtime_valid:
+        if (
+            cached_raw_stat.st_mtime_ns >= base_stat.st_mtime_ns
+            and metadata_cache_current(path, set_path)
+        ):
             try:
-                result = load_func(path)
+                result = _load_metadata(path)
             except Exception as err:
                 if force_cache:
                     raise err
@@ -60,7 +101,7 @@ def read_eeglab(
             raise ValueError("validated loading requires the metadata cache")
         cached = cached_path(path)
         try:
-            result = pickle_load(cached)
+            result = _load_metadata(cached)
             if hasattr(result, "raw_montage"):
                 return result
         except Exception:
@@ -74,7 +115,7 @@ def read_eeglab(
         cache_path = cached_path(path)
         if use_cache or force_cache:
             cached = _try_cache(
-                pickle_load, cache_path, base_stat, warm=warm, force_cache=force_cache
+                cache_path, path, base_stat, warm=warm, force_cache=force_cache
             )
             if cached is not None:
                 return cached
@@ -88,11 +129,7 @@ def read_eeglab(
                 eeg = CtapRawEEGLAB(path)
             if not use_cache:
                 return eeg
-            from ctapdash.io.utils import atomic_write
-
-            with atomic_write(cached_path(path), overwrite=True) as staging:
-                with staging.open("wb") as f:
-                    pickle.dump(eeg, f)
+            write_metadata_cache(cached_path(path), eeg)
             if warm:
                 return True
             return eeg

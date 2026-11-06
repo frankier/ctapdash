@@ -44,6 +44,8 @@ class Job:
 
 def scan_dataset(directory):
     """Capture source mtimes once and classify all artifacts without building."""
+    from ctapdash.io.eeglab.porcelain import metadata_cache_current
+
     dataset = DatasetPaths(directory)
     if not dataset.root.is_dir():
         raise FileNotFoundError(f"Dataset directory does not exist: {dataset.root}")
@@ -55,13 +57,21 @@ def scan_dataset(directory):
     jobs = {}
     stats_inputs = []
     stats_mtimes = []
+    stats_cutoff = 0
 
     def add(kind, paths, output, mtime, dependencies=(), recordings=()):
         key = (kind, str(dataset.root), str(paths.relative) if paths else "")
         try:
-            fresh = output.stat().st_mtime_ns >= mtime
+            output_mtime = output.stat().st_mtime_ns
         except FileNotFoundError:
-            fresh = False
+            output_mtime = None
+        fresh = (
+            output_mtime is not None
+            and output_mtime >= mtime
+            and all(jobs[key].state == "ready" for key in dependencies)
+        )
+        if fresh and kind == "metadata":
+            fresh = metadata_cache_current(output, paths.set)
         if fresh and kind in ("pyramid", "rangepyramid"):
             from ctapdash.io.pyramid import grid_cache_current
 
@@ -73,27 +83,37 @@ def scan_dataset(directory):
             "ready" if fresh else "pending",
             recordings=recordings,
         )
-        return key
+        return key, output_mtime
 
     for paths, mtime in inputs:
-        metadata = add("metadata", paths, paths.metadata, mtime)
-        transpose = add("transpose", paths, paths.transpose, mtime, (metadata,))
-        add("pyramid", paths, paths.pyramid, mtime, (metadata, transpose))
-        add("rangepyramid", paths, paths.rangepyramid, mtime, (metadata, transpose))
+        metadata, metadata_mtime = add("metadata", paths, paths.metadata, mtime)
+        transpose, transpose_mtime = add(
+            "transpose", paths, paths.transpose, metadata_mtime or mtime, (metadata,)
+        )
+        recording_mtime = max(mtime, metadata_mtime or 0, transpose_mtime or 0)
+        add("pyramid", paths, paths.pyramid, recording_mtime, (metadata, transpose))
+        add(
+            "rangepyramid",
+            paths,
+            paths.rangepyramid,
+            recording_mtime,
+            (metadata, transpose),
+        )
         # Match describe_dataset: immediate .set files in numbered step folders.
         if len(paths.relative.parts) == 2 and paths.relative.parts[0][0].isnumeric():
             stats_inputs.append(paths.relative)
             stats_mtimes.append(mtime)
+            stats_cutoff = max(stats_cutoff, recording_mtime)
     dependencies = tuple(
         (kind, str(dataset.root), str(path))
         for path in stats_inputs
         for kind in ("metadata", "transpose")
     )
-    stats = add(
+    stats, _ = add(
         "stats",
         None,
         dataset.stats,
-        max(stats_mtimes, default=0),
+        stats_cutoff,
         dependencies,
         tuple(stats_inputs),
     )
@@ -103,13 +123,14 @@ def scan_dataset(directory):
             current = pickle.load(stream) == jobs[stats].sources
     except OSError, ValueError, EOFError, pickle.UnpicklingError:
         current = False
-    if not current or any(jobs[key].state != "ready" for key in dependencies):
+    if not current:
         jobs[stats].state = "pending"
     return jobs
 
 
 def build_job(job):
     from ctapdash.io.eeglab import read_eeglab
+    from ctapdash.io.eeglab.porcelain import write_metadata_cache
     from ctapdash.io.recording import RecordingData
     from ctapdash.io.transpose import write_transpose
     from ctapdash.io.pyramid import mne_to_pyramid, mne_to_rangepyramid
@@ -120,9 +141,7 @@ def build_job(job):
     job.output.parent.mkdir(parents=True, exist_ok=True)
     if kind == "metadata":
         eeg = read_eeglab(Path(root) / relative, use_cache=False)
-        with atomic_write(job.output, overwrite=True) as staging:
-            with staging.open("wb") as stream:
-                pickle.dump(eeg, stream)
+        write_metadata_cache(job.output, eeg)
     elif kind == "transpose":
         write_transpose(root, relative, metadata_validated=True)
     elif kind == "stats":

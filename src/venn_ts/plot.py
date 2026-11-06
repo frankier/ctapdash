@@ -119,6 +119,9 @@ def circle(color):
 SIDEBAR_WIDTH_FULL = 200
 
 
+_NO_USABLE_STEPS = "No usable processing steps are available for this participant."
+
+
 def _build_comparison(doc, dataset, stats):
     """Build one WebGL figure containing Venn and line comparison layers."""
     from base64 import b64encode
@@ -156,9 +159,7 @@ def _build_comparison(doc, dataset, stats):
 
     steps = dataset.get_steps(usable=True)
     if not steps:
-        doc.add_root(
-            Div(text="No usable processing steps are available for this participant.")
-        )
+        doc.add_root(Div(text=_NO_USABLE_STEPS))
         return
 
     steps_by_number = dict(steps)
@@ -1068,20 +1069,20 @@ def venn_time_series_bokeh(doc):
     from bokeh.models import Div
     from markupsafe import escape
 
+    from ctapdash.io.cache import REGISTERED, CacheJobError
     from ctapdash.io.stats_cache import DATASET_STATS
 
     dataset = ObservationData.from_bokeh_doc(doc)
-    if not dataset.get_steps(usable=True):
-        doc.add_root(
-            Div(text="No usable processing steps are available for this participant.")
-        )
+    steps = dataset.get_steps()
+    if not steps:
+        doc.add_root(Div(text=_NO_USABLE_STEPS))
         return
     stats = DATASET_STATS.get_cached(dataset.source_path)
     if stats is not None:
         _build_comparison(doc, dataset, stats)
         return
 
-    loading = Div(text="Loading comparison statistics...")
+    loading = Div(text="Checking processing steps...")
     doc.add_root(loading)
     destroyed = False
 
@@ -1095,6 +1096,24 @@ def venn_time_series_bokeh(doc):
         if destroyed:
             return
         try:
+            warmer = REGISTERED.get(str(dataset.source_path))
+            if warmer is not None:
+                for _, directory in steps:
+                    file = (
+                        dataset.source_path,
+                        directory / (dataset.participant + ".set"),
+                    )
+                    try:
+                        # Transpose readiness includes its metadata dependency.
+                        await warmer.hurry("transpose", file)
+                    except CacheJobError:
+                        pass
+                    if destroyed:
+                        return
+            if not dataset.get_steps(usable=True):
+                loading.text = _NO_USABLE_STEPS
+                return
+            loading.text = "Loading comparison statistics..."
             stats = await DATASET_STATS.get(dataset.source_path)
             if destroyed:
                 return
