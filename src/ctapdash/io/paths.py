@@ -115,42 +115,42 @@ def qc_step_options(root, steps):
     return options
 
 
-def get_steps_for_participant(root_path, participant):
-    steps = []
+def get_step_sets_for_participant(root_path, participant):
+    step_sets = []
     for subdir in root_path.iterdir():
         if not subdir.name[0].isnumeric():
             continue
         path = subdir / (participant + ".set")
         if not is_recording_file(path, root_path):
             continue
-        step_num = int(subdir.name.split("_", 1)[0])
-        steps.append((step_num, subdir))
-    steps = natsorted(steps)
-    return steps
+        step_set_number = int(subdir.name.split("_", 1)[0])
+        step_sets.append((step_set_number, subdir))
+    step_sets = natsorted(step_sets)
+    return step_sets
 
 
-def collect_steps(root_path):
+def collect_step_sets(root_path):
     from collections import Counter
 
-    steps = []
+    step_sets = []
     files = Counter()
 
     for subdir in root_path.iterdir():
         if subdir.name[0].isnumeric():
-            step_num = int(subdir.name.split("_", 1)[0])
-            steps.append((step_num, subdir))
+            step_set_number = int(subdir.name.split("_", 1)[0])
+            step_sets.append((step_set_number, subdir))
             for filename in subdir.iterdir():
                 if not is_recording_file(filename, root_path):
                     continue
                 files[filename.stem] += 1
 
-    steps.sort()
+    step_sets.sort()
     files = [(-count, filename) for filename, count in files.items()]
     files.sort()
 
     return {
         "participants": [(filename, -count) for count, filename in files],
-        "steps": steps,
+        "step_sets": step_sets,
     }
 
 
@@ -215,41 +215,41 @@ class ObservationData:
         self.require_participant()
         return collect_qc(self.source_path, self.participant)
 
-    def get_steps(self, *, usable=False):
+    def get_step_sets(self, *, usable=False):
         self.require_participant()
-        steps = get_steps_for_participant(self.source_path, self.participant)
+        step_sets = get_step_sets_for_participant(self.source_path, self.participant)
         if usable:
             from ctapdash.io.cache import REGISTERED
 
             warmer = REGISTERED.get(str(self.source_path))
             if warmer is not None:
-                steps = [
+                step_sets = [
                     (number, directory)
-                    for number, directory in steps
+                    for number, directory in step_sets
                     if warmer.problem(
                         (self.source_path, directory / (self.participant + ".set"))
                     )
                     is None
                 ]
-        return steps
+        return step_sets
 
-    def get_recording(self, step):
+    def get_recording(self, step_set):
         from ctapdash.io.recording import RecordingData
 
         self.require_participant()
-        steps = dict(self.get_steps())
+        step_sets = dict(self.get_step_sets())
         try:
-            directory = steps[int(step)]
+            directory = step_sets[int(step_set)]
         except (KeyError, ValueError, TypeError) as error:
-            raise ValueError(f"Unknown step set: {step}") from error
+            raise ValueError(f"Unknown step set: {step_set}") from error
         return RecordingData(
             DatasetPaths(self.source_path).recording(
                 directory / (self.participant + ".set")
             )
         )
 
-    def get_all_steps(self):
-        return collect_steps(self.source_path)
+    def get_all_step_sets(self):
+        return collect_step_sets(self.source_path)
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@
     <div class="m-4 bg-white text-slate-900">
         <h1 class="text-2xl font-bold">Participant Overview</h1>
 
-        {% if step_rows|selectattr('error')|list %}
+        {% if step_set_rows|selectattr('error')|list %}
             <p role="status" class="my-2 text-amber-800">Has problems: some step sets are unavailable.</p>
         {% endif %}
         <h3 class="text-xl my-2 mt-4">Step sets</h3>
@@ -27,45 +27,45 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for step in step_rows %}
+                    {% for step_set in step_set_rows %}
                         <tr>
                             <th scope="row" class="border border-slate-300 px-3 py-2 text-left font-normal">
                                 <a
                                     class="text-blue-800 hover:underline"
-                                    href="{{ url_for('participant_steps') }}{{ source_participant_qs }}&step={{ step.number }}">
-                                    {{ step.number }}
+                                    href="{{ url_for('participant_steps') }}{{ source_participant_qs }}&step={{ step_set.number }}">
+                                    {{ step_set.number }}
                                 </a>
                             </th>
-                            <td class="border border-slate-300 px-3 py-2">{{ step.directory }}</td>
-                            {% if step.error %}
-                                <td colspan="7" class="border border-slate-300 px-3 py-2 text-amber-800">{{ step.error }}</td>
+                            <td class="border border-slate-300 px-3 py-2">{{ step_set.directory }}</td>
+                            {% if step_set.error %}
+                                <td colspan="7" class="border border-slate-300 px-3 py-2 text-amber-800">{{ step_set.error }}</td>
                             {% else %}
-                                {% if step.spanned_duration is not none %}
+                                {% if step_set.spanned_duration is not none %}
                                     <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.epoch_duration|round(2) }}
+                                        {{ step_set.epoch_duration|round(2) }}
                                     </td>
                                     <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.samples_duration|round(2) }}
+                                        {{ step_set.samples_duration|round(2) }}
                                     </td>
                                     <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.spanned_duration|round(2) }}
+                                        {{ step_set.spanned_duration|round(2) }}
                                     </td>
                                 {% else %}
                                     <td colspan="3" class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.samples_duration|round(2) }}
+                                        {{ step_set.samples_duration|round(2) }}
                                     </td>
                                 {% endif %}
                                 <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.epochs }}
+                                    {{ step_set.epochs }}
                                 </td>
                                 <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.samples }}
+                                    {{ step_set.samples }}
                                 </td>
                                 <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.channels }}
+                                    {{ step_set.channels }}
                                 </td>
                                 <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                    {{ step.total }}
+                                    {{ step_set.total }}
                                 </td>
                             {% endif %}
                         </tr>
@@ -90,8 +90,8 @@
                 hx-indicator="#chanload"
                 aria-controls="channel-statistics-table">
                 <option value="all" selected>All</option>
-                {% for step_num, _ in steps %}
-                    <option value="{{ step_num }}">{{ step_num }}</option>
+                {% for step_set_number, _ in step_sets %}
+                    <option value="{{ step_set_number }}">{{ step_set_number }}</option>
                 {% endfor %}
             </select>
             <heatmap-channels>

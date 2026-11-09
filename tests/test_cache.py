@@ -320,7 +320,7 @@ def test_overview_reports_truncated_samples_before_transpose(
     tmp_path, monkeypatch, epochs
 ):
     from ctapdash.io.eeglab import read_eeglab
-    from ctapdash.webapp import _participant_step_rows, _wait_metadata
+    from ctapdash.webapp import _participant_step_set_rows, _wait_metadata
 
     path = write_eeglab(tmp_path / "1_load", epochs)
     # Resolve the external filename from the header, even when the stems differ.
@@ -355,12 +355,12 @@ def test_overview_reports_truncated_samples_before_transpose(
         app=SimpleNamespace(state=SimpleNamespace(cache_hurrier=warmer))
     )
     dataset = ObservationData(tmp_path, "p")
-    steps = dataset.get_steps()
+    steps = dataset.get_step_sets()
     asyncio.run(_wait_metadata(request, dataset, steps))
     assert queue.jobs[job_key("transpose", (tmp_path, path))].state == "pending"
-    rows = _participant_step_rows(tmp_path, steps, "p")
+    rows = _participant_step_set_rows(tmp_path, steps, "p")
     assert "bytes; expected" in rows[0]["error"]
-    assert dataset.get_steps(usable=True) == []
+    assert dataset.get_step_sets(usable=True) == []
 
 
 @pytest.mark.anyio
@@ -520,12 +520,12 @@ async def test_bad_recordings_are_isolated_and_retried(tmp_path):
         with anyio.fail_after(30):
             await warmer.hurry("stats", tmp_path)
         assert all(key[2] != "1_load/invalid.set" for key in warmer.jobs)
-        assert ObservationData(tmp_path, "invalid").get_steps() == []
+        assert ObservationData(tmp_path, "invalid").get_step_sets() == []
         for path in (bad, missing):
             with pytest.raises(CacheJobError, match=path.name):
                 await warmer.hurry("metadata", (tmp_path, path))
             assert warmer.problem((tmp_path, path)) is not None
-            assert ObservationData(tmp_path, path.stem).get_steps(usable=True) == []
+            assert ObservationData(tmp_path, path.stem).get_step_sets(usable=True) == []
         stats = await DATASET_STATS.get(tmp_path)
         assert stats.participant.values.tolist() == ["good"]
         assert warmer.ready("transpose", (tmp_path, good))
