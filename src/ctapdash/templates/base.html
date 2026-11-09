@@ -8,8 +8,8 @@
     <title>{% block title %}{% endblock %}</title>
     {% block extra_head %}{% endblock %}
 </head>
-<body class="min-h-screen" {% block body_attrs %}{% endblock %}>
-    <div id="content">
+<body class="min-h-screen h-dvh flex flex-col" {% block body_attrs %}{% endblock %}>
+    <div id="content" class="flex flex-1 min-h-0 flex-col">
         {% block content %}{% endblock %}
     </div>
     <div id="spinner" class="htmx-indicator fixed inset-0 place-self-center p-20 bg-white z-50 drop-shadow-xl">

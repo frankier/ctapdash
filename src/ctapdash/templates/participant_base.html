@@ -4,7 +4,7 @@
 
 {% block dataset_content %}
     {% include "_participant_select.html" %}
-    <div id="viewer"
+    <div id="viewer" class="flex flex-1 min-h-0 flex-col"
         {% if view == 'peeks' and qc_type == 'eeg' %}
             x-data='{show_scalp: true}'
         {% endif %}

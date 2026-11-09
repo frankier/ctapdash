@@ -164,6 +164,41 @@ def test_venndiff_eeg(page, dashboard_url):
     )
 
 
+@pytest.mark.parametrize(
+    "path,figure",
+    [
+        ("/participant/steps" + QUERY + "&step=1", ".mpl-figure-root"),
+        ("/participant/venn-time-series" + QUERY, ".bokeh-host > div > .bk-Column"),
+    ],
+    ids=["classic", "venndiff"],
+)
+def test_eeg_viewer_fills_viewport_or_scrolls_page(page, dashboard_url, path, figure):
+    page.set_viewport_size({"width": 1280, "height": 420})
+    visit(page, dashboard_url, path)
+    expect(page.locator(f"{figure} canvas").first).to_be_visible(timeout=60000)
+    page.wait_for_function(
+        """selector => {
+            const bounds = document.querySelector(selector).getBoundingClientRect()
+            return bounds.height >= 500 && bounds.bottom > innerHeight
+        }""",
+        arg=figure,
+    )
+    page.evaluate("scrollTo(0, document.scrollingElement.scrollHeight)")
+    page.wait_for_function(
+        """selector => scrollY > 0 &&
+            document.querySelector(selector).getBoundingClientRect().bottom <= innerHeight + 1""",
+        arg=figure,
+    )
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.wait_for_function(
+        """selector =>
+            Math.abs(document.querySelector(selector).getBoundingClientRect().bottom - innerHeight) <= 1 &&
+            document.scrollingElement.scrollHeight === innerHeight""",
+        arg=figure,
+    )
+
+
 def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
     visit(page, dashboard_url, "/participant/overview" + QUERY)
     page.locator("#viewer").get_by_role("link", name="Venndiff EEG viewer").click()

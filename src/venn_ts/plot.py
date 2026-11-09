@@ -501,7 +501,6 @@ def _build_comparison(doc, dataset, stats):
     plot_panel = column(plot_holder, sizing_mode="stretch_both")
     viewer_frame = column(
         row(sidebar_shell, plot_panel, sizing_mode="stretch_both"),
-        min_height=695,
         sizing_mode="stretch_both",
         stylesheets=[
             InlineStyleSheet(
@@ -870,7 +869,6 @@ def _build_comparison(doc, dataset, stats):
                     / 2,
                     y_range[1],
                 )
-            plot_height = max(180, visible_channel_count * 50 + 60)
             x_bounds = (renderer.time_start, renderer.time_end)
             x_floor = min_zoom_span(
                 renderer.sample_interval,
@@ -888,8 +886,7 @@ def _build_comparison(doc, dataset, stats):
                     min_interval=x_floor or None,
                 ),
                 y_range=Range1d(*initial_y_range, bounds=y_range),
-                height=plot_height,
-                min_height=plot_height,
+                min_height=180,
                 sizing_mode="stretch_both",
                 tools="box_zoom,reset,save",
                 active_drag="box_zoom",

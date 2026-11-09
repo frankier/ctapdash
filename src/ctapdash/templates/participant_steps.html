@@ -46,7 +46,7 @@
             </div>
         {% endif %}
     </form>
-    <div class="m-4">
+    <div class="flex-1 w-full {% if eeg_fig %}min-h-[500px]{% endif %}">
         <div id="mpl-warnings"></div>
         {% if no_recording %}
             <p role="status">No recording is available for this participant at step {{ current_step }}.</p>

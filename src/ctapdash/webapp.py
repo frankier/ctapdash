@@ -294,7 +294,10 @@ async def participant_steps_fragment(request, params):
             )
         context["yaxis_options"] = yaxis_options
         context["eeg_fig"] = safe_html.figure_html(
-            fig, on_close="msg_discrete", prevent_default_navigation=True
+            fig,
+            on_close="msg_discrete",
+            prevent_default_navigation=True,
+            fit="container",
         )
     return templates.TemplateResponse(
         request,

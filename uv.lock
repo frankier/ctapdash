@@ -317,7 +317,7 @@ requires-dist = [
     { name = "bokeh", specifier = "==3.10" },
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "mne", extras = ["hdf5"], specifier = ">=1.13.2" },
-    { name = "mplbed", specifier = ">=0.3.0" },
+    { name = "mplbed", specifier = ">=0.4.0" },
     { name = "natsort", specifier = ">=8.4.0" },
     { name = "numba", specifier = ">=0.67.0" },
     { name = "pillow", specifier = ">=12.0" },
@@ -399,11 +399,11 @@ wheels = [
 
 [[package]]
 name = "frozendict"
-version = "2.4.7"
+version = "2.5.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/90/b2/2a3d1374b7780999d3184e171e25439a8358c47b481f68be883c14086b4c/frozendict-2.4.7.tar.gz", hash = "sha256:e478fb2a1391a56c8a6e10cc97c4a9002b410ecd1ac28c18d780661762e271bd", size = 317082, upload-time = "2025-11-11T22:40:14.251Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/45/7335e29396dde7c9ec00c4758c46bb7d4a9f07ca0a351ae58b814ca6b6a4/frozendict-2.5.1.tar.gz", hash = "sha256:b79b0c133220c5976ff05b8bfe3c1215119caa6255f477a309151fd5e2c2c0c3", size = 337443, upload-time = "2026-10-30T20:37:01.879Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/38/74/f94141b38a51a553efef7f510fc213894161ae49b88bffd037f8d2a7cb2f/frozendict-2.4.7-py3-none-any.whl", hash = "sha256:972af65924ea25cf5b4d9326d549e69a9a4918d8a76a9d3a7cd174d98b237550", size = 16264, upload-time = "2025-11-11T22:40:12.836Z" },
+    { url = "https://files.pythonhosted.org/packages/60/98/0902e074fb777b4064594a3a18773a50d661dbb8d73b7487fdf63ba088cc/frozendict-2.5.1-py3-none-any.whl", hash = "sha256:b6e602e286b912beca1e12615f50eda6c74646b440c8cfde34221adee6c98c5e", size = 18055, upload-time = "2026-10-30T20:37:00.614Z" },
 ]
 
 [[package]]
@@ -752,7 +752,7 @@ hdf5 = [
 
 [[package]]
 name = "mplbed"
-version = "0.3.0"
+version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "frozendict" },
@@ -760,9 +760,9 @@ dependencies = [
     { name = "starlette" },
     { name = "tornado" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b5/6a/9cfe2b9aedf6f868da45bbd266ada0853b55a68c1129d0330e79a4bec5ea/mplbed-0.3.0.tar.gz", hash = "sha256:264d0ddecd0753089e62011fd6adc9a5e89157e08ab56161c8a71fe3589e90cf", size = 28775, upload-time = "2026-08-24T11:14:52.069Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/53/4fafe1afa2bd5d1701d26dcef5f0ed4bce86d87f3ee7d35084c94e7a4fbb/mplbed-0.4.0.tar.gz", hash = "sha256:b971789718979e7f15f3270f124cafa763132cf174d5f7a29a25e9d087ded1bf", size = 32833, upload-time = "2026-11-09T11:49:32.213Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/63/f8bb65a9549355904f06f4cd5293626a2898ffba788e00d8579ae7016d1c/mplbed-0.3.0-py3-none-any.whl", hash = "sha256:17da861362755ebebe507535fa9c96320afe53dcb31220346ac30f7daa4a0197", size = 38360, upload-time = "2026-08-24T11:14:51.064Z" },
+    { url = "https://files.pythonhosted.org/packages/59/8f/10ec5906a242d25a4944eb72cda4d15f2deecfe1049111ea4ebf6291fbf4/mplbed-0.4.0-py3-none-any.whl", hash = "sha256:0b20797b8f838dbaf9fe3fd86fadc43945f876d4b113b8abc6991c709f46ff16", size = 41315, upload-time = "2026-11-09T11:49:31.356Z" },
 ]
 
 [[package]]
