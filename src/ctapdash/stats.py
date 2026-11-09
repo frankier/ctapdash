@@ -89,7 +89,7 @@ def describe_dataset(
     for path in recordings:
         recording = RecordingData(paths.recording(path), metadata_validated)
         path = recording.paths.set
-        step_num = int(path.parent.name.split("_", 1)[0])
+        step_set_number = int(path.parent.name.split("_", 1)[0])
         instance = recording.read_metadata()
         samples = recording.open_transpose()
         if samples.ndim == 3:
@@ -113,7 +113,7 @@ def describe_dataset(
                 coords={"channel": instance.ch_names},
             )
         )
-        recording_ids.append((step_num, path.stem))
+        recording_ids.append((step_set_number, path.stem))
 
     if not summaries:
         return xr.Dataset(
@@ -128,7 +128,7 @@ def describe_dataset(
         dim=xr.IndexVariable("recording", np.arange(len(summaries))),
         join="outer",
     ).assign_coords(
-        step=("recording", [step_num for step_num, _ in recording_ids]),
+        step=("recording", [step_set_number for step_set_number, _ in recording_ids]),
         participant=("recording", [participant for _, participant in recording_ids]),
     )
 

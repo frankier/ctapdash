@@ -25,58 +25,58 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for participant, step_rows in participant_steps.items() %}
-                        {% for step in step_rows %}
+                    {% for participant, step_set_rows in participant_step_sets.items() %}
+                        {% for step_set in step_set_rows %}
                             <tr>
                                 {% if loop.first %}
-                                    <th scope="row" class="border border-slate-300 px-3 py-2 text-left font-normal" rowspan="{{ step_rows|length }}">
+                                    <th scope="row" class="border border-slate-300 px-3 py-2 text-left font-normal" rowspan="{{ step_set_rows|length }}">
                                         <a
                                             class="text-blue-800 hover:underline"
                                             href="{{ url_for('participant_overview') }}{{ source_qs }}&participant={{ participant }}">
                                             {{ participant }}
                                         </a>
-                                        {% if step_rows|selectattr('error')|list %}
+                                        {% if step_set_rows|selectattr('error')|list %}
                                             <span class="text-amber-800">Has problems</span>
                                         {% endif %}
                                     </th>
                                 {% endif %}
-                                <td class="border border-slate-300 px-3 py-2">{{ step.number }}</td>
-                                <td class="border border-slate-300 px-3 py-2">{{ step.directory }}</td>
-                                {% if step.error %}
-                                    <td colspan="7" class="border border-slate-300 px-3 py-2 text-amber-800">{{ step.error }}</td>
+                                <td class="border border-slate-300 px-3 py-2">{{ step_set.number }}</td>
+                                <td class="border border-slate-300 px-3 py-2">{{ step_set.directory }}</td>
+                                {% if step_set.error %}
+                                    <td colspan="7" class="border border-slate-300 px-3 py-2 text-amber-800">{{ step_set.error }}</td>
                                 {% else %}
-                                    {% if step.spanned_duration is not none %}
+                                    {% if step_set.spanned_duration is not none %}
                                         <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                            {{ step.epoch_duration|round(2) }}
+                                            {{ step_set.epoch_duration|round(2) }}
                                         </td>
                                         <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                            {{ step.samples_duration|round(2) }}
+                                            {{ step_set.samples_duration|round(2) }}
                                         </td>
                                         <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                            {{ step.spanned_duration|round(2) }}
+                                            {{ step_set.spanned_duration|round(2) }}
                                         </td>
                                     {% else %}
                                         <td colspan="3" class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                            {{ step.samples_duration|round(2) }}
+                                            {{ step_set.samples_duration|round(2) }}
                                         </td>
                                     {% endif %}
                                     <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.epochs }}
+                                        {{ step_set.epochs }}
                                     </td>
                                     <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.samples }}
+                                        {{ step_set.samples }}
                                     </td>
                                     <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.channels }}
+                                        {{ step_set.channels }}
                                     </td>
                                     <td class="border border-slate-300 px-3 py-2 text-right tabular-nums">
-                                        {{ step.total }}
+                                        {{ step_set.total }}
                                     </td>
                                 {% endif %}
                                 {% if loop.first %}
-                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums" rowspan="{{ step_rows|length }}">
+                                    <td class="border border-slate-300 px-3 py-2 text-right tabular-nums" rowspan="{{ step_set_rows|length }}">
                                         {{ participant_totals[participant] }}
-                                        {% if step_rows|selectattr('error')|list %}(incomplete){% endif %}
+                                        {% if step_set_rows|selectattr('error')|list %}(incomplete){% endif %}
                                     </td>
                                 {% endif %}
                             </tr>

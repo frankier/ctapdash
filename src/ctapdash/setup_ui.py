@@ -95,12 +95,13 @@ def _add_source(directory, name=None, sources=None):
     return candidate, sources
 
 
-_STEP_NAME = re.compile(r"[0-9]+(?:_|$)")
+_STEP_SET_NAME = re.compile(r"[0-9]+(?:_|$)")
 
 
 def _is_dataset(directory):
     return any(
-        child.is_dir() and _STEP_NAME.match(child.name) for child in directory.iterdir()
+        child.is_dir() and _STEP_SET_NAME.match(child.name)
+        for child in directory.iterdir()
     )
 
 

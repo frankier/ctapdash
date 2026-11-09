@@ -59,8 +59,8 @@ def test_invalid_headers(tmp_path, contents):
     path.write_bytes(contents)
     assert set_appears_valid(path) is False
     dataset = ObservationData(tmp_path, "p")
-    assert dataset.get_all_steps()["participants"] == []
-    assert dataset.get_steps() == []
+    assert dataset.get_all_step_sets()["participants"] == []
+    assert dataset.get_step_sets() == []
     assert set(scan_dataset(tmp_path)) == {("stats", str(tmp_path), "")}
 
 
@@ -70,9 +70,9 @@ def test_hidden_paths_are_ignored_everywhere(tmp_path):
     write_eeglab(tmp_path / ".hidden" / "2_clean", stem="p")
     (tmp_path / "1_load" / "directory.set").mkdir()
     dataset = ObservationData(tmp_path, "p")
-    assert dataset.get_all_steps()["participants"] == [("p", 1)]
-    assert [number for number, _ in dataset.get_steps()] == [1]
-    assert ObservationData(tmp_path, "._p").get_steps() == []
+    assert dataset.get_all_step_sets()["participants"] == [("p", 1)]
+    assert [number for number, _ in dataset.get_step_sets()] == [1]
+    assert ObservationData(tmp_path, "._p").get_step_sets() == []
     snapshot = scan_dataset(tmp_path)
     assert len(snapshot) == 5
     assert {key[2] for key in snapshot} == {"", "1_load/p.set"}

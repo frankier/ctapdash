@@ -18,12 +18,12 @@
                 <option
                     value=""
                     disabled
-                    {% if current_step is not defined %}selected{% endif %}
+                    {% if current_step_set is not defined %}selected{% endif %}
                 >--- Please choose an option ---</option>
-                {% for step_num, subdir in steps %}
+                {% for step_set_number, subdir in step_sets %}
                     <option
-                        {% if step_num == current_step %}selected{% endif %}
-                        value="{{ step_num }}">
+                        {% if step_set_number == current_step_set %}selected{% endif %}
+                        value="{{ step_set_number }}">
                         {{ subdir.name }}
                     </option>
                 {% endfor %}
@@ -49,7 +49,7 @@
     <div class="flex-1 w-full {% if eeg_fig %}min-h-[500px]{% endif %}">
         <div id="mpl-warnings"></div>
         {% if no_recording %}
-            <p role="status">No recording is available for this participant at step set {{ current_step }}.</p>
+            <p role="status">No recording is available for this participant at step set {{ current_step_set }}.</p>
         {% endif %}
         {{ eeg_fig }}
     </div>

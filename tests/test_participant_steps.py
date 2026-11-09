@@ -15,7 +15,7 @@ def test_steps_fragment_reports_deferred_sample_read_error(tmp_path, monkeypatch
     monkeypatch.setattr(
         webapp,
         "participant_context",
-        lambda request: {"participant": "participant", "steps": [(1, step_dir)]},
+        lambda request: {"participant": "participant", "step_sets": [(1, step_dir)]},
     )
     monkeypatch.setattr(
         webapp.ObservationData,
@@ -37,7 +37,7 @@ def test_steps_fragment_reports_deferred_sample_read_error(tmp_path, monkeypatch
     plot.assert_called_once_with(show=False, scalings=None, clipping=None)
     assert template_response.call_args.args == (request, "participant_steps.html")
     context = template_response.call_args.kwargs["context"]
-    assert context["current_step"] == 1
+    assert context["current_step_set"] == 1
     assert context["recording_problems"] == {
         1: "1_load/participant.set: truncated sample data"
     }

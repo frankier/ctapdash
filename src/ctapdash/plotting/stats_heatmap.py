@@ -105,17 +105,17 @@ def _descriptive_heatmap(summary):
     }
 
 
-def participant_descriptive_heatmap(steps, participant, stats, channels=None):
+def participant_descriptive_heatmap(step_sets, participant, stats, channels=None):
     selected = [
-        (step_num, index)
-        for step_num, _ in steps
+        (step_set_number, index)
+        for step_set_number, _ in step_sets
         for index in np.flatnonzero(
             (stats["participant"].values == participant)
-            & (stats["step"].values == step_num)
+            & (stats["step"].values == step_set_number)
         )
     ]
     summary = stats.isel(recording=[index for _, index in selected]).assign_coords(
-        recording=[step_num for step_num, _ in selected]
+        recording=[step_set_number for step_set_number, _ in selected]
     )
     if channels is not None:
         selected_names = set(channels)

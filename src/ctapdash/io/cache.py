@@ -99,7 +99,7 @@ def scan_dataset(directory):
             recording_mtime,
             (metadata, transpose),
         )
-        # Match describe_dataset: immediate .set files in numbered step folders.
+        # Match describe_dataset: immediate .set files in numbered step set folders.
         if len(paths.relative.parts) == 2 and paths.relative.parts[0][0].isnumeric():
             stats_inputs.append(paths.relative)
             stats_mtimes.append(mtime)

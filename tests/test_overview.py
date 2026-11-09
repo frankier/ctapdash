@@ -12,7 +12,7 @@ from ctapdash.plotting.stats_heatmap import (
     _split_heatmap_channels,
 )
 from ctapdash.webapp import (
-    _participant_step_rows,
+    _participant_step_set_rows,
     participant_overview_fragment,
     participant_statistics_fragment,
     templates,
@@ -133,7 +133,7 @@ def test_fragment_uses_one_table_and_hides_filtered_step_column():
     )
 
     rendered = templates.env.get_template("participant_statistics.html").render(
-        descriptive_heatmap=_descriptive_heatmap(summary), show_step=False
+        descriptive_heatmap=_descriptive_heatmap(summary), show_step_set=False
     )
     compact = " ".join(rendered.split())
 
@@ -171,7 +171,7 @@ def test_step_rows_strip_dataset_root_and_include_counts():
         ),
         patch("ctapdash.webapp._eeg_counts", side_effect=counts),
     ):
-        rows = _participant_step_rows(root, steps, "sub-01")
+        rows = _participant_step_set_rows(root, steps, "sub-01")
 
     assert rows == [
         {"number": 1, "directory": "1_import", **counts[0]},
@@ -196,11 +196,11 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
         participant="sub-01",
         get_logs=lambda: [],
         get_qc=lambda: [],
-        get_steps=lambda: steps,
+        get_step_sets=lambda: steps,
     )
     with (
         patch("ctapdash.webapp.ObservationData.from_request", return_value=dataset),
-        patch("ctapdash.webapp._participant_step_rows", return_value=step_rows),
+        patch("ctapdash.webapp._participant_step_set_rows", return_value=step_rows),
         patch("ctapdash.channels.participant_channel_metadata", return_value={}),
         patch("ctapdash.stats.describe_mne") as describe_mne,
         patch(
@@ -216,7 +216,7 @@ def test_overview_does_not_calculate_descriptive_statistics(monkeypatch):
     assert response is rendered
     describe_mne.assert_not_called()
     context = template_response.call_args.kwargs["context"]
-    assert context["step_rows"][0]["total"] == 100
+    assert context["step_set_rows"][0]["total"] == 100
     assert "descriptive_heatmap" not in context
 
 
@@ -240,7 +240,7 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     dataset = SimpleNamespace(
         participant="sub-01",
         source_path=Path("/data"),
-        get_steps=lambda: steps,
+        get_step_sets=lambda: steps,
     )
     with (
         patch("ctapdash.webapp.ObservationData.from_request", return_value=dataset),
@@ -265,4 +265,4 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
     assert (
         template_response.call_args.kwargs["context"]["descriptive_heatmap"] is heatmap
     )
-    assert not template_response.call_args.kwargs["context"]["show_step"]
+    assert not template_response.call_args.kwargs["context"]["show_step_set"]

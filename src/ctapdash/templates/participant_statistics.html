@@ -23,7 +23,7 @@
                         {% else %}
                             <td class="border border-slate-300" aria-hidden="true"></td>
                         {% endif %}
-                        {% if show_step %}
+                        {% if show_step_set %}
                             {% if loop.first %}
                                 <th scope="col" class="border border-slate-300 px-2 py-1 text-left">
                                     Step set
@@ -59,7 +59,7 @@
                             <th scope="row" class="h-6 whitespace-nowrap border border-slate-300 px-2 text-left font-medium">
                                 {{ row.statistic_label }}
                             </th>
-                            {% if show_step %}
+                            {% if show_step_set %}
                                 <td class="h-6 border border-slate-300 bg-white px-2 text-left">
                                     {{ row.recording }}
                                 </td>

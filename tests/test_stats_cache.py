@@ -136,7 +136,7 @@ def test_direct_bokeh_miss(tmp_path, monkeypatch, destroy, error):
     import venn_ts.plot as plot
 
     dataset = SimpleNamespace(
-        source_path=tmp_path, get_steps=lambda **kwargs: [(1, tmp_path)]
+        source_path=tmp_path, get_step_sets=lambda **kwargs: [(1, tmp_path)]
     )
     monkeypatch.setattr(ObservationData, "from_bokeh_doc", lambda doc: dataset)
     monkeypatch.setattr(DATASET_STATS, "get_cached", lambda root: None)
@@ -200,7 +200,7 @@ def test_direct_bokeh_checks_participant_before_stats(tmp_path, monkeypatch, hea
     monkeypatch.setattr(
         plot,
         "_build_comparison",
-        lambda doc, dataset, stats: built.extend(dataset.get_steps(usable=True)),
+        lambda doc, dataset, stats: built.extend(dataset.get_step_sets(usable=True)),
     )
     venn_time_series_bokeh(doc)
     assert doc.roots[0].text == "Checking step sets..."
@@ -256,7 +256,7 @@ def test_http_viewer_waits_for_stats(tmp_path, monkeypatch):
 
     request = SimpleNamespace(query_params={"participant": "p"})
     dataset = SimpleNamespace(
-        source_path=tmp_path, participant="p", get_steps=lambda **kwargs: []
+        source_path=tmp_path, participant="p", get_step_sets=lambda **kwargs: []
     )
     monkeypatch.setattr(
         webapp,

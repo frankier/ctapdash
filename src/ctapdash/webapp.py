@@ -61,7 +61,7 @@ def sources_context(request):
     source = request.query_params.get("source", "")
     ctx["source"] = source
     if source:
-        ctx.update(ObservationData.from_request(request).get_all_steps())
+        ctx.update(ObservationData.from_request(request).get_all_step_sets())
     participant = request.query_params.get("participant")
     if participant is not None:
         ctx["participant"] = participant
@@ -88,17 +88,17 @@ class QualityControlParams(BaseModel):
     plot: str | None = Field(None, alias="bit")
 
 
-class StepsFragmentParams(BaseModel):
-    """The steps fragment: a step number, or "" when none was given."""
+class StepSetsFragmentParams(BaseModel):
+    """Select the step set for the Classic EEG viewer."""
 
-    step: int_or("") = ""
+    step_set: int_or("") = Field("", alias="step")
     yaxis: str = "overdraw"
 
 
 class StatisticsParams(BaseModel):
-    """The statistics fragment: a step number or "all", plus a channel filter."""
+    """Select a step set or all step sets, with an optional channel filter."""
 
-    step: int_or("all") = "all"
+    step_set: int_or("all") = Field("all", alias="step")
     channels: json_list_of(str, message="must be a JSON list of names") | None = None
 
 
@@ -140,27 +140,30 @@ def _eeg_counts(instance):
     raise TypeError(f"Expected MNE Raw or Epochs, got {type(instance).__name__}")
 
 
-def _recording_problems(root_path, steps, participant):
+def _recording_problems(root_path, step_sets, participant):
     warmer = REGISTERED.get(str(root_path))
     if warmer is None:
         return {}
     return {
         number: str(error)
-        for number, directory in steps
+        for number, directory in step_sets
         if (error := warmer.problem((root_path, directory / (participant + ".set"))))
         is not None
     }
 
 
-def _participant_step_rows(root_path, steps, participant):
+def _participant_step_set_rows(root_path, step_sets, participant):
     rows = []
-    problems = _recording_problems(root_path, steps, participant)
-    for step_num, step_path in steps:
-        row = {"number": step_num, "directory": str(step_path.relative_to(root_path))}
-        if step_num in problems:
-            row["error"] = problems[step_num]
+    problems = _recording_problems(root_path, step_sets, participant)
+    for step_set_number, step_set_path in step_sets:
+        row = {
+            "number": step_set_number,
+            "directory": str(step_set_path.relative_to(root_path)),
+        }
+        if step_set_number in problems:
+            row["error"] = problems[step_set_number]
         else:
-            path = step_path / (participant + ".set")
+            path = step_set_path / (participant + ".set")
             try:
                 instance = RecordingData(
                     DatasetPaths(root_path).recording(path)
@@ -191,11 +194,11 @@ def participant_context(request, default_participant=None):
         "source": dataset.source,
     }
     if dataset.participant is not None:
-        steps = dataset.get_steps()
+        step_sets = dataset.get_step_sets()
         result.update(
             {
                 "participant": dataset.participant,
-                "steps": steps,
+                "step_sets": step_sets,
             }
         )
     return result
@@ -206,20 +209,23 @@ async def dataset_overview(request):
     context = participant_context(request)
     context["view"] = "dataset-overview"
     dataset = ObservationData.from_request(request)
-    participant_steps = {}
-    participants = dataset.get_all_steps()["participants"]
+    participant_step_sets = {}
+    participants = dataset.get_all_step_sets()["participants"]
     for participant, _ in participants:
         participant_dataset = dataset.with_participant(participant)
-        steps = participant_dataset.get_steps()
-        await _wait_metadata(request, participant_dataset, steps)
-        step_rows = await run_in_threadpool(
-            _participant_step_rows, participant_dataset.source_path, steps, participant
+        step_sets = participant_dataset.get_step_sets()
+        await _wait_metadata(request, participant_dataset, step_sets)
+        step_set_rows = await run_in_threadpool(
+            _participant_step_set_rows,
+            participant_dataset.source_path,
+            step_sets,
+            participant,
         )
-        participant_steps[participant] = step_rows
-    context["participant_steps"] = participant_steps
+        participant_step_sets[participant] = step_set_rows
+    context["participant_step_sets"] = participant_step_sets
     context["participant_totals"] = {
         participant: sum(row.get("total", 0) for row in rows)
-        for participant, rows in participant_steps.items()
+        for participant, rows in participant_step_sets.items()
     }
     return templates.TemplateResponse(
         request,
@@ -239,33 +245,37 @@ async def participant_select(request):
     )
 
 
-@query_params(StepsFragmentParams)
+@query_params(StepSetsFragmentParams)
 async def participant_steps_fragment(request, params):
     context = participant_context(request)
     context["view"] = "steps"
     yaxis = params.yaxis
     context = {**context, "yaxis": yaxis, "yaxis_options": []}
     participant = context["participant"]
-    steps = context["steps"]
-    step = params.step
-    if step != "":
-        steps_dict = dict(steps)
+    step_sets = context["step_sets"]
+    step_set = params.step_set
+    if step_set != "":
+        step_sets_by_number = dict(step_sets)
         dataset = ObservationData.from_request(request)
-        context["current_step"] = step
-        step_full = steps_dict.get(step)
-        if step_full is None and step not in dict(dataset.get_all_steps()["steps"]):
+        context["current_step_set"] = step_set
+        step_set_dir = step_sets_by_number.get(step_set)
+        if step_set_dir is None and step_set not in dict(
+            dataset.get_all_step_sets()["step_sets"]
+        ):
             raise HTTPException(status_code=404, detail="Step set not found")
-        path = step_full / (participant + ".set") if step_full is not None else None
+        path = (
+            step_set_dir / (participant + ".set") if step_set_dir is not None else None
+        )
         if path is None or not path.is_file():
             context["no_recording"] = True
             return templates.TemplateResponse(
                 request, "participant_steps.html", context=context
             )
-        context["has_prev"] = (step - 1) in steps_dict
-        await _wait_metadata(request, dataset, [(step, step_full)])
+        context["has_prev"] = (step_set - 1) in step_sets_by_number
+        await _wait_metadata(request, dataset, [(step_set, step_set_dir)])
         problems = _recording_problems(
             dataset.source_path,
-            [(step, step_full)],
+            [(step_set, step_set_dir)],
             participant,
         )
         if problems:
@@ -285,7 +295,7 @@ async def participant_steps_fragment(request, params):
                 fig = eeg.plot(show=False, scalings=scalings, clipping=clipping)
         except Exception as error:
             context["recording_problems"] = {
-                step: f"{step_full.name}/{path.name}: {error}"
+                step_set: f"{step_set_dir.name}/{path.name}: {error}"
             }
             return templates.TemplateResponse(
                 request, "participant_steps.html", context=context
@@ -314,17 +324,17 @@ def bokeh_document(request, path, *args, **kwargs):
 
 @query_params()
 async def venn_time_series(request):
-    """Serve the multichannel processing-step comparison viewer."""
+    """Serve the multichannel step set comparison viewer."""
     # If there's not participant, just pick the first one
     default_participant = None
     context = participant_context(request, default_participant=default_participant)
     dataset = ObservationData.from_request(
         request, default_participant=default_participant
     )
-    await _wait_metadata(request, dataset, dataset.get_steps())
+    await _wait_metadata(request, dataset, dataset.get_step_sets())
     await DATASET_STATS.get(dataset.source_path)
     context["recording_problems"] = _recording_problems(
-        dataset.source_path, dataset.get_steps(), dataset.participant
+        dataset.source_path, dataset.get_step_sets(), dataset.participant
     )
     context["view"] = "venn_time_series"
     context["venn_time_series"] = bokeh_document(
@@ -434,8 +444,8 @@ async def participant_peeks_fragment(request, params):
     )
 
 
-async def _wait_metadata(request, dataset, steps):
-    for _number, directory in steps:
+async def _wait_metadata(request, dataset, step_sets):
+    for _number, directory in step_sets:
         try:
             await request.app.state.cache_hurrier.hurry(
                 "metadata",
@@ -475,13 +485,13 @@ async def participant_overview_fragment(request):
     dataset = ObservationData.from_request(request)
     logs = dataset.get_logs()
     qc = dataset.get_qc()
-    steps = dataset.get_steps()
-    await _wait_metadata(request, dataset, steps)
+    step_sets = dataset.get_step_sets()
+    await _wait_metadata(request, dataset, step_sets)
     from ctapdash.channels import participant_channel_metadata
 
     channel_metadata = await run_in_threadpool(participant_channel_metadata, dataset)
-    step_rows = await run_in_threadpool(
-        _participant_step_rows, dataset.source_path, steps, dataset.participant
+    step_set_rows = await run_in_threadpool(
+        _participant_step_set_rows, dataset.source_path, step_sets, dataset.participant
     )
     return templates.TemplateResponse(
         request,
@@ -490,8 +500,8 @@ async def participant_overview_fragment(request):
             "view": "overview",
             "logs": logs,
             "qc": qc,
-            "steps": steps,
-            "step_rows": step_rows,
+            "step_sets": step_sets,
+            "step_set_rows": step_set_rows,
             "channel_metadata": channel_metadata,
         },
     )
@@ -502,23 +512,25 @@ async def participant_statistics_fragment(request, params):
     from ctapdash.plotting.stats_heatmap import participant_descriptive_heatmap
 
     dataset = ObservationData.from_request(request)
-    steps = dataset.get_steps()
-    selected_steps = steps
-    if params.step != "all":
-        steps_by_number = dict(steps)
-        if params.step in steps_by_number:
-            selected_steps = [(params.step, steps_by_number[params.step])]
-        elif params.step in dict(dataset.get_all_steps()["steps"]):
-            selected_steps = []
+    step_sets = dataset.get_step_sets()
+    selected_step_sets = step_sets
+    if params.step_set != "all":
+        step_sets_by_number = dict(step_sets)
+        if params.step_set in step_sets_by_number:
+            selected_step_sets = [
+                (params.step_set, step_sets_by_number[params.step_set])
+            ]
+        elif params.step_set in dict(dataset.get_all_step_sets()["step_sets"]):
+            selected_step_sets = []
         else:
             raise HTTPException(status_code=404, detail="Step set not found")
     descriptive_heatmap = None
-    if selected_steps:
+    if selected_step_sets:
         stats = await DATASET_STATS.get(dataset.source_path)
         if stats.sizes["recording"]:
             descriptive_heatmap = await run_in_threadpool(
                 participant_descriptive_heatmap,
-                selected_steps,
+                selected_step_sets,
                 dataset.participant,
                 stats,
                 params.channels,
@@ -528,9 +540,9 @@ async def participant_statistics_fragment(request, params):
         "participant_statistics.html",
         context={
             "descriptive_heatmap": descriptive_heatmap,
-            "show_step": params.step == "all",
+            "show_step_set": params.step_set == "all",
             "recording_problems": _recording_problems(
-                dataset.source_path, selected_steps, dataset.participant
+                dataset.source_path, selected_step_sets, dataset.participant
             ),
         },
     )
