@@ -30,7 +30,7 @@ def test_home_dataset_and_participant_selection(page, dashboard_url):
     page.locator("#statistics-step").select_option("2")
     expect(
         page.locator("#channel-statistics-table").get_by_role(
-            "columnheader", name="Step", exact=True
+            "columnheader", name="Step set", exact=True
         )
     ).to_have_count(0)
     expect(
@@ -290,11 +290,35 @@ def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
     assert with_venn - without_venn > 100
 
 
-@pytest.mark.parametrize("peek,count", [("CTAP_peek_data", 2), ("CTAP_blink2event", 1)])
-def test_quality_control_images(page, dashboard_url, peek, count):
+@pytest.mark.parametrize(
+    "function,step,step_set,step_label,count",
+    [
+        ("CTAP_peek_data", "set1_fun1", "1_load", "Step 1", 2),
+        (
+            "CTAP_blink2event",
+            "set3_fun1-blinkERP",
+            "3_fine_clean",
+            "Step 1 · blinkERP",
+            1,
+        ),
+    ],
+)
+def test_quality_control_images(
+    page, dashboard_url, function, step, step_set, step_label, count
+):
     visit(page, dashboard_url, "/participant/overview" + QUERY)
     page.get_by_role("link", name="Quality control", exact=True).click()
-    page.locator("#peek-select").select_option(peek)
+    page.get_by_label("Function:").select_option(function)
+    step_select = page.get_by_label("Step:", exact=True)
+    expect(step_select).to_have_value(step)
+    expect(step_select.locator("optgroup")).to_have_attribute("label", step_set)
+    expect(step_select.locator("option")).to_have_text(step_label)
+    plot = page.get_by_label("Plot:").input_value()
+    visit(
+        page,
+        dashboard_url,
+        "/participant/peeks" + QUERY + f"&peek={function}&set={step}&bit={plot}",
+    )
     images = page.locator("#peek-content img")
     expect(images).to_have_count(count)
     for image in images.all():
@@ -439,7 +463,7 @@ def test_cache_progress_across_navigation(page, dashboard_url):
     page.locator("#statistics-step").select_option("2")
     expect(
         page.locator("#channel-statistics-table").get_by_role(
-            "columnheader", name="Step", exact=True
+            "columnheader", name="Step set", exact=True
         )
     ).to_have_count(0)
     expect(indicator).to_have_count(1)

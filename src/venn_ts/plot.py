@@ -119,7 +119,7 @@ def circle(color):
 SIDEBAR_WIDTH_FULL = 200
 
 
-_NO_USABLE_STEPS = "No usable processing steps are available for this participant."
+_NO_USABLE_STEPS = "No usable step sets are available for this participant."
 
 
 def _build_comparison(doc, dataset, stats):
@@ -189,13 +189,13 @@ def _build_comparison(doc, dataset, stats):
         label="−",
         name="remove-step",
         width=45,
-        html_attributes={"title": "Remove step"},
+        html_attributes={"title": "Remove step set"},
     )
     add_step = Button(
         label="+",
         name="add-step",
         width=45,
-        html_attributes={"title": "Add step"},
+        html_attributes={"title": "Add step set"},
         styles={"margin-right": "0"},
     )
     palette_select = PaletteSelector(
@@ -203,7 +203,7 @@ def _build_comparison(doc, dataset, stats):
     )
     palette_help = HelpIcon(
         tooltip=Tooltip(
-            content="Use the palette selector to choose a set of primary colors then assign them to steps. The Venn diagram shows the colors which their intersections will be plotted with.",
+            content="Use the palette selector to choose a set of primary colors then assign them to step sets. The Venn diagram shows the colors which their intersections will be plotted with.",
             position="bottom",
             stylesheets=[
                 """
@@ -427,7 +427,9 @@ def _build_comparison(doc, dataset, stats):
         title="Markers",  # Text displayed on the border frame
         child=column(
             row(palette_select, palette_help),
-            Div(text="Steps", styles={"margin-top": "10px", "margin-bottom": "2px"}),
+            Div(
+                text="Step sets", styles={"margin-top": "10px", "margin-bottom": "2px"}
+            ),
             *step_rows,
             row(remove_step, add_step, styles={"margin-left": "auto"}),
             hull_toggle,
@@ -903,7 +905,7 @@ def _build_comparison(doc, dataset, stats):
                     line_color=colors()[1 << i],
                     line_width=1,
                     line_alpha=1,
-                    name=f"step {step}",
+                    name=f"step set {step}",
                 )
                 for i, (step, source) in enumerate(
                     zip(
@@ -1033,7 +1035,7 @@ def _build_comparison(doc, dataset, stats):
     rebuild(None, None, None)
     doc.add_root(viewer_frame)
     doc.add_root(channel_dialog)
-    doc.title = "Processing-step time series comparison"
+    doc.title = "Step set time series comparison"
 
     def close_session(_context):
         if active_coordinator[0] is not None:
@@ -1079,7 +1081,7 @@ def venn_time_series_bokeh(doc):
         _build_comparison(doc, dataset, stats)
         return
 
-    loading = Div(text="Checking processing steps...")
+    loading = Div(text="Checking step sets...")
     doc.add_root(loading)
     destroyed = False
 

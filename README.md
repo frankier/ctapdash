@@ -140,5 +140,5 @@ uv run ctapdash --config /tmp/ctap-dummy/conf.toml
 ```
 
 No reference participant files are required or copied. The generated `TAPPED`
-directory mirrors the numbered processing steps, logs, and quality-control
+directory mirrors the numbered step sets, logs, and quality-control
 layout of CTAP output.

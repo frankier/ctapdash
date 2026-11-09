@@ -9,6 +9,7 @@ from workingtitle.pydanticstarlette import FileStem, ParamError, parse_query
 
 SCALP_REGEX = re.compile(r"(?P<stem>[^-]+)-badChan-scalp.png")
 CH_REGEX = re.compile(r"(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
+QC_STEP_REGEX = re.compile(r"set([0-9]+)_fun([0-9]+)(?:-(.+))?")
 
 
 def is_recording_file(path, root):
@@ -77,30 +78,41 @@ def qc_to_tree(qcs):
             rest[value] = path
         return groups, rest
 
-    def form_sets(peek_list):
-        peek_dict = {}
-        rest = {}
-        for directory in peek_list:
-            first_seg = directory.parts[1]
-            if first_seg.startswith("set"):
-                peek_dict.setdefault(directory.parts[1], []).append(
-                    (directory.parts[-1], directory)
-                )
-            else:
-                sub_peek_dict, rest_dict = form_sets(directory)
-                peek_dict.update(sub_peek_dict)
-                rest.update(rest_dict)
-        return peek_dict, rest
-
     new_tree = {}
-    for root, peek_list in tree.items():
-        peek_dict, rest = form_sets(peek_list)
-
-        assert len(rest) == 0
-        peek_dict = {k: group_channels(v) for k, v in peek_dict.items()}
-        new_tree[root] = peek_dict
+    for function, paths in tree.items():
+        steps = {}
+        for path in paths:
+            if len(path.parts) >= 3 and path.parts[1].startswith("set"):
+                steps.setdefault(path.parts[1], []).append((path.name, path))
+        new_tree[function] = {
+            key: group_channels(plots) for key, plots in steps.items()
+        }
 
     return new_tree
+
+
+def qc_step_options(root, steps):
+    """Group QC step labels by step set, retaining the original selection keys."""
+    directories = {}
+    for path in root.iterdir():
+        number = path.name.split("_", 1)[0]
+        if number.isascii() and number.isdecimal() and path.is_dir():
+            directories.setdefault(int(number), []).append(path.name)
+
+    options = {}
+    for key in steps:
+        match = QC_STEP_REGEX.fullmatch(key)
+        if match is None:
+            options.setdefault("Other steps", []).append((key, key))
+            continue
+        step_set, step, suffix = match.groups()
+        names = directories.get(int(step_set), [])
+        group = names[0] if len(names) == 1 else f"Step set {step_set}"
+        label = f"Step {step}"
+        if suffix:
+            label += f" · {suffix}"
+        options.setdefault(group, []).append((key, label))
+    return options
 
 
 def get_steps_for_participant(root_path, participant):
@@ -229,7 +241,7 @@ class ObservationData:
         try:
             directory = steps[int(step)]
         except (KeyError, ValueError, TypeError) as error:
-            raise ValueError(f"Unknown processing step: {step}") from error
+            raise ValueError(f"Unknown step set: {step}") from error
         return RecordingData(
             DatasetPaths(self.source_path).recording(
                 directory / (self.participant + ".set")

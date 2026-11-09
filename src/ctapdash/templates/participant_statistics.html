@@ -1,6 +1,6 @@
 {% include "_recording_problems.html" %}
 {% if descriptive_heatmap and not descriptive_heatmap.rows %}
-    <p role="status">No usable recordings are available for these steps.</p>
+    <p role="status">No usable recordings are available for these step sets.</p>
 {% elif descriptive_heatmap and not descriptive_heatmap.channels %}
     <p role="status">Empty selection</p>
 {% elif descriptive_heatmap %}
@@ -11,7 +11,7 @@
     <div class="max-w-full overflow-x-auto border border-slate-300">
         <table class="min-w-max table-fixed border-collapse text-sm">
             <caption class="sr-only">
-                Per-channel descriptive statistics for each processing step
+                Per-channel descriptive statistics for each step set
             </caption>
             {% for group in descriptive_heatmap.groups %}
                 <tbody{% if not loop.first %} class="border-t-4 border-slate-400"{% endif %}>
@@ -26,7 +26,7 @@
                         {% if show_step %}
                             {% if loop.first %}
                                 <th scope="col" class="border border-slate-300 px-2 py-1 text-left">
-                                    Step
+                                    Step set
                                 </th>
                             {% else %}
                                 <td class="border border-slate-300" aria-hidden="true"></td>
@@ -95,5 +95,5 @@
         </table>
     </div>
 {% else %}
-    <p class="text-sm text-slate-600">No usable recordings are available for these steps.</p>
+    <p class="text-sm text-slate-600">No usable recordings are available for these step sets.</p>
 {% endif %}

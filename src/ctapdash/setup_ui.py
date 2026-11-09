@@ -82,7 +82,7 @@ def _add_source(directory, name=None, sources=None):
         raise ValueError(f"Not a directory: {directory}")
     if not _is_dataset(directory):
         raise ValueError(
-            f"Not a dataset directory (no numbered step directories): {directory}"
+            f"Not a dataset directory (no numbered step set directories): {directory}"
         )
     name = (name or directory.name or str(directory)).strip()
     candidate = name
@@ -105,7 +105,7 @@ def _is_dataset(directory):
 
 
 def _find_datasets(directory):
-    """Find dataset roots, without descending into their step directories."""
+    """Find dataset roots, without descending into their step set directories."""
     directory = Path(directory).expanduser().resolve()
     if not directory.is_dir():
         raise ValueError(f"Not a directory: {directory}")
@@ -121,7 +121,7 @@ def _find_datasets(directory):
             dirs.clear()
     if not found:
         raise ValueError(
-            f"No dataset directories with numbered step directories found in: {directory}"
+            f"No dataset directories with numbered step set directories found in: {directory}"
         )
     return found, True
 
