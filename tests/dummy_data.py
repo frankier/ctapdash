@@ -100,7 +100,7 @@ def write_dataset(directory):
             f"{participant}-badChan-scalp.png",
             f"{participant}-chs1-2.png",
         ],
-        "CTAP_blink2event/set3_fun1": [f"{participant}_blink_ERP.png"],
+        "CTAP_blink2event/set3_fun1-blinkERP": [f"{participant}_blink_ERP.png"],
     }.items():
         target = root / "quality_control" / folder
         target.mkdir(parents=True)

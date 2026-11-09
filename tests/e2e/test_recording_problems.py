@@ -19,7 +19,7 @@ def test_recording_problems(page, dashboard_url):
     response = page.goto(dashboard_url + "/participant/overview" + query)
     assert response.status == 200
     expect(
-        page.get_by_text("Has problems: some processing steps are unavailable.")
+        page.get_by_text("Has problems: some step sets are unavailable.")
     ).to_be_visible()
     expect(page.locator("#participant-select")).not_to_contain_text("._mixed")
     expect(page.locator("#participant-select")).not_to_contain_text("invalid")
@@ -56,7 +56,7 @@ def test_recording_problems(page, dashboard_url):
     )
     assert response.status == 200
     expect(
-        page.get_by_text("Has problems: some processing steps are unavailable.")
+        page.get_by_text("Has problems: some step sets are unavailable.")
     ).to_be_visible()
     expect(page.locator("#channel-statistics-table")).to_contain_text(
         "No usable recordings"

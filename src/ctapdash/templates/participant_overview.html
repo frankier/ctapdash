@@ -5,14 +5,14 @@
         <h1 class="text-2xl font-bold">Participant Overview</h1>
 
         {% if step_rows|selectattr('error')|list %}
-            <p role="status" class="my-2 text-amber-800">Has problems: some processing steps are unavailable.</p>
+            <p role="status" class="my-2 text-amber-800">Has problems: some step sets are unavailable.</p>
         {% endif %}
-        <h3 class="text-xl my-2 mt-4">Steps</h3>
+        <h3 class="text-xl my-2 mt-4">Step sets</h3>
         <div class="max-w-full overflow-x-auto">
             <table class="border-collapse text-sm">
                 <thead class="bg-slate-200">
                     <tr>
-                        <th scope="col" rowspan="2" class="border border-slate-300 px-3 py-2 text-left">Step</th>
+                        <th scope="col" rowspan="2" class="border border-slate-300 px-3 py-2 text-left">Step set</th>
                         <th scope="col" rowspan="2" class="border border-slate-300 px-3 py-2 text-left">Directory</th>
                         <th scope="colgroup" colspan="3" class="border border-slate-300 px-3 py-2 text-center">Duration (s)</th>
                         <th scope="col" rowspan="2" class="border border-slate-300 px-3 py-2 text-right">Epochs</th>
@@ -77,7 +77,7 @@
             <h3 id="channel-statistics-heading" class="text-xl my-2">
                 Channel statistics
             </h3>
-            <label for="statistics-step" class="mr-2 text-sm font-medium">Step</label>
+            <label for="statistics-step" class="mr-2 text-sm font-medium">Step set</label>
             <select
                 id="statistics-step"
                 name="step"

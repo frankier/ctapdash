@@ -9,7 +9,7 @@
         <input type="hidden" name="source" value="{{ source }}">
         <input type="hidden" name="participant" value="{{ participant }}">
         <div class="text-nowrap mx-4">
-            Step:
+            <label for="step-select">Step set:</label>
             <select
                 name="step"
                 id="step-select"
@@ -49,7 +49,7 @@
     <div class="flex-1 w-full {% if eeg_fig %}min-h-[500px]{% endif %}">
         <div id="mpl-warnings"></div>
         {% if no_recording %}
-            <p role="status">No recording is available for this participant at step {{ current_step }}.</p>
+            <p role="status">No recording is available for this participant at step set {{ current_step }}.</p>
         {% endif %}
         {{ eeg_fig }}
     </div>

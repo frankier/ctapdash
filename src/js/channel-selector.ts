@@ -86,7 +86,7 @@ export class ChannelSelector extends HTMLElement {
     private lassoMode = "select"
     private queued = false
     private controller?: AbortController
-    unavailableReason = "Unavailable in the displayed processing steps"
+    unavailableReason = "Unavailable in the displayed step sets"
 
     get channels(): Channel[] {
         return this._channels
@@ -214,7 +214,9 @@ export class ChannelSelector extends HTMLElement {
         const steps = Object.entries(this._bads)
             .filter(([, names]) => names.includes(name))
             .map(([step]) => step)
-        return steps.length ? `Bad in step${steps.length > 1 ? "s" : ""} ${steps.join(", ")}` : ""
+        return steps.length
+            ? `Bad in step set${steps.length > 1 ? "s" : ""} ${steps.join(", ")}`
+            : ""
     }
     private label(name: string): string {
         return [

@@ -203,7 +203,7 @@ def test_direct_bokeh_checks_participant_before_stats(tmp_path, monkeypatch, hea
         lambda doc, dataset, stats: built.extend(dataset.get_steps(usable=True)),
     )
     venn_time_series_bokeh(doc)
-    assert doc.roots[0].text == "Checking processing steps..."
+    assert doc.roots[0].text == "Checking step sets..."
     callback = next(iter(doc.session_callbacks))
     asyncio.run(callback.callback())
     if healthy:
@@ -214,7 +214,7 @@ def test_direct_bokeh_checks_participant_before_stats(tmp_path, monkeypatch, hea
         assert calls == [bad]
         assert (
             doc.roots[0].text
-            == "No usable processing steps are available for this participant."
+            == "No usable step sets are available for this participant."
         )
 
 

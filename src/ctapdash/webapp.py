@@ -27,7 +27,7 @@ from ctapdash.io.eeglab import read_eeglab
 from ctapdash.io.stats_cache import DATASET_STATS
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from workingtitle.pydanticstarlette import (
     int_or,
     json_list_of,
@@ -82,12 +82,10 @@ templates = Jinja2Templates(
 )
 
 
-class PeeksParams(BaseModel):
-    """Peek/set/bit selection; None means "not present in the query"."""
-
-    peek: str | None = None
-    set: str | None = None
-    bit: str | None = None
+class QualityControlParams(BaseModel):
+    function: str | None = Field(None, alias="peek")
+    step: str | None = Field(None, alias="set")
+    plot: str | None = Field(None, alias="bit")
 
 
 class StepsFragmentParams(BaseModel):
@@ -256,7 +254,7 @@ async def participant_steps_fragment(request, params):
         context["current_step"] = step
         step_full = steps_dict.get(step)
         if step_full is None and step not in dict(dataset.get_all_steps()["steps"]):
-            raise HTTPException(status_code=404, detail="Step not found")
+            raise HTTPException(status_code=404, detail="Step set not found")
         path = step_full / (participant + ".set") if step_full is not None else None
         if path is None or not path.is_file():
             context["no_recording"] = True
@@ -389,48 +387,39 @@ def map_encode_qc(source_path, val):
         return val
 
 
-@query_params(PeeksParams)
+@query_params(QualityControlParams)
 async def participant_peeks_fragment(request, params):
-    from ctapdash.io.paths import qc_to_tree
+    from ctapdash.io.paths import qc_step_options, qc_to_tree
 
     dataset = ObservationData.from_request(request)
-    qcs = dataset.get_qc()
-    tree = qc_to_tree(qcs)
-    peek_param = params.peek
-    set_param = params.set
-    if set_param is None:
-        peek_tree = tree.get(peek_param)
-        if peek_tree is not None and len(peek_tree) > 0:
-            set_param = list(peek_tree.keys())[0]
-    bit_param = params.bit
-    if bit_param is None:
-        groupsrest = tree.get(peek_param, {}).get(set_param)
-        if groupsrest is not None:
-            groups, rest = groupsrest
-            if len(groups) > 0:
-                bit_param = list(groups.keys())[0]
-            if len(rest) > 0:
-                bit_param = list(rest.keys())[0]
-    qcs = [str(qc) for qc in qcs]
+    tree = qc_to_tree(dataset.get_qc())
+    function = params.function
+    steps = tree.get(function, {})
+    step = params.step if params.step is not None else next(iter(steps), None)
+    groups, images = steps.get(step, ({}, {}))
+    plot = params.plot
+    if plot is None:
+        plot = next(iter(images or groups), None)
     context = {
         "view": "peeks",
-        "qcs": qcs,
-        "tree": tree,
-        "peek_param": peek_param,
-        "set_param": set_param,
-        "bit_param": bit_param,
+        "functions": tree,
+        "selected_function": function,
+        "step_options": qc_step_options(dataset.source_path, steps) if steps else {},
+        "selected_step": step,
+        "plot_groups": groups,
+        "plot_images": images,
+        "selected_plot": plot,
     }
-    if peek_param:
-        groups, rest = tree.get(peek_param, {}).get(set_param, ({}, {}))
-        if bit_param in groups:
+    if function:
+        if plot in groups:
             context.update(
                 {
                     "qc_type": "eeg",
-                    "eeg": map_encode_qc(dataset.source_path, groups[bit_param]),
+                    "eeg": map_encode_qc(dataset.source_path, groups[plot]),
                 }
             )
-        elif bit_param in rest:
-            path = rest[bit_param]
+        elif plot in images:
+            path = images[plot]
             context.update(
                 {
                     "qc_type": "image",
@@ -438,7 +427,7 @@ async def participant_peeks_fragment(request, params):
                     "encoded_string": encode_qc(dataset.source_path, path),
                 }
             )
-        elif params.set is not None and params.bit is not None:
+        elif params.step is not None and params.plot is not None:
             raise HTTPException(status_code=404)
     return templates.TemplateResponse(
         request, "participant_peeks.html", context=context
@@ -522,7 +511,7 @@ async def participant_statistics_fragment(request, params):
         elif params.step in dict(dataset.get_all_steps()["steps"]):
             selected_steps = []
         else:
-            raise HTTPException(status_code=404, detail="Step not found")
+            raise HTTPException(status_code=404, detail="Step set not found")
     descriptive_heatmap = None
     if selected_steps:
         stats = await DATASET_STATS.get(dataset.source_path)

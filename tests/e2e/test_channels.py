@@ -47,7 +47,7 @@ def mount(page, dashboard_url, metadata=METADATA):
 def test_groups_search_bad_markers_and_keyboard(page, dashboard_url):
     selector = mount(page, dashboard_url)
     cz = selector.locator("#panel-list").get_by_role(
-        "checkbox", name="Cz — Bad in steps 1, 2", exact=True
+        "checkbox", name="Cz — Bad in step sets 1, 2", exact=True
     )
     expect(cz).to_be_checked()
     cz.focus()
@@ -93,7 +93,7 @@ def test_head_click_lasso_and_programmatic_updates(page, dashboard_url, tmp_path
     expect(
         selector.locator("#panel-diagram").get_by_role(
             "checkbox",
-            name="Fz — Unavailable in the displayed processing steps",
+            name="Fz — Unavailable in the displayed step sets",
             exact=True,
         )
     ).to_have_attribute("aria-disabled", "true")

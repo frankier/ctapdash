@@ -1,9 +1,9 @@
 {% if recording_problems %}
     <aside role="status" class="m-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-        <p>Has problems: results are incomplete. Unavailable steps:</p>
+        <p>Has problems: results are incomplete. Unavailable step sets:</p>
         <ul class="list-disc pl-5">
             {% for step, error in recording_problems.items() %}
-                <li>Step {{ step }}: {{ error }}</li>
+                <li>Step set {{ step }}: {{ error }}</li>
             {% endfor %}
         </ul>
     </aside>
