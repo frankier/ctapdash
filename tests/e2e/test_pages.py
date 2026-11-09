@@ -1,6 +1,7 @@
 """Browser smoke coverage of every page and each rendered content family."""
 
 from io import BytesIO
+import re
 
 import numpy as np
 import pytest
@@ -294,6 +295,7 @@ def test_venndiff_deepest_zoom_stays_on_screen(page, dashboard_url):
     "function,step,step_set,step_label,count",
     [
         ("CTAP_peek_data", "set1_fun1", "1_load", "Step 1", 2),
+        ("CTAP_peek_data", "set3_fun5", "3_fine_clean", "Step 5", 1),
         (
             "CTAP_blink2event",
             "set3_fun1-blinkERP",
@@ -310,9 +312,12 @@ def test_quality_control_images(
     page.get_by_role("link", name="Quality control", exact=True).click()
     page.get_by_label("Function:").select_option(function)
     step_select = page.get_by_label("Step:", exact=True)
+    step_select.select_option(step)
+    expect(page).to_have_url(re.compile(rf"[?&]set={re.escape(step)}(?:&|$)"))
     expect(step_select).to_have_value(step)
-    expect(step_select.locator("optgroup")).to_have_attribute("label", step_set)
-    expect(step_select.locator("option")).to_have_text(step_label)
+    expect(
+        step_select.locator(f'optgroup[label="{step_set}"] option[value="{step}"]')
+    ).to_have_text(step_label)
     plot = page.get_by_label("Plot:").input_value()
     visit(
         page,

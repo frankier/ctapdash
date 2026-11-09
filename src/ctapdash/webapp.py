@@ -410,11 +410,16 @@ async def participant_peeks_fragment(request, params):
     plot = params.plot
     if plot is None:
         plot = next(iter(images or groups), None)
+    step_options = {}
+    if steps:
+        step_options = await run_in_threadpool(
+            qc_step_options, dataset.source_path, function, steps
+        )
     context = {
         "view": "peeks",
         "functions": tree,
         "selected_function": function,
-        "step_options": qc_step_options(dataset.source_path, steps) if steps else {},
+        "step_options": step_options,
         "selected_step": step,
         "plot_groups": groups,
         "plot_images": images,
