@@ -10,6 +10,9 @@ from workingtitle.pydanticstarlette import FileStem, ParamError, parse_query
 SCALP_REGEX = re.compile(r"(?P<stem>[^-]+)-badChan-scalp.png")
 CH_REGEX = re.compile(r"(?P<stem>.+)-chs(?P<ch_start>[0-9]+)-(?P<ch_end>[0-9]+).png")
 QC_STEP_REGEX = re.compile(r"set([0-9]+)_fun([0-9]+)(?:-(.+))?")
+QC_LOG_PATH_REGEX = re.compile(r"""(?:^|/)quality_control/([^/]+)/([^\s/'"]+)""")
+QC_STEP_SET_HEADER = re.compile(r"STEP SET (\S+)")
+QC_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".tif", ".tiff", ".bmp", ".webp"}
 
 
 def is_recording_file(path, root):
@@ -40,15 +43,18 @@ def collect_logs(source_path, participant):
 def collect_qc(source_path, participant):
     qc = []
     qc_dir = source_path / "quality_control"
-    for root, dirs, files in qc_dir.walk():
+    for root, _, files in qc_dir.walk():
+        parts = root.relative_to(qc_dir).parts
+        if len(parts) < 2 or not parts[1].startswith("set"):
+            continue
+        in_recording_directory = participant in parts[2:]
         for file in files:
-            if not file.startswith(participant):
-                continue
             file_path = root / file
-            rel_path = file_path.relative_to(qc_dir)
-            qc.append(rel_path)
-    qc = natsorted(qc)
-    return qc
+            if file_path.suffix.lower() in QC_IMAGE_SUFFIXES and (
+                in_recording_directory or file.startswith(participant)
+            ):
+                qc.append(file_path.relative_to(qc_dir))
+    return natsorted(qc)
 
 
 def qc_to_tree(qcs):
@@ -91,8 +97,33 @@ def qc_to_tree(qcs):
     return new_tree
 
 
-def qc_step_options(root, steps):
+def _qc_logged_step_sets(root, function, steps):
+    """Read step set IDs explicitly associated with QC paths in CTAP run logs."""
+    matches = {}
+    for path in (root / "logs").glob("runlog*.txt"):
+        try:
+            with path.open(encoding="utf-8", errors="replace") as log:
+                step_set = None
+                for line in log:
+                    line = line.strip()
+                    if line.startswith(("Processing ", "STEP SET ")):
+                        header = QC_STEP_SET_HEADER.fullmatch(line)
+                        step_set = header[1] if header else None
+                    if step_set is None:
+                        continue
+                    for logged_function, key in QC_LOG_PATH_REGEX.findall(
+                        line.replace("\\", "/")
+                    ):
+                        if logged_function == function and key in steps:
+                            matches.setdefault(key, set()).add(step_set)
+        except OSError:
+            continue
+    return matches
+
+
+def qc_step_options(root, function, steps):
     """Group QC step labels by step set, retaining the original selection keys."""
+    logged = _qc_logged_step_sets(root, function, steps)
     directories = {}
     for path in root.iterdir():
         number = path.name.split("_", 1)[0]
@@ -106,8 +137,8 @@ def qc_step_options(root, steps):
             options.setdefault("Other steps", []).append((key, key))
             continue
         step_set, step, suffix = match.groups()
-        names = directories.get(int(step_set), [])
-        group = names[0] if len(names) == 1 else f"Step set {step_set}"
+        names = logged.get(key) or directories.get(int(step_set), [])
+        group = next(iter(names)) if len(names) == 1 else f"Step set {step_set}"
         label = f"Step {step}"
         if suffix:
             label += f" · {suffix}"
