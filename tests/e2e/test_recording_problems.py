@@ -44,7 +44,9 @@ def test_recording_problems(page, dashboard_url):
         [...doc.all_models].some(model => model.name === 'step-a'
             && JSON.stringify(model.options) === '["2"]'))""")
 
-    response = page.goto(dashboard_url + "/participant/steps" + query + "&step=1")
+    response = page.goto(
+        dashboard_url + "/participant/step-sets" + query + "&step_set=1"
+    )
     assert response.status == 200
     expect(page.get_by_role("status").filter(has_text="mixed.set")).to_be_visible()
     expect(page.locator("canvas")).to_have_count(0)

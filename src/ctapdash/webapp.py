@@ -27,7 +27,7 @@ from ctapdash.io.eeglab import read_eeglab
 from ctapdash.io.stats_cache import DATASET_STATS
 from ctapdash.middleware import GlobalRequestMiddleware
 from mplbed import mplbed_starlette, safe_html
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from workingtitle.pydanticstarlette import (
     int_or,
     json_list_of,
@@ -83,22 +83,22 @@ templates = Jinja2Templates(
 
 
 class QualityControlParams(BaseModel):
-    function: str | None = Field(None, alias="peek")
-    step: str | None = Field(None, alias="set")
-    plot: str | None = Field(None, alias="bit")
+    function: str | None = None
+    step: str | None = None
+    plot: str | None = None
 
 
 class StepSetsFragmentParams(BaseModel):
     """Select the step set for the Classic EEG viewer."""
 
-    step_set: int_or("") = Field("", alias="step")
+    step_set: int_or("") = ""
     yaxis: str = "overdraw"
 
 
 class StatisticsParams(BaseModel):
     """Select a step set or all step sets, with an optional channel filter."""
 
-    step_set: int_or("all") = Field("all", alias="step")
+    step_set: int_or("all") = "all"
     channels: json_list_of(str, message="must be a JSON list of names") | None = None
 
 
@@ -246,7 +246,7 @@ async def participant_select(request):
 
 
 @query_params(StepSetsFragmentParams)
-async def participant_steps_fragment(request, params):
+async def participant_step_sets_fragment(request, params):
     context = participant_context(request)
     context["view"] = "steps"
     yaxis = params.yaxis
@@ -269,7 +269,7 @@ async def participant_steps_fragment(request, params):
         if path is None or not path.is_file():
             context["no_recording"] = True
             return templates.TemplateResponse(
-                request, "participant_steps.html", context=context
+                request, "participant_step_sets.html", context=context
             )
         context["has_prev"] = (step_set - 1) in step_sets_by_number
         await _wait_metadata(request, dataset, [(step_set, step_set_dir)])
@@ -281,7 +281,7 @@ async def participant_steps_fragment(request, params):
         if problems:
             context["recording_problems"] = problems
             return templates.TemplateResponse(
-                request, "participant_steps.html", context=context
+                request, "participant_step_sets.html", context=context
             )
         scalings = "auto" if yaxis == "normalize" else None
         yaxis_options = ["overdraw", "normalize"]
@@ -298,7 +298,7 @@ async def participant_steps_fragment(request, params):
                 step_set: f"{step_set_dir.name}/{path.name}: {error}"
             }
             return templates.TemplateResponse(
-                request, "participant_steps.html", context=context
+                request, "participant_step_sets.html", context=context
             )
         context["yaxis_options"] = yaxis_options
         context["eeg_fig"] = safe_html.figure_html(
@@ -309,7 +309,7 @@ async def participant_steps_fragment(request, params):
         )
     return templates.TemplateResponse(
         request,
-        "participant_steps.html",
+        "participant_step_sets.html",
         context=context,
     )
 
@@ -398,7 +398,7 @@ def map_encode_qc(source_path, val):
 
 
 @query_params(QualityControlParams)
-async def participant_peeks_fragment(request, params):
+async def participant_quality_control_fragment(request, params):
     from ctapdash.io.paths import qc_step_options, qc_to_tree
 
     dataset = ObservationData.from_request(request)
@@ -445,7 +445,7 @@ async def participant_peeks_fragment(request, params):
         elif params.step is not None and params.plot is not None:
             raise HTTPException(status_code=404)
     return templates.TemplateResponse(
-        request, "participant_peeks.html", context=context
+        request, "participant_quality_control.html", context=context
     )
 
 
@@ -693,9 +693,9 @@ def create_app(debug=False, session=None):
                 name="participant_statistics",
             ),
             Route(
-                "/participant/steps",
-                participant_steps_fragment,
-                name="participant_steps",
+                "/participant/step-sets",
+                participant_step_sets_fragment,
+                name="participant_step_sets",
             ),
             Route(
                 "/participant/venn-time-series",
@@ -703,9 +703,9 @@ def create_app(debug=False, session=None):
                 name="venn_time_series",
             ),
             Route(
-                "/participant/peeks",
-                participant_peeks_fragment,
-                name="participant_peeks",
+                "/participant/quality-control",
+                participant_quality_control_fragment,
+                name="participant_quality_control",
             ),
             Route("/participant/log", participant_log, name="participant_log"),
             *setup_routes(),
