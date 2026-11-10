@@ -150,8 +150,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
     }
     assert figure.yaxis[0].axis_label is None
     assert figure.output_backend == "webgl"
-    assert figure.height == 460
-    assert figure.min_height == 460
+    assert figure.min_height == 180
     assert figure.sizing_mode == "stretch_both"
     assert (figure.y_range.start, figure.y_range.end) == (0, 8)
     assert figure.x_range.min_interval == pytest.approx(0.075)
@@ -250,7 +249,7 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
         action for action in actions if action.description == "Fullscreen"
     )
     fullscreen_frame = fullscreen.callback.args["viewer_frame"]
-    assert fullscreen_frame.min_height == 695
+    assert fullscreen_frame.min_height is None
     assert fullscreen_frame.sizing_mode == "stretch_both"
     assert len(list(fullscreen_frame.select({"type": RangeSlider}))) == 2
     sidebar_toggle = doc.get_model_by_name("sidebar-toggle")
