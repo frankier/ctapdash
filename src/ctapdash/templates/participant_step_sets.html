@@ -4,14 +4,14 @@
     {% include "_recording_problems.html" %}
     <form id="steps-form"
           method="get"
-          action="{{ url_for('participant_steps') }}"
+          action="{{ url_for('participant_step_sets') }}"
           class="p-2 bg-slate-100 flex items-center flex-wrap w-full">
         <input type="hidden" name="source" value="{{ source }}">
         <input type="hidden" name="participant" value="{{ participant }}">
         <div class="text-nowrap mx-4">
             <label for="step-select">Step set:</label>
             <select
-                name="step"
+                name="step_set"
                 id="step-select"
                 onchange="this.form.requestSubmit()"
                 class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">

@@ -140,7 +140,7 @@ def test_step_without_participant_recording(page, dashboard_url):
     expect(page.locator("canvas").first).to_be_visible(timeout=30000)
     assert (
         page.request.get(
-            dashboard_url + "/participant/steps" + query + "&step=99"
+            dashboard_url + "/participant/step-sets" + query + "&step_set=99"
         ).status
         == 404
     )
@@ -168,7 +168,7 @@ def test_venndiff_eeg(page, dashboard_url):
 @pytest.mark.parametrize(
     "path,figure",
     [
-        ("/participant/steps" + QUERY + "&step=1", ".mpl-figure-root"),
+        ("/participant/step-sets" + QUERY + "&step_set=1", ".mpl-figure-root"),
         ("/participant/venn-time-series" + QUERY, ".bokeh-host > div > .bk-Column"),
     ],
     ids=["classic", "venndiff"],
@@ -313,7 +313,7 @@ def test_quality_control_images(
     page.get_by_label("Function:").select_option(function)
     step_select = page.get_by_label("Step:", exact=True)
     step_select.select_option(step)
-    expect(page).to_have_url(re.compile(rf"[?&]set={re.escape(step)}(?:&|$)"))
+    expect(page).to_have_url(re.compile(rf"[?&]step={re.escape(step)}(?:&|$)"))
     expect(step_select).to_have_value(step)
     expect(
         step_select.locator(f'optgroup[label="{step_set}"] option[value="{step}"]')
@@ -322,7 +322,9 @@ def test_quality_control_images(
     visit(
         page,
         dashboard_url,
-        "/participant/peeks" + QUERY + f"&peek={function}&set={step}&bit={plot}",
+        "/participant/quality-control"
+        + QUERY
+        + f"&function={function}&step={step}&plot={plot}",
     )
     images = page.locator("#peek-content img")
     expect(images).to_have_count(count)

@@ -29,13 +29,13 @@ def test_steps_fragment_reports_deferred_sample_read_error(tmp_path, monkeypatch
     monkeypatch.setattr(webapp, "read_eeglab", read_eeglab)
     template_response = Mock()
     monkeypatch.setattr(webapp.templates, "TemplateResponse", template_response)
-    request = Request({"type": "http", "query_string": b"step=1"})
+    request = Request({"type": "http", "query_string": b"step_set=1"})
 
-    asyncio.run(webapp.participant_steps_fragment(request))
+    asyncio.run(webapp.participant_step_sets_fragment(request))
 
     read_eeglab.assert_called_once_with(path, mmap=False, use_cache=False)
     plot.assert_called_once_with(show=False, scalings=None, clipping=None)
-    assert template_response.call_args.args == (request, "participant_steps.html")
+    assert template_response.call_args.args == (request, "participant_step_sets.html")
     context = template_response.call_args.kwargs["context"]
     assert context["current_step_set"] == 1
     assert context["recording_problems"] == {

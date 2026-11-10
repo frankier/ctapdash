@@ -4,12 +4,12 @@
     <div class="p-2 bg-slate-100 flex flex-wrap w-full">
         <div class="text-nowrap mx-4">
             <label for="peek-select">Function:</label>
-            <form method="get" action="{{ url_for('participant_peeks') }}" class="inline-block">
+            <form method="get" action="{{ url_for('participant_quality_control') }}" class="inline-block">
                 <input type="hidden" name="source" value="{{ source }}">
                 <input type="hidden" name="participant" value="{{ participant }}">
                 <select
                     onchange="this.form.requestSubmit()"
-                    name="peek"
+                    name="function"
                     id="peek-select"
                     class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                     <option disabled {% if not selected_function %}selected{% endif %} value="">--- Please choose an option ---</option>
@@ -24,13 +24,13 @@
         {% if step_options %}
             <div class="text-nowrap mx-4">
                 <label for="set-select">Step:</label>
-                <form method="get" action="{{ url_for('participant_peeks') }}" class="inline-block">
+                <form method="get" action="{{ url_for('participant_quality_control') }}" class="inline-block">
                     <input type="hidden" name="source" value="{{ source }}">
                     <input type="hidden" name="participant" value="{{ participant }}">
-                    <input type="hidden" name="peek" value="{{ selected_function }}">
+                    <input type="hidden" name="function" value="{{ selected_function }}">
                     <select
                         onchange="this.form.requestSubmit()"
-                        name="set"
+                        name="step"
                         id="set-select"
                         class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                         {% for step_set, steps in step_options.items() %}
@@ -49,14 +49,14 @@
         {% if plot_groups or plot_images %}
             <div class="text-nowrap mx-4">
                 <label for="plot-select">Plot:</label>
-                <form method="get" action="{{ url_for('participant_peeks') }}" class="inline-block">
+                <form method="get" action="{{ url_for('participant_quality_control') }}" class="inline-block">
                     <input type="hidden" name="source" value="{{ source }}">
                     <input type="hidden" name="participant" value="{{ participant }}">
-                    <input type="hidden" name="peek" value="{{ selected_function }}">
-                    <input type="hidden" name="set" value="{{ selected_step }}">
+                    <input type="hidden" name="function" value="{{ selected_function }}">
+                    <input type="hidden" name="step" value="{{ selected_step }}">
                     <select
                         onchange="this.form.requestSubmit()"
-                        name="bit"
+                        name="plot"
                         id="plot-select"
                         class="mx-4 my-2 inline-block rounded-md border border-black p-1 bg-white">
                         {% for plot in plot_groups %}

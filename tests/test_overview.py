@@ -228,7 +228,7 @@ def test_statistics_fragment_can_filter_to_one_step(monkeypatch):
         query_params={
             "source": "example",
             "participant": "sub-01",
-            "step": "3",
+            "step_set": "3",
         },
     )
     steps = [(1, Path("/data/1_import")), (3, Path("/data/3_filter"))]

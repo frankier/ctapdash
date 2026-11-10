@@ -32,7 +32,7 @@
                             <th scope="row" class="border border-slate-300 px-3 py-2 text-left font-normal">
                                 <a
                                     class="text-blue-800 hover:underline"
-                                    href="{{ url_for('participant_steps') }}{{ source_participant_qs }}&step={{ step_set.number }}">
+                                    href="{{ url_for('participant_step_sets') }}{{ source_participant_qs }}&step_set={{ step_set.number }}">
                                     {{ step_set.number }}
                                 </a>
                             </th>
@@ -80,7 +80,7 @@
             <label for="statistics-step" class="mr-2 text-sm font-medium">Step set</label>
             <select
                 id="statistics-step"
-                name="step"
+                name="step_set"
                 class="border border-slate-400 bg-white px-2 py-1 text-sm"
                 hx-get="{{ url_for('participant_statistics') }}"
                 hx-trigger="change"
@@ -131,7 +131,7 @@
                 <li>
                     <a
                         class="text-blue-800 hover:underline"
-                        href="{{ url_for('participant_peeks') }}{{ source_participant_qs }}">
+                        href="{{ url_for('participant_quality_control') }}{{ source_participant_qs }}">
                         {{ img_file }}
                     </a>
                 </li>

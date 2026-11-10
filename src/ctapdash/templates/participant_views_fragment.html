@@ -9,7 +9,7 @@
     <div class="text-nowrap px-4 py-2
         {% if view == 'steps' %}bg-slate-300{% endif %}
     ">
-        <a href="{{ url_for("participant_steps") }}{{ source_participant_qs }}">
+        <a href="{{ url_for("participant_step_sets") }}{{ source_participant_qs }}">
             Classic EEG viewer
         </a>
     </div>
@@ -24,7 +24,7 @@
         text-nowrap px-4 py-2
         {% if view == 'peeks' %}bg-slate-300{% endif %}
     ">
-        <a href="{{ url_for("participant_peeks") }}{{ source_participant_qs }}">
+        <a href="{{ url_for("participant_quality_control") }}{{ source_participant_qs }}">
             Quality control
         </a>
     </div>
