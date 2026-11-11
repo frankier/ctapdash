@@ -83,6 +83,7 @@ def test_managed_setup_and_dialog_refresh(page, managed_dashboard):
     page.get_by_role("link", name="Manage data sources").click()
     expect(dialog).to_be_visible()
     dialog.get_by_role("button", name="Remove").first.click()
+    expect(dialog.locator("tbody tr")).to_have_count(1)
     dialog.get_by_role("button", name="Done").click()
     expect(page.locator("#source-select option")).to_have_count(2)
     expect(page).to_have_url(url + "/")
