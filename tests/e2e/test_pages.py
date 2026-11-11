@@ -83,6 +83,7 @@ def test_managed_setup_and_dialog_refresh(page, managed_dashboard):
     page.get_by_role("link", name="Manage data sources").click()
     expect(dialog).to_be_visible()
     dialog.get_by_role("button", name="Remove").first.click()
+    expect(dialog.locator("tbody tr")).to_have_count(1)
     dialog.get_by_role("button", name="Done").click()
     expect(page.locator("#source-select option")).to_have_count(2)
     expect(page).to_have_url(url + "/")
@@ -184,10 +185,13 @@ def test_eeg_viewer_fills_viewport_or_scrolls_page(page, dashboard_url, path, fi
         }""",
         arg=figure,
     )
-    page.evaluate("scrollTo(0, document.scrollingElement.scrollHeight)")
     page.wait_for_function(
-        """selector => scrollY > 0 &&
-            document.querySelector(selector).getBoundingClientRect().bottom <= innerHeight + 1""",
+        """selector => {
+            // The figure can still resize after its first canvas becomes visible.
+            scrollTo(0, document.scrollingElement.scrollHeight)
+            return scrollY > 0 &&
+                document.querySelector(selector).getBoundingClientRect().bottom <= innerHeight + 1
+        }""",
         arg=figure,
     )
 
