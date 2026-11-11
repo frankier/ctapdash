@@ -6,8 +6,7 @@
   "keywords": [],
   "repository": {},
   "dependencies": {
-    "@bokeh/bokehjs": "^3.10.0"
+    "@bokeh/bokehjs": "3.10.2"
   },
-  "devDependencies": {},
   "main": "dist/venn_ts.js"
 }
