@@ -50,8 +50,15 @@ def collect_qc(source_path, participant):
         in_recording_directory = participant in parts[2:]
         for file in files:
             file_path = root / file
+            # FIR diagnostics use a prefix for recordings and share properties.
+            filter_plot = (
+                len(parts) == 2
+                and parts[0] == "CTAP_fir_filter"
+                and file_path.stem
+                in {f"filter_effects_{participant}", "filter_properties"}
+            )
             if file_path.suffix.lower() in QC_IMAGE_SUFFIXES and (
-                in_recording_directory or file.startswith(participant)
+                in_recording_directory or file.startswith(participant) or filter_plot
             ):
                 qc.append(file_path.relative_to(qc_dir))
     return natsorted(qc)

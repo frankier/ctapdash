@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from ctapdash.io.paths import collect_qc, qc_step_options
+import pytest
+
+from ctapdash.io.paths import collect_qc, qc_step_options, qc_to_tree
 
 
 def test_collect_qc_matches_flat_and_recording_directory_plots(tmp_path):
@@ -19,6 +21,36 @@ def test_collect_qc_matches_flat_and_recording_directory_plots(tmp_path):
         path.touch()
 
     assert collect_qc(tmp_path, "subject") == [Path(plot) for plot in plots]
+
+
+@pytest.mark.parametrize("participant", ["subject", "subject_other"])
+def test_collect_qc_filter_diagnostics(tmp_path, participant):
+    for step in ("set1_fun5", "set1_fun6"):
+        for function in ("CTAP_fir_filter", "CTAP_peek_data"):
+            directory = tmp_path / "quality_control" / function / step
+            directory.mkdir(parents=True)
+            for name in (
+                "filter_effects_subject.png",
+                "filter_effects_subject_other.png",
+                "filter_properties.png",
+                "filter_properties.mat",
+                "unrelated.png",
+            ):
+                (directory / name).touch()
+
+    qc = collect_qc(tmp_path, participant)
+    expected = [
+        Path("CTAP_fir_filter") / step / name
+        for step in ("set1_fun5", "set1_fun6")
+        for name in (f"filter_effects_{participant}.png", "filter_properties.png")
+    ]
+    assert qc == expected
+    assert qc_to_tree(qc) == {
+        "CTAP_fir_filter": {
+            step: ({}, {path.name: path for path in expected if path.parts[1] == step})
+            for step in ("set1_fun5", "set1_fun6")
+        }
+    }
 
 
 def test_qc_names_prefer_logged_ids_and_fall_back_when_ambiguous(tmp_path):
