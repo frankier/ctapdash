@@ -185,10 +185,13 @@ def test_eeg_viewer_fills_viewport_or_scrolls_page(page, dashboard_url, path, fi
         }""",
         arg=figure,
     )
-    page.evaluate("scrollTo(0, document.scrollingElement.scrollHeight)")
     page.wait_for_function(
-        """selector => scrollY > 0 &&
-            document.querySelector(selector).getBoundingClientRect().bottom <= innerHeight + 1""",
+        """selector => {
+            // The figure can still resize after its first canvas becomes visible.
+            scrollTo(0, document.scrollingElement.scrollHeight)
+            return scrollY > 0 &&
+                document.querySelector(selector).getBoundingClientRect().bottom <= innerHeight + 1
+        }""",
         arg=figure,
     )
 
