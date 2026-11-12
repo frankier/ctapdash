@@ -1,0 +1,34 @@
+name: audit
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Audit Python dependencies
+        run: uv audit --locked
+
+      - name: Audit frontend dependencies
+        if: ${{ !cancelled() }}
+        run: npm audit
+
+      - name: Audit Bokeh extension dependencies
+        if: ${{ !cancelled() }}
+        working-directory: src/venn_ts
+        run: npm audit
