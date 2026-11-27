@@ -90,19 +90,6 @@ def min_zoom_span(sample_interval: float, time_end: float, data_span: float):
     return min(max(per_sample, per_ulp), data_span)
 
 
-def floored_range(viewport, floor, bounds):
-    """Widen a preserved viewport that is narrower than the zoom floor."""
-    start, end = viewport
-    if floor <= 0 or end - start >= floor:
-        return viewport
-    lower, upper = bounds
-    start = max(lower, (start + end) / 2 - floor / 2)
-    end = min(upper, start + floor)
-    if end - start < floor:
-        start = end - floor
-    return start, end
-
-
 def circle(color):
     return f"""
     <span style="
@@ -131,14 +118,11 @@ def _build_comparison(doc, dataset, stats):
     from bokeh.models import (
         Button,
         CheckboxButtonGroup,
-        CheckboxGroup,
         CustomAction,
         CustomJS,
         Dialog,
         Div,
         FixedTicker,
-        GroupBox,
-        InlineStyleSheet,
         Range1d,
         Select,
         Toggle,
@@ -151,7 +135,9 @@ def _build_comparison(doc, dataset, stats):
 
     from venn_ts.domain import ComparisonDomain
     from venn_ts.domain_axis import configure_domain_axis, update_epoch_markers
-    from venn_ts.help_icon import HelpIcon
+    from workingtitle.bokeh.widgets import HelpIcon, checkbox, control_group, enabled
+    from workingtitle.bokeh.ranges import fit_viewport
+    from workingtitle.bokeh.workspace import FrameFullscreen, Sidebar
     from venn_ts.range_series import (
         RecordingTileSource,
     )
@@ -202,6 +188,7 @@ def _build_comparison(doc, dataset, stats):
         name="palette-selector",
     )
     palette_help = HelpIcon(
+        accessible_label="Palette help",
         tooltip=Tooltip(
             content="Use the palette selector to choose a set of primary colors then assign them to step sets. The Venn diagram shows the colors which their intersections will be plotted with.",
             position="bottom",
@@ -212,11 +199,9 @@ def _build_comparison(doc, dataset, stats):
                 }
             """
             ],
-        )
+        ),
     )
-    hull_toggle = CheckboxGroup(
-        labels=["Shade contained area"], active=[0], name="hull-toggle"
-    )
+    hull_toggle = checkbox("Shade contained area", checked=True, name="hull-toggle")
     original_theme = doc.theme
 
     def colors():
@@ -304,9 +289,8 @@ def _build_comparison(doc, dataset, stats):
             position="right",
         ),
     )
-    epoch_toggle = CheckboxGroup(
-        labels=["Show epoch starts"],
-        active=[],
+    epoch_toggle = checkbox(
+        "Show epoch starts",
         visible=False,
         name="epoch-starts-toggle",
     )
@@ -317,6 +301,7 @@ def _build_comparison(doc, dataset, stats):
     reset_domain_view = [False]
     layers = CheckboxButtonGroup(labels=["Venn", "Lines"], active=[0])
     layers_help = HelpIcon(
+        accessible_label="Layer help",
         tooltip=Tooltip(
             content="Venn uses min-max ranges guaranteed to contain all data points and colors for their intersections.\n"
             + "Lines shows a more conventional line graph.",
@@ -328,7 +313,7 @@ def _build_comparison(doc, dataset, stats):
                 }
             """
             ],
-        )
+        ),
     )
     guides_toggle = Toggle(label="Guides", active=True, name="guides-toggle")
     active_guides = [None]
@@ -397,33 +382,7 @@ def _build_comparison(doc, dataset, stats):
 
     channel_toggle.on_change("active", toggle_channels)
     channel_dialog.on_change("visible", sync_channel_toggle)
-    channel_dialog.js_on_change(
-        "visible",
-        CustomJS(
-            args={"dialog": channel_dialog},
-            code="""
-        queueMicrotask(() => {
-            if (!dialog.visible) return
-            const el = Bokeh.index.find_one(dialog)?.el
-            const fullscreen = document.fullscreenElement
-            if (el != null && fullscreen != null)
-                (fullscreen.shadowRoot ?? fullscreen).append(el)
-        })
-    """,
-        ),
-    )
-
-    normal_sidebar_open = Toggle(active=True, visible=False, name="normal-sidebar-open")
-    fullscreen_sidebar_open = Toggle(
-        active=False, visible=False, name="fullscreen-sidebar-open"
-    )
-    sidebar_toggle = Toggle(
-        label="« Hide controls",
-        active=True,
-        width=110,
-        name="sidebar-toggle",
-    )
-    markers_group = GroupBox(
+    markers_group = control_group(
         title="Markers",  # Text displayed on the border frame
         child=column(
             row(palette_select, palette_help),
@@ -437,18 +396,9 @@ def _build_comparison(doc, dataset, stats):
             width_policy="max",
         ),
         width_policy="max",
-        stylesheets=[
-            InlineStyleSheet(
-                css="""
-                fieldset {
-                    min-inline-size: 0;
-                }
-            """
-            )
-        ],
         margin=(5, 0),
     )
-    y_axis_group = GroupBox(
+    y_axis_group = control_group(
         title="Y-axis",
         child=column(
             channel_toggle,
@@ -458,17 +408,8 @@ def _build_comparison(doc, dataset, stats):
         ),
         margin=(5, 0),
         width_policy="max",
-        stylesheets=[
-            InlineStyleSheet(
-                css="""
-                fieldset {
-                    min-inline-size: 0;
-                }
-            """
-            )
-        ],
     )
-    x_axis_group = GroupBox(
+    x_axis_group = control_group(
         title="X-axis",
         child=column(
             domain_mode,
@@ -476,15 +417,6 @@ def _build_comparison(doc, dataset, stats):
         ),
         margin=(5, 0),
         width_policy="max",
-        stylesheets=[
-            InlineStyleSheet(
-                css="""
-                fieldset {
-                    min-inline-size: 0;
-                }
-            """
-            )
-        ],
     )
     controls_sidebar = column(
         markers_group,
@@ -493,55 +425,21 @@ def _build_comparison(doc, dataset, stats):
         width_policy="max",
         margin=(0, 0, 0, 5),
     )
-    sidebar_shell = column(
-        sidebar_toggle,
+    sidebar = Sidebar.create(
         controls_sidebar,
-        width=SIDEBAR_WIDTH_FULL,
-        sizing_mode="stretch_height",
-        margin=(10, 0, 0, 5),
+        widths=(SIDEBAR_WIDTH_FULL, 40),
+        labels=("« Hide controls", "»"),
+        button_widths=(110, 30),
+        toggle_options=dict(name="sidebar-toggle"),
+        shell_options=dict(sizing_mode="stretch_height", margin=(10, 0, 0, 5)),
     )
     plot_panel = column(plot_holder, sizing_mode="stretch_both")
     viewer_frame = column(
-        row(sidebar_shell, plot_panel, sizing_mode="stretch_both"),
+        row(sidebar.shell, plot_panel, sizing_mode="stretch_both"),
         sizing_mode="stretch_both",
-        stylesheets=[
-            InlineStyleSheet(
-                css="""
-            :host {
-                background: white;
-            }
-            :host(:fullscreen) {
-                width: 100vw !important;
-                height: 100vh !important;
-                overflow: auto;
-                padding: 8px;
-            }
-        """
-            )
-        ],
     )
-    sidebar_toggle.js_on_change(
-        "active",
-        CustomJS(
-            args={
-                "controls_sidebar": controls_sidebar,
-                "sidebar_shell": sidebar_shell,
-                "viewer_frame": viewer_frame,
-                "normal_state": normal_sidebar_open,
-                "fullscreen_state": fullscreen_sidebar_open,
-            },
-            code=f"""
-            const frame_view = Bokeh.index.find_one(viewer_frame)
-            const fullscreen = document.fullscreenElement === frame_view?.el
-            const state = fullscreen ? fullscreen_state : normal_state
-            state.active = cb_obj.active
-            controls_sidebar.visible = cb_obj.active
-            sidebar_shell.width = cb_obj.active ? {SIDEBAR_WIDTH_FULL} : 40
-            cb_obj.width = cb_obj.active ? 110 : 30
-            cb_obj.label = cb_obj.active ? "« Hide controls" : "»"
-        """,
-        ),
-    )
+    fullscreen = FrameFullscreen(viewer_frame, document=doc, dialogs=[channel_dialog])
+    sidebar.remember_in_browser(fullscreen)
 
     def set_guides(_attr, _old, _new):
         if active_guides[0] is None:
@@ -623,22 +521,6 @@ def _build_comparison(doc, dataset, stats):
         # The callback guard prevents later responsive layouts from reapplying it.
         plot.js_on_change("inner_width", resize)
 
-    def preserved_range(saved, bounds, fallback):
-        """Fit a previous viewport into new bounds without resetting its span."""
-        if saved is None:
-            return fallback
-        bound_start, bound_end = bounds
-        start, end = saved
-        span = end - start
-        bound_span = bound_end - bound_start
-        if span <= 0 or span >= bound_span:
-            return bounds
-        if start < bound_start:
-            start, end = bound_start, bound_start + span
-        if end > bound_end:
-            start, end = bound_end - span, bound_end
-        return start, end
-
     def channel_count_action(plot_range, bounds, channel_count, delta):
         label = f"{delta:+d} channel"
         sign_path = "M3 12h7M6.5 8.5v7" if delta > 0 else "M3 12h7"
@@ -685,55 +567,6 @@ def _build_comparison(doc, dataset, stats):
         if renderer is not None:
             renderer.venn_visible = 0 in layers.active
             renderer.lines_visible = 1 in layers.active
-
-    def fullscreen_action():
-        code = (
-            """
-            const view = Bokeh.index.find_one(viewer_frame)
-            const element = view?.el
-            if (element == null) return
-            const sync_sidebar = () => {
-                const fullscreen = document.fullscreenElement === element
-                const dialog_el = Bokeh.index.find_one(channel_dialog)?.el
-                if (channel_dialog.visible && dialog_el != null)
-                    (fullscreen ? view.shadow_el : document.body).append(dialog_el)
-                const state = fullscreen ? fullscreen_state : normal_state
-                controls_sidebar.visible = state.active
-            """
-            + f"""
-                sidebar_shell.width = state.active ? {SIDEBAR_WIDTH_FULL} : 40
-                sidebar_toggle.active = state.active
-                sidebar_toggle.width = state.active ? 110 : 30
-                sidebar_toggle.label = state.active ? "« Hide controls" : "»"
-            """
-            + """
-            }
-            if (element._ctap_sidebar_fullscreen_listener == null) {
-                element._ctap_sidebar_fullscreen_listener = sync_sidebar
-                document.addEventListener("fullscreenchange", sync_sidebar)
-            }
-            if (document.fullscreenElement === element)
-                void document.exitFullscreen()
-            else if (document.fullscreenElement == null)
-                void element.requestFullscreen()
-            """
-        )
-        return CustomAction(
-            description="Fullscreen",
-            icon="fullscreen",
-            callback=CustomJS(
-                args={
-                    "viewer_frame": viewer_frame,
-                    "channel_dialog": channel_dialog,
-                    "controls_sidebar": controls_sidebar,
-                    "sidebar_shell": sidebar_shell,
-                    "sidebar_toggle": sidebar_toggle,
-                    "normal_state": normal_sidebar_open,
-                    "fullscreen_state": fullscreen_sidebar_open,
-                },
-                code=code,
-            ),
-        )
 
     def rebuild(_attr, _old, _new):
         previous_plot = active_plot[0]
@@ -816,7 +649,7 @@ def _build_comparison(doc, dataset, stats):
                 level="glyph",
                 step_count=len(sources),
                 palette=colors(),
-                hull_visible=bool(hull_toggle.active),
+                hull_visible=enabled(hull_toggle),
                 hull_color=hull_color(colors()[0]),
                 dataset_version=version,
                 sample_count=common,
@@ -877,10 +710,10 @@ def _build_comparison(doc, dataset, stats):
                 renderer.time_end,
                 renderer.time_end - renderer.time_start,
             )
-            initial_x_range = floored_range(
-                preserved_range(viewport["x"], x_bounds, x_bounds), x_floor, x_bounds
+            initial_x_range = fit_viewport(
+                viewport["x"] or x_bounds, x_bounds, min_interval=x_floor
             )
-            initial_y_range = preserved_range(viewport["y"], y_range, initial_y_range)
+            initial_y_range = fit_viewport(viewport["y"] or initial_y_range, y_range)
             plot = figure(
                 x_range=Range1d(
                     *initial_x_range,
@@ -920,12 +753,10 @@ def _build_comparison(doc, dataset, stats):
             ]
             style_axes(plot, channels, geometry)
             epoch_markers.extend(
-                configure_domain_axis(
-                    plot, domain, epoch_visible=bool(epoch_toggle.active)
-                )
+                configure_domain_axis(plot, domain, epoch_visible=enabled(epoch_toggle))
             )
             update_epoch_markers(
-                plot, domain, bool(epoch_toggle.active), epoch_markers, colors()
+                plot, domain, enabled(epoch_toggle), epoch_markers, colors()
             )
             plot.add_tools(
                 channel_count_action(plot.y_range, y_range, len(channels), -1),
@@ -952,7 +783,7 @@ def _build_comparison(doc, dataset, stats):
                             pager["index"] = index
                     renderer.epoch_pagers = json.dumps(pagers, separators=(",", ":"))
                     update_epoch_markers(
-                        plot, domain, bool(epoch_toggle.active), epoch_markers, colors()
+                        plot, domain, enabled(epoch_toggle), epoch_markers, colors()
                     )
 
             renderer.on_change("epoch_selection", select_epoch)
@@ -964,7 +795,7 @@ def _build_comparison(doc, dataset, stats):
             )
             minimap = plot_frame.select_one({"name": "time-minimap"})
             configure_domain_axis(minimap, domain, epochs=False)
-            plot.add_tools(fullscreen_action())
+            plot.add_tools(fullscreen.action())
             install_toolbar_sizing(plot)
             active_renderer[0] = renderer
             active_coordinator[0] = coordinator

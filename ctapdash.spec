@@ -67,6 +67,7 @@ recipe = BundleSpec(
         # templates/ and static/ live inside the package and are found through
         # importlib.resources, so they must land at ctapdash/... in the bundle.
         PackageData("ctapdash"),
+        PackageData("workingtitle_bokeh", includes=("bokeh.ext.json", "package.json", "dist/*.js")),
         # The venn_ts extension is served from its compiled bundle; without
         # these files the browser fails with "Cannot find module './vennrender'".
         PackageData(

@@ -302,7 +302,7 @@ dependencies = [
     { name = "starlette-htmx" },
     { name = "tbb4u" },
     { name = "tsdownsample" },
-    { name = "workingtitle", extra = ["desktop"] },
+    { name = "workingtitle", extra = ["bokeh", "desktop"] },
     { name = "xarray" },
 ]
 
@@ -328,7 +328,7 @@ requires-dist = [
     { name = "starlette-htmx", specifier = ">=0.1.1" },
     { name = "tbb4u", specifier = ">=2023.1.0" },
     { name = "tsdownsample", specifier = ">=0.1.5.1" },
-    { name = "workingtitle", extras = ["desktop"], git = "https://github.com/frankier/workingtitle.git" },
+    { name = "workingtitle", extras = ["bokeh", "desktop"], git = "https://github.com/frankier/workingtitle.git" },
     { name = "xarray", specifier = ">=2026.2.0" },
 ]
 
@@ -1873,13 +1873,17 @@ wheels = [
 [[package]]
 name = "workingtitle"
 version = "0.1.0"
-source = { git = "https://github.com/frankier/workingtitle.git#22b0b0b204625eadeb935e8dd6a233293fe66d31" }
+source = { git = "https://github.com/frankier/workingtitle.git#aacaaeed37fe0adcdf7004e4c832b25b5809901c" }
 dependencies = [
     { name = "pydantic" },
     { name = "starlette" },
 ]
 
 [package.optional-dependencies]
+bokeh = [
+    { name = "bokeh" },
+    { name = "markupsafe" },
+]
 desktop = [
     { name = "pyinstaller" },
     { name = "pyinstaller-hooks-contrib" },

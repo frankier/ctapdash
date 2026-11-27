@@ -5,7 +5,7 @@ from bokeh.layouts import row
 from bokeh.resources import INLINE
 from playwright.sync_api import expect
 
-from venn_ts.help_icon import HelpIcon
+from workingtitle.bokeh.widgets import HelpIcon
 
 
 def test_help_icon_renders_and_shows_tooltip(page, tmp_path):

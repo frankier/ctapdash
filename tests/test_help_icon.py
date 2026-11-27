@@ -3,7 +3,7 @@ from bokeh.layouts import row
 from bokeh.models import Tooltip
 import pytest
 
-from venn_ts.help_icon import HelpIcon
+from workingtitle.bokeh.widgets import HelpIcon
 
 
 def test_tooltip_follows_widget_document_membership():

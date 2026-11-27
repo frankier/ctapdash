@@ -79,6 +79,21 @@ def _check_import(label, module, attr, failures):
         print(f"OK   import {label}", flush=True)
 
 
+def _check_help_widget(failures):
+    """Exercise Python model discovery and the compiled extension in the frozen app."""
+    from bokeh.embed import file_html
+    from bokeh.resources import INLINE
+    from workingtitle.bokeh.widgets import HelpIcon
+
+    try:
+        html = file_html(HelpIcon("Choose layers"), INLINE)
+        assert "class AdjacentTooltipView" in html, "missing compiled help widget"
+    except Exception as err:
+        failures.append(f"Bokeh help widget: {err!r}")
+    else:
+        print("OK   Bokeh help widget", flush=True)
+
+
 def _check_backend(failures):
     """Render a figure through mplbed's backend.
 
@@ -147,6 +162,7 @@ def run_smoke_test(app, sock):
             _check_http(server.url + path, failures, contains=contains)
         for label, module, attr in IMPORT_CHECKS:
             _check_import(label, module, attr, failures)
+        _check_help_widget(failures)
         _check_backend(failures)
         _check_mne_plot(failures)
     finally:
