@@ -13,6 +13,7 @@ from mne import BaseEpochs
 from mne.io import BaseRaw
 
 from bokeh.server.asgi import BokehASGI
+from workingtitle.bokeh.embed import bokeh_document
 from starlette_htmx.middleware import HtmxMiddleware
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
@@ -314,14 +315,6 @@ async def participant_step_sets_fragment(request, params):
     )
 
 
-def bokeh_document(request, path, *args, **kwargs):
-    from bokeh.embed import server_document
-    from markupsafe import Markup
-
-    url = str(request.url_for("bokeh", path=path))
-    return Markup(server_document(url, relative_urls=True, *args, **kwargs))
-
-
 @query_params()
 async def venn_time_series(request):
     """Serve the multichannel step set comparison viewer."""
@@ -340,6 +333,7 @@ async def venn_time_series(request):
     context["venn_time_series"] = bokeh_document(
         request,
         "/venn-time-series",
+        relative_urls=True,
         arguments={
             "source": context["source"],
             "participant": context["participant"],

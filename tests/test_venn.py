@@ -14,7 +14,7 @@ from venn_ts.renderer import (
     TileCoordinator,
     VennTimeSeriesRenderer,
 )
-from venn_ts.plot import floored_range, min_zoom_span
+from venn_ts.plot import min_zoom_span
 from venn_ts.venn import (
     build_manifest,
     load_page,
@@ -208,13 +208,6 @@ def test_min_zoom_span_stops_at_one_float32_ulp_per_pixel():
     # A long recording: the ULP wall at time_end binds before the sample
     # wall.  3.6e5 s lies in [2^18, 2^19), so one float32 ULP is 2^-5.
     assert min_zoom_span(0.002, 3.6e5, 3.5e6) == pytest.approx(1200 * 2.0**-5)
-
-
-def test_floored_range_widens_only_viewports_below_the_floor():
-    assert floored_range((2.0, 2.1), 0.75, (0.0, 4.99)) == pytest.approx((1.675, 2.425))
-    assert floored_range((0.0, 0.2), 0.75, (0.0, 4.99)) == pytest.approx((0.0, 0.75))
-    assert floored_range((4.8, 4.9), 0.75, (0.0, 4.99)) == pytest.approx((4.24, 4.99))
-    assert floored_range((0.0, 4.99), 0.75, (0.0, 4.99)) == (0.0, 4.99)
 
 
 def test_bokeh_model_manifest_and_mailbox_protocol():

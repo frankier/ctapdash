@@ -2,91 +2,13 @@
 
 from bokeh.events import DocumentReady
 from bokeh.layouts import column, row
-from bokeh.models import CustomJS, FixedTicker, InlineStyleSheet, Range1d, RangeSlider
+from bokeh.models import CustomJS, FixedTicker, Range1d
 from bokeh.plotting import figure
 
+from workingtitle.bokeh.browser import ON_PLOT_FRAME
+from workingtitle.bokeh.ranges import range_scrollbar
+
 from venn_ts.channel_axis import ChannelAxis
-
-
-def _scrollbar(plot_range, bounds, orientation, min_interval=None):
-    vertical = orientation == "vertical"
-    scrollbar = RangeSlider(
-        name=f"{orientation}-range-scrollbar",
-        start=bounds[0],
-        end=bounds[1],
-        value=(plot_range.start, plot_range.end),
-        step=max((bounds[1] - bounds[0]) / 10_000, 1e-12),
-        orientation=orientation,
-        direction="rtl" if vertical else "ltr",
-        show_value=False,
-        tooltips=False,
-        bar_color="#d1d5db",
-        width=28 if vertical else 100,
-        height=100 if vertical else 28,
-        margin=0,
-        sizing_mode="fixed",
-        stylesheets=[
-            InlineStyleSheet(
-                css="""
-            :host { overflow: visible !important; }
-            .bk-slider-title { display: none !important; }
-            .bk-input-group {
-                box-sizing: border-box !important;
-                height: 100% !important;
-                padding: 0 !important;
-                overflow: visible !important;
-            }
-            .noUi-target { border: 0 !important; }
-            .noUi-target.noUi-vertical {
-                flex: 1 1 auto !important;
-                height: 100% !important;
-                min-height: 0 !important;
-                margin: 0 10px !important;
-            }
-            .noUi-target.noUi-horizontal {
-                margin: 10px 0 !important;
-                width: 100% !important;
-            }
-            .noUi-vertical .noUi-handle {
-                top: auto !important;
-                bottom: var(--handle-right) !important;
-            }
-        """
-            )
-        ],
-    )
-    scrollbar.js_on_change(
-        "value",
-        CustomJS(
-            args={
-                "plot_range": plot_range,
-                "min_interval": min_interval,
-            },
-            code="""
-        let [start, end] = cb_obj.value
-        // Range.min_interval only constrains tool-driven updates;
-        // keep the scrollbar on the same deepest-zoom floor.
-        if (min_interval !== null && end - start < min_interval) {
-            const center = (start + end) / 2
-            start = center - min_interval / 2
-            end = center + min_interval / 2
-        }
-        if (plot_range.start !== start) plot_range.start = start
-        if (plot_range.end !== end) plot_range.end = end
-    """,
-        ),
-    )
-    sync = CustomJS(
-        args={"scrollbar": scrollbar, "plot_range": plot_range},
-        code="""
-        const [start, end] = scrollbar.value
-        if (start !== plot_range.start || end !== plot_range.end)
-            scrollbar.value = [plot_range.start, plot_range.end]
-    """,
-    )
-    plot_range.js_on_change("start", sync)
-    plot_range.js_on_change("end", sync)
-    return scrollbar
 
 
 def navigation_frame(plot, x_bounds, y_bounds, min_interval=None):
@@ -96,8 +18,8 @@ def navigation_frame(plot, x_bounds, y_bounds, min_interval=None):
     Only the handle positions change when the user pans or zooms.
     """
     plot.margin = 0
-    horizontal = _scrollbar(plot.x_range, x_bounds, "horizontal", min_interval)
-    vertical = _scrollbar(plot.y_range, y_bounds, "vertical")
+    horizontal = range_scrollbar(plot.x_range, x_bounds, "horizontal", min_interval)
+    vertical = range_scrollbar(plot.y_range, y_bounds, "vertical")
     common = dict(
         tools="",
         toolbar_location=None,
@@ -190,12 +112,9 @@ def navigation_frame(plot, x_bounds, y_bounds, min_interval=None):
             time_axis=time_axis,
             channel_axis=channel_axis,
         ),
-        code="""
-        const align = () => {
-            const view = Bokeh.index.find_one(plot)
-            if (view == null) return
-            const {left, top, width, height} = view.frame.bbox
-            if (width <= 0 || height <= 0) return
+        code=ON_PLOT_FRAME
+        + """
+        onPlotFrame(plot, 'rangeNavigationFrame', () => plot, (_view, {left, top, width, height}) => {
             const set = (model, key, value) => {
                 if (JSON.stringify(model[key]) !== JSON.stringify(value)) model[key] = value
             }
@@ -209,8 +128,7 @@ def navigation_frame(plot, x_bounds, y_bounds, min_interval=None):
             set(channel_axis, "height", height)
             set(channel_axis, "frame_height", height)
             set(channel_axis, "margin", [top, 0, 0, 0])
-        }
-        requestAnimationFrame(align)
+        });
     """,
     )
     for property_name in ("inner_width", "inner_height", "outer_width", "outer_height"):

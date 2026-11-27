@@ -259,7 +259,12 @@ def test_comparison_view_uses_one_webgl_figure_with_overlaid_layers(
     assert sidebar_toggle.label == "« Hide controls"
     assert normal_sidebar_open.active is True
     assert fullscreen_sidebar_open.active is False
-    assert fullscreen.callback.args["controls_sidebar"].visible is True
+    assert (
+        sidebar_toggle.js_property_callbacks["change:active"][0]
+        .args["controls_sidebar"]
+        .visible
+        is True
+    )
 
     figure.x_range.start, figure.x_range.end = 0.4, 1.2
     figure.y_range.start, figure.y_range.end = 3.0, 7.0

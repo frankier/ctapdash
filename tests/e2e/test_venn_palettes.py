@@ -8,6 +8,12 @@ def test_step_counts_palette_menu_and_hull(page, dashboard_url):
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     open_viewer(page, dashboard_url)
+    help_button = page.get_by_role("button", name="Palette help")
+    help_button.focus()
+    tooltip = page.get_by_text("Use the palette selector", exact=False)
+    expect(tooltip).to_be_visible()
+    help_button.press("Escape")
+    expect(tooltip).to_be_hidden()
     step_selectors = page.locator("select:visible").filter(
         has=page.locator('option[value="1"]')
     )
